@@ -3,7 +3,9 @@
  */
 import type { GeocodeRequest, GeocodeResponse, ParcelResponse } from "../types";
 
-const BASE_URL = "/api/v1";
+// VITE_API_BASE_URL is empty in local dev (Vite proxy handles routing),
+// and set to the full API origin (e.g. https://api.example.com) in production.
+const BASE_URL = `${import.meta.env.VITE_API_BASE_URL ?? ""}/api/v1`;
 
 class ApiRequestError extends Error {
   constructor(

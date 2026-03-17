@@ -41,7 +41,7 @@ def upgrade() -> None:
         sa.Column("longitude", sa.Double(), nullable=False),
         sa.Column(
             "point",
-            geoalchemy2.Geometry(geometry_type="POINT", srid=4326),
+            geoalchemy2.Geometry(geometry_type="POINT", srid=4326, spatial_index=False),
             nullable=False,
         ),
         sa.Column("census_tract_id", sa.Text(), nullable=True),

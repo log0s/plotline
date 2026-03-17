@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     )
 
     # ── CORS ──────────────────────────────────────────────────────────────────
+    # Must be a JSON array in the environment: ["http://localhost:5173"]
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
     # ── External APIs ─────────────────────────────────────────────────────────

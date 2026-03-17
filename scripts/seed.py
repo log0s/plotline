@@ -22,7 +22,7 @@ SEED_ADDRESSES = [
     "1437 Bannock St, Denver, CO 80202",
     "350 5th Ave, New York, NY 10118",
     "233 S Wacker Dr, Chicago, IL 60606",
-    "1 Infinite Loop, Cupertino, CA 95014",
+    "1600 Amphitheatre Pkwy, Mountain View, CA 94043",
 ]
 
 
