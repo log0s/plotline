@@ -1,6 +1,6 @@
 *Developing Plotline*
 
-I built this entire application using Claude Code as a way of testing its capabilities when creating full-stack solutions from scratch. The idea is to write as little code myself as possible, relying on the agent to to most/all of the work and see what the quality of the final product is like. This document is meant to be an honest account of that process: what worked, what didn't, and what I learned about AI-assisted development as a senior engineer.
+I built this entire application using Claude Code as a way of testing its capabilities when creating full-stack solutions from scratch. The idea is to write as little code myself as possible, relying on the agent to do most/all of the work and see what the quality of the final product is like. This document is meant to be an honest account of that process: what worked, what didn't, and what I learned about AI-assisted development as a senior engineer.
 
 I've preserved the original CLAUDE.md file that I started with as ORIGINAL_PROMPT.md and will iterate with a new prompt file at each step.
 
