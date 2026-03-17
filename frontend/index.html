@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Plotline — Geospatial Time Machine</title>
+    <meta
+      name="description"
+      content="Enter any US address and explore how that location has changed over decades of aerial imagery, property history, and demographic data."
+    />
+
+    <!-- Preconnect for performance -->
+    <link rel="preconnect" href="https://tiles.openfreemap.org" />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- MapLibre GL CSS -->
+    <link
+      href="https://unpkg.com/maplibre-gl@4.3.2/dist/maplibre-gl.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="bg-navy-950 text-white antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

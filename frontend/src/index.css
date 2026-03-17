@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* MapLibre GL overrides */
+  .maplibregl-map {
+    font-family: inherit;
+  }
+
+  .maplibregl-ctrl-attrib {
+    background-color: rgba(13, 21, 38, 0.75) !important;
+    color: rgba(255, 255, 255, 0.6) !important;
+  }
+
+  .maplibregl-ctrl-attrib a {
+    color: rgba(251, 191, 36, 0.8) !important;
+  }
+}
+
+@layer utilities {
+  /* Monospace data labels */
+  .data-label {
+    @apply font-mono text-xs tracking-wide text-slate-400;
+  }
+
+  .data-value {
+    @apply font-mono text-sm text-amber-400;
+  }
+}
