@@ -1,22 +1,21 @@
-"""SQLAlchemy ORM models for parcels and timeline_requests.
-
-Both models live in one file for Phase 1. Split into separate files
-if the schema grows significantly in later phases.
-"""
+"""SQLAlchemy ORM models for parcels, timeline requests, and imagery snapshots."""
 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from geoalchemy2 import Geometry
 from sqlalchemy import (
     CheckConstraint,
+    Date,
     DateTime,
     Double,
     ForeignKey,
     Index,
+    Integer,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -59,6 +58,12 @@ class Parcel(Base):
         "TimelineRequest",
         back_populates="parcel",
         cascade="all, delete-orphan",
+    )
+    imagery_snapshots: Mapped[list[ImagerySnapshot]] = relationship(
+        "ImagerySnapshot",
+        back_populates="parcel",
+        cascade="all, delete-orphan",
+        order_by="ImagerySnapshot.capture_date",
     )
 
     __table_args__ = (
@@ -108,6 +113,12 @@ class TimelineRequest(Base):
         "Parcel",
         back_populates="timeline_requests",
     )
+    tasks: Mapped[list[TimelineRequestTask]] = relationship(
+        "TimelineRequestTask",
+        back_populates="timeline_request",
+        cascade="all, delete-orphan",
+        order_by="TimelineRequestTask.source",
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -118,3 +129,122 @@ class TimelineRequest(Base):
 
     def __repr__(self) -> str:
         return f"<TimelineRequest id={self.id} status={self.status!r}>"
+
+
+class TimelineRequestTask(Base):
+    """Tracks per-source fetch status within a timeline request."""
+
+    __tablename__ = "timeline_request_tasks"
+
+    VALID_SOURCES = ("naip", "landsat", "sentinel2", "census", "property")
+    VALID_STATUSES = ("queued", "processing", "complete", "failed", "skipped")
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    timeline_request_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("timeline_requests.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default="queued",
+    )
+    items_found: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    timeline_request: Mapped[TimelineRequest] = relationship(
+        "TimelineRequest",
+        back_populates="tasks",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('naip', 'landsat', 'sentinel2', 'census', 'property')",
+            name="ck_trt_source",
+        ),
+        CheckConstraint(
+            "status IN ('queued', 'processing', 'complete', 'failed', 'skipped')",
+            name="ck_trt_status",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<TimelineRequestTask source={self.source!r} status={self.status!r}>"
+
+
+class ImagerySnapshot(Base):
+    """A single aerial/satellite imagery scene found for a parcel."""
+
+    __tablename__ = "imagery_snapshots"
+
+    VALID_SOURCES = ("naip", "landsat", "sentinel2")
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    parcel_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("parcels.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    capture_date: Mapped[date] = mapped_column(Date, nullable=False)
+    stac_item_id: Mapped[str] = mapped_column(Text, nullable=False)
+    stac_collection: Mapped[str] = mapped_column(Text, nullable=False)
+    bbox: Mapped[str | None] = mapped_column(
+        Geometry(geometry_type="POLYGON", srid=4326),
+        nullable=True,
+    )
+    cog_url: Mapped[str] = mapped_column(Text, nullable=False)
+    thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolution_m: Mapped[float | None] = mapped_column(Double, nullable=True)
+    cloud_cover_pct: Mapped[float | None] = mapped_column(Double, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    parcel: Mapped[Parcel] = relationship(
+        "Parcel",
+        back_populates="imagery_snapshots",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('naip', 'landsat', 'sentinel2')",
+            name="ck_imagery_snapshots_source",
+        ),
+        UniqueConstraint(
+            "parcel_id",
+            "stac_item_id",
+            name="uq_imagery_snapshots_parcel_stac_item",
+        ),
+        Index("idx_imagery_parcel_date", "parcel_id", "capture_date"),
+        Index("idx_imagery_bbox", "bbox", postgresql_using="gist"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ImagerySnapshot source={self.source!r} "
+            f"date={self.capture_date} parcel={self.parcel_id}>"
+        )

@@ -77,6 +77,39 @@ def _create_test_tables() -> None:
                 )
             """)
         )
+        conn.execute(
+            text("""
+                CREATE TABLE IF NOT EXISTS timeline_request_tasks (
+                    id                   TEXT PRIMARY KEY,
+                    timeline_request_id  TEXT REFERENCES timeline_requests(id),
+                    source               TEXT NOT NULL,
+                    status               TEXT NOT NULL DEFAULT 'queued',
+                    items_found          INTEGER NOT NULL DEFAULT 0,
+                    started_at           TEXT,
+                    completed_at         TEXT,
+                    error_message        TEXT
+                )
+            """)
+        )
+        conn.execute(
+            text("""
+                CREATE TABLE IF NOT EXISTS imagery_snapshots (
+                    id               TEXT PRIMARY KEY,
+                    parcel_id        TEXT NOT NULL REFERENCES parcels(id),
+                    source           TEXT NOT NULL,
+                    capture_date     TEXT NOT NULL,
+                    stac_item_id     TEXT NOT NULL,
+                    stac_collection  TEXT NOT NULL,
+                    bbox             TEXT,
+                    cog_url          TEXT NOT NULL,
+                    thumbnail_url    TEXT,
+                    resolution_m     REAL,
+                    cloud_cover_pct  REAL,
+                    created_at       TEXT DEFAULT (datetime('now')),
+                    UNIQUE (parcel_id, stac_item_id)
+                )
+            """)
+        )
         conn.commit()
 
 

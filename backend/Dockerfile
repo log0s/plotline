@@ -5,6 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     libgdal-dev \
+    libproj-dev \
+    proj-bin \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

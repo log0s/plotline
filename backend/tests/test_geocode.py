@@ -43,9 +43,18 @@ def make_mock_parcel(is_new: bool = True) -> tuple[MagicMock, bool]:
 # ── Endpoint tests ────────────────────────────────────────────────────────────
 
 
+def _mock_timeline_request() -> MagicMock:
+    """Build a mock TimelineRequest with a stable ID."""
+    req = MagicMock()
+    req.id = uuid.uuid4()
+    req.status = "queued"
+    return req
+
+
 def test_geocode_success(client: TestClient) -> None:
-    """A valid address returns 200 with parcel data."""
+    """A valid address returns 200 with parcel data including timeline_request_id."""
     mock_parcel, _ = make_mock_parcel(is_new=True)
+    mock_req = _mock_timeline_request()
 
     with (
         patch(
@@ -57,7 +66,13 @@ def test_geocode_success(client: TestClient) -> None:
             "app.api.v1.geocode.parcels_service.get_or_create_parcel",
             return_value=(mock_parcel, True),
         ),
+        patch(
+            "app.api.v1.geocode.imagery_service.get_or_create_timeline_request",
+            return_value=(mock_req, True),
+        ),
+        patch("app.tasks.timeline.fetch_imagery_timeline") as mock_task,
     ):
+        mock_task.delay = MagicMock()
         response = client.post(
             "/api/v1/geocode",
             json={"address": "1600 Pennsylvania Ave NW, Washington DC"},
@@ -70,11 +85,14 @@ def test_geocode_success(client: TestClient) -> None:
     assert body["longitude"] == pytest.approx(-77.0365, rel=1e-3)
     assert body["census_tract"] == "11001006202"
     assert body["is_new"] is True
+    assert body["timeline_request_id"] == str(mock_req.id)
 
 
 def test_geocode_dedup_returns_existing(client: TestClient) -> None:
     """When a nearby parcel exists, is_new is False."""
     mock_parcel, _ = make_mock_parcel(is_new=False)
+    mock_req = _mock_timeline_request()
+    mock_req.status = "complete"
 
     with (
         patch(
@@ -86,6 +104,10 @@ def test_geocode_dedup_returns_existing(client: TestClient) -> None:
             "app.api.v1.geocode.parcels_service.get_or_create_parcel",
             return_value=(mock_parcel, False),
         ),
+        patch(
+            "app.api.v1.geocode.imagery_service.get_or_create_timeline_request",
+            return_value=(mock_req, False),
+        ),
     ):
         response = client.post(
             "/api/v1/geocode",
@@ -95,14 +117,17 @@ def test_geocode_dedup_returns_existing(client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["is_new"] is False
+    assert body["timeline_request_id"] == str(mock_req.id)
 
 
 def test_geocode_address_not_found_returns_422(client: TestClient) -> None:
     """An address that can't be geocoded returns 422."""
-    with patch(
-        "app.api.v1.geocode.geocoder_service.geocode_address",
-        new_callable=AsyncMock,
-        side_effect=AddressNotFoundError("No match found"),
+    with (
+        patch(
+            "app.api.v1.geocode.geocoder_service.geocode_address",
+            new_callable=AsyncMock,
+            side_effect=AddressNotFoundError("No match found"),
+        ),
     ):
         response = client.post(
             "/api/v1/geocode",
@@ -115,10 +140,12 @@ def test_geocode_address_not_found_returns_422(client: TestClient) -> None:
 
 def test_geocode_upstream_unavailable_returns_502(client: TestClient) -> None:
     """A Census Geocoder network error returns 502."""
-    with patch(
-        "app.api.v1.geocode.geocoder_service.geocode_address",
-        new_callable=AsyncMock,
-        side_effect=GeocoderUnavailableError("Connection refused"),
+    with (
+        patch(
+            "app.api.v1.geocode.geocoder_service.geocode_address",
+            new_callable=AsyncMock,
+            side_effect=GeocoderUnavailableError("Connection refused"),
+        ),
     ):
         response = client.post(
             "/api/v1/geocode",

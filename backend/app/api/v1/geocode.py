@@ -11,6 +11,7 @@ from app.config import Settings, get_settings
 from app.db import get_db
 from app.schemas.geocode import GeocodeRequest, GeocodeResponse
 from app.services import geocoder as geocoder_service
+from app.services import imagery as imagery_service
 from app.services import parcels as parcels_service
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,28 @@ async def geocode_address(
         },
     )
 
+    # 3. Kick off imagery timeline fetch (idempotent — returns existing if done)
+    timeline_request_id = None
+    try:
+        timeline_req, is_new_request = imagery_service.get_or_create_timeline_request(
+            db, parcel.id
+        )
+        timeline_request_id = timeline_req.id
+        if is_new_request:
+            from app.tasks.timeline import fetch_imagery_timeline
+
+            fetch_imagery_timeline.delay(str(timeline_req.id))
+            logger.info(
+                "Imagery timeline task dispatched",
+                extra={"parcel_id": str(parcel.id), "request_id": str(timeline_req.id)},
+            )
+    except Exception as exc:
+        # Non-fatal — geocode response is still returned
+        logger.warning(
+            "Failed to dispatch imagery timeline task",
+            extra={"parcel_id": str(parcel.id), "error": str(exc)},
+        )
+
     return GeocodeResponse(
         parcel_id=parcel.id,
         address=parcel.address,
@@ -84,4 +107,5 @@ async def geocode_address(
         longitude=parcel.longitude,
         census_tract=parcel.census_tract_id,
         is_new=is_new,
+        timeline_request_id=timeline_request_id,
     )

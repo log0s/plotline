@@ -17,6 +17,7 @@ export interface GeocodeResponse {
   longitude: number;
   census_tract: string | null;
   is_new: boolean;
+  timeline_request_id: string | null;
 }
 
 export interface ParcelResponse {
@@ -38,6 +39,42 @@ export interface HealthResponse {
   version: string;
 }
 
+// ── Imagery / Timeline types ───────────────────────────────────────────────────
+
+export type ImagerySource = "naip" | "landsat" | "sentinel2";
+
+export interface ImagerySnapshot {
+  id: string;
+  source: ImagerySource;
+  capture_date: string; // ISO date string "YYYY-MM-DD"
+  cog_url: string;
+  thumbnail_url: string | null;
+  resolution_m: number | null;
+  cloud_cover_pct: number | null;
+  stac_item_id: string;
+  stac_collection: string;
+}
+
+export interface TimelineRequestTask {
+  source: string;
+  status: "queued" | "processing" | "complete" | "failed" | "skipped";
+  items_found: number;
+  error_message: string | null;
+}
+
+export interface TimelineRequest {
+  id: string;
+  parcel_id: string | null;
+  status: "queued" | "processing" | "complete" | "failed";
+  tasks: TimelineRequestTask[];
+  completed_at: string | null;
+}
+
+export interface ImageryListResponse {
+  parcel_id: string;
+  snapshots: ImagerySnapshot[];
+}
+
 // ── API Error shape ───────────────────────────────────────────────────────────
 
 export interface ApiError {
@@ -55,9 +92,18 @@ export interface AppState {
   isLoading: boolean;
   error: string | null;
 
+  // Timeline state
+  timelineRequestId: string | null;
+  timelineStatus: TimelineRequest | null;
+  snapshots: ImagerySnapshot[];
+  selectedSnapshot: ImagerySnapshot | null;
+
   // Actions
   setParcel: (parcel: GeocodeResponse) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  setTimelineStatus: (status: TimelineRequest | null) => void;
+  setSnapshots: (snapshots: ImagerySnapshot[]) => void;
+  setSelectedSnapshot: (snapshot: ImagerySnapshot | null) => void;
   reset: () => void;
 }

@@ -42,3 +42,7 @@ class GeocodeResponse(BaseModel):
     is_new: bool = Field(
         description="True if a new parcel was created; False if a nearby existing parcel was returned"
     )
+    timeline_request_id: uuid.UUID | None = Field(
+        default=None,
+        description="ID of the queued or existing imagery timeline request — poll for status",
+    )

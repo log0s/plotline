@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     # ── Parcel deduplication ──────────────────────────────────────────────────
     parcel_dedup_radius_meters: float = 50.0
 
+    # ── Imagery / Titiler ─────────────────────────────────────────────────────
+    titiler_url: str = "http://titiler:8000"
+
     @field_validator("database_url")
     @classmethod
     def validate_database_url(cls, v: str) -> str:
