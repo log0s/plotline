@@ -48,13 +48,16 @@ class Settings(BaseSettings):
     census_geocoder_url: str = (
         "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
     )
-    census_geocoder_timeout: float = 10.0  # seconds
+    census_geocoder_timeout: float = 20.0  # seconds — Census API is genuinely slow
 
     # ── Parcel deduplication ──────────────────────────────────────────────────
     parcel_dedup_radius_meters: float = 50.0
 
     # ── Imagery / Titiler ─────────────────────────────────────────────────────
-    titiler_url: str = "http://titiler:8000"
+    titiler_url: str = "http://titiler:80"
+    # Internal URL Titiler uses to call back to the API (for signed STAC items).
+    # In Docker Compose this resolves via service-name DNS.
+    api_internal_url: str = "http://api:8000"
 
     @field_validator("database_url")
     @classmethod

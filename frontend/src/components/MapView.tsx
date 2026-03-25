@@ -127,13 +127,11 @@ export function MapView({ parcel }: MapViewProps) {
         return;
       }
 
-      // For rendered_preview / static images: use "image" source
-      // For COGs with Titiler tile endpoint: use "raster" source
-      const titilerBase = import.meta.env.VITE_TITILER_URL ?? "";
-
-      if (titilerBase && snap.cog_url) {
-        // Titiler tile endpoint: /cog/tiles/{z}/{x}/{y}?url={cog_url}
-        const tileUrl = `${titilerBase}/cog/tiles/{z}/{x}/{y}?url=${encodeURIComponent(snap.cog_url)}&rescale=0,255`;
+      if (snap.id) {
+        // Tile proxy endpoint — signing happens server-side per request,
+        // so SAS tokens never expire in the browser's tile URL template.
+        const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
+        const tileUrl = `${apiBase}/api/v1/imagery/${snap.id}/tiles/{z}/{x}/{y}`;
         map.addSource(IMAGERY_SOURCE_ID, {
           type: "raster",
           tiles: [tileUrl],
@@ -159,6 +157,14 @@ export function MapView({ parcel }: MapViewProps) {
         return;
       }
 
+      // Insert above water/landcover but below roads, buildings, and labels.
+      // "aeroway_fill" is the first layer after all landcover/water fills in
+      // the OpenFreeMap liberty style, so imagery renders on top of the base
+      // map but underneath transport and label layers.
+      const beforeLayer = map.getLayer("boundary_3") ? "boundary_3"
+        : map.getLayer("building") ? "building"
+        : undefined;
+
       map.addLayer(
         {
           id: IMAGERY_LAYER_ID,
@@ -166,8 +172,7 @@ export function MapView({ parcel }: MapViewProps) {
           source: IMAGERY_SOURCE_ID,
           paint: { "raster-opacity": 0, "raster-opacity-transition": { duration: 600 } },
         },
-        // Insert below labels — keep place names visible
-        "water",
+        beforeLayer,
       );
 
       // Fade in

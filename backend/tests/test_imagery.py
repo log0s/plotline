@@ -52,8 +52,8 @@ def test_upsert_imagery_snapshot_insert(db: Session) -> None:
 
 
 def test_upsert_imagery_snapshot_dedup(db: Session) -> None:
-    """upsert_imagery_snapshot returns False on duplicate (idempotent)."""
-    from app.services.imagery import upsert_imagery_snapshot
+    """upsert_imagery_snapshot updates cog_url on conflict (idempotent)."""
+    from app.services.imagery import upsert_imagery_snapshot, get_imagery_snapshots
 
     parcel_id = uuid.uuid4()
     _insert_parcel(db, parcel_id, "Dupe St")
@@ -64,15 +64,22 @@ def test_upsert_imagery_snapshot_dedup(db: Session) -> None:
         capture_date=date(1990, 6, 1),
         stac_item_id="landsat_1990_item",
         stac_collection="landsat-c2-l2",
-        cog_url="https://example.com/landsat.tif",
+        cog_url="https://example.com/landsat_old.tif",
         resolution_m=30.0,
     )
 
     first = upsert_imagery_snapshot(db, **kwargs)  # type: ignore[arg-type]
-    second = upsert_imagery_snapshot(db, **kwargs)  # type: ignore[arg-type]
+    assert first is True
 
-    assert first is True, "First insert should return True"
-    assert second is False, "Second insert should return False (duplicate)"
+    # Second call with updated cog_url should succeed (DO UPDATE)
+    kwargs["cog_url"] = "https://example.com/landsat_new.tif"
+    second = upsert_imagery_snapshot(db, **kwargs)  # type: ignore[arg-type]
+    assert second is True
+
+    # Verify the URL was updated, not duplicated
+    snaps = get_imagery_snapshots(db, parcel_id)
+    assert len(snaps) == 1, "Should still be one row, not two"
+    assert snaps[0].cog_url == "https://example.com/landsat_new.tif"
 
 
 def test_get_imagery_snapshots_returns_sorted(db: Session) -> None:

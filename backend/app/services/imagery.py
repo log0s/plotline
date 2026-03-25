@@ -193,7 +193,9 @@ def upsert_imagery_snapshot(
             VALUES
                 (:id, :parcel_id, :source, :capture_date, :stac_item_id, :stac_collection,
                  ST_GeomFromEWKT(:bbox), :cog_url, :thumbnail_url, :resolution_m, :cloud_cover_pct)
-            ON CONFLICT (parcel_id, stac_item_id) DO NOTHING
+            ON CONFLICT (parcel_id, stac_item_id) DO UPDATE
+                SET cog_url = EXCLUDED.cog_url,
+                    thumbnail_url = EXCLUDED.thumbnail_url
             """
         )
         params: dict[str, object] = {
@@ -218,7 +220,9 @@ def upsert_imagery_snapshot(
             VALUES
                 (:id, :parcel_id, :source, :capture_date, :stac_item_id, :stac_collection,
                  :cog_url, :thumbnail_url, :resolution_m, :cloud_cover_pct)
-            ON CONFLICT (parcel_id, stac_item_id) DO NOTHING
+            ON CONFLICT (parcel_id, stac_item_id) DO UPDATE
+                SET cog_url = EXCLUDED.cog_url,
+                    thumbnail_url = EXCLUDED.thumbnail_url
             """
         )
         params = {
@@ -234,16 +238,36 @@ def upsert_imagery_snapshot(
             "cloud_cover_pct": cloud_cover_pct,
         }
 
-    result = db.execute(sql, params)
+    db.execute(sql, params)
     db.commit()
+    return True
 
-    inserted = result.rowcount > 0
-    if not inserted:
-        logger.debug(
-            "Snapshot already exists (skipping)",
-            extra={"parcel_id": str(parcel_id), "stac_item_id": stac_item_id},
-        )
-    return inserted
+
+def get_snapshot_by_id(db: Session, snapshot_id: uuid.UUID) -> ImagerySnapshotRow | None:
+    """Return a single imagery snapshot by ID, or None if not found."""
+    sql = sa_text(
+        """
+        SELECT id, parcel_id, source, capture_date, stac_item_id, stac_collection,
+               cog_url, thumbnail_url, resolution_m, cloud_cover_pct, created_at
+        FROM imagery_snapshots
+        WHERE id = :id
+        """
+    )
+    row = db.execute(sql, {"id": str(snapshot_id)}).mappings().first()
+    if not row:
+        return None
+    return ImagerySnapshotRow(
+        id=uuid.UUID(str(row["id"])),
+        parcel_id=uuid.UUID(str(row["parcel_id"])),
+        source=row["source"],
+        capture_date=date.fromisoformat(str(row["capture_date"])),
+        stac_item_id=row["stac_item_id"],
+        stac_collection=row["stac_collection"],
+        cog_url=row["cog_url"],
+        thumbnail_url=row["thumbnail_url"],
+        cloud_cover_pct=row["cloud_cover_pct"],
+        resolution_m=row["resolution_m"],
+    )
 
 
 def get_imagery_snapshots(

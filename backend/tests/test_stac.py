@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.services.stac import (
+    STAC_API,
+    _is_cog_asset,
     extract_cog_url,
     extract_thumbnail_url,
     point_to_bbox,
@@ -135,27 +137,126 @@ def test_select_sentinel_one_per_quarter() -> None:
     assert len(selected) == 3
 
 
+# ── _is_cog_asset guard ────────────────────────────────────────────────────────
+
+
+def test_is_cog_asset_geotiff() -> None:
+    asset = {"type": "image/tiff; application=geotiff; profile=cloud-optimized", "href": "x.tif"}
+    assert _is_cog_asset(asset) is True
+
+
+def test_is_cog_asset_png_rejected() -> None:
+    asset = {"type": "image/png", "href": "x.png"}
+    assert _is_cog_asset(asset) is False
+
+
+def test_is_cog_asset_no_type_assumed_safe() -> None:
+    """Assets without a type field are assumed COG for backwards-compat."""
+    asset = {"href": "x.tif"}
+    assert _is_cog_asset(asset) is True
+
+
 # ── Asset extraction ───────────────────────────────────────────────────────────
 
 
 def test_extract_cog_url_naip() -> None:
     item = {
-        "assets": {"image": {"href": "https://example.com/naip.tif"}},
+        "assets": {
+            "image": {
+                "href": "https://example.com/naip.tif",
+                "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+            },
+        },
         "properties": {},
     }
     assert extract_cog_url(item, "naip") == "https://example.com/naip.tif"
 
 
-def test_extract_cog_url_landsat_rendered_preview() -> None:
+def test_extract_cog_url_naip_rejects_non_cog() -> None:
+    """NAIP image asset that is NOT a GeoTIFF should be rejected."""
     item = {
+        "assets": {"image": {"href": "https://example.com/naip.png", "type": "image/png"}},
+        "properties": {},
+    }
+    assert extract_cog_url(item, "naip") is None
+
+
+def test_extract_cog_url_landsat_returns_self_link() -> None:
+    """Landsat should return the STAC item self-link, not an individual band URL."""
+    self_url = "https://planetarycomputer.microsoft.com/api/stac/v1/collections/landsat-c2-l2/items/LC09_TEST"
+    item = {
+        "id": "LC09_TEST",
         "assets": {
-            "rendered_preview": {"href": "https://example.com/preview.png"},
-            "red": {"href": "https://example.com/red.tif"},
+            "rendered_preview": {"href": "https://example.com/preview.png", "type": "image/png"},
+            "red": {"href": "https://example.com/red.tif", "type": "image/tiff; application=geotiff"},
         },
+        "links": [
+            {"rel": "self", "href": self_url},
+            {"rel": "parent", "href": "https://example.com/parent"},
+        ],
         "properties": {},
     }
     result = extract_cog_url(item, "landsat-c2-l2")
-    assert result == "https://example.com/preview.png"
+    assert result == self_url
+
+
+def test_extract_cog_url_landsat_fallback_constructs_url() -> None:
+    """When no self link exists, construct the URL from collection + item ID."""
+    item = {
+        "id": "LC09_TEST",
+        "assets": {"red": {"href": "https://example.com/red.tif"}},
+        "links": [],
+        "properties": {},
+    }
+    result = extract_cog_url(item, "landsat-c2-l2")
+    assert result == f"{STAC_API}/collections/landsat-c2-l2/items/LC09_TEST"
+
+
+def test_extract_cog_url_landsat_no_id_returns_none() -> None:
+    """Landsat item with no self link and no id returns None."""
+    item = {"assets": {}, "links": [], "properties": {}}
+    assert extract_cog_url(item, "landsat-c2-l2") is None
+
+
+def test_extract_cog_url_sentinel2_visual() -> None:
+    item = {
+        "assets": {
+            "visual": {
+                "href": "https://example.com/tci.tif",
+                "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+            },
+            "B04": {
+                "href": "https://example.com/b04.tif",
+                "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+            },
+        },
+        "properties": {},
+    }
+    result = extract_cog_url(item, "sentinel-2-l2a")
+    assert result == "https://example.com/tci.tif", "Should prefer visual over B04"
+
+
+def test_extract_cog_url_sentinel2_b04_not_used_as_fallback() -> None:
+    """B04 alone should NOT be used — its uint16 range is incompatible with TCI rescale."""
+    item = {
+        "assets": {
+            "B04": {
+                "href": "https://example.com/b04.tif",
+                "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+            },
+        },
+        "properties": {},
+    }
+    assert extract_cog_url(item, "sentinel-2-l2a") is None
+
+
+def test_extract_cog_url_sentinel2_rejects_non_geotiff() -> None:
+    """visual asset that isn't a GeoTIFF should be rejected."""
+    item = {
+        "assets": {"visual": {"href": "https://example.com/tci.png", "type": "image/png"}},
+        "properties": {},
+    }
+    assert extract_cog_url(item, "sentinel-2-l2a") is None
 
 
 def test_extract_cog_url_missing() -> None:

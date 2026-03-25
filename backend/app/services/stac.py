@@ -206,27 +206,59 @@ def select_sentinel_items(items: list[dict[str, object]]) -> list[dict[str, obje
 # ── Asset extraction ──────────────────────────────────────────────────────────
 
 
-def extract_cog_url(item: dict[str, object], collection: str) -> str | None:
-    """Extract the primary COG asset URL from a STAC item.
+def _is_cog_asset(asset: dict[str, object]) -> bool:
+    """Return True if the asset's STAC type indicates a GeoTIFF (COG).
 
-    Returns None if no suitable asset is found.
+    Planetary Computer uses ``image/tiff; application=geotiff; profile=cloud-optimized``
+    for COGs.  Assets without a ``type`` field are assumed safe (some older STAC
+    items omit it).
+    """
+    media_type = asset.get("type", "")
+    if not media_type:
+        return True  # no type declared — assume COG (backwards-compat)
+    return "geotiff" in str(media_type).lower()
+
+
+def extract_cog_url(item: dict[str, object], collection: str) -> str | None:
+    """Extract the primary imagery URL for a STAC item.
+
+    For **NAIP** and **Sentinel-2** this returns a direct COG href (the tile
+    proxy uses Titiler's ``/cog/tiles/`` endpoint).
+
+    For **Landsat** this returns the STAC item *self-link* URL.  Individual
+    Landsat bands live in separate single-band COGs, so the tile proxy uses
+    Titiler's ``/stac/tiles/`` endpoint with ``assets=red,green,blue`` for
+    proper RGB compositing — which needs the full item URL, not a band URL.
+
+    Returns None if no suitable asset / link is found.
     """
     assets: dict[str, dict[str, object]] = item.get("assets", {})  # type: ignore[assignment]
 
     if collection == "naip":
-        return str(assets["image"]["href"]) if "image" in assets else None
+        if "image" in assets and assets["image"].get("href") and _is_cog_asset(assets["image"]):
+            return str(assets["image"]["href"])
+        return None
 
     if collection == "landsat-c2-l2":
-        # Prefer rendered_preview for simplicity; fall back to red band
-        for key in ("rendered_preview", "red"):
-            if key in assets and assets[key].get("href"):
-                return str(assets[key]["href"])
+        # Store the STAC item self-link — the tile proxy uses Titiler's
+        # /stac/tiles/ endpoint with per-asset signing at request time to
+        # compose a true-colour RGB from the red, green, and blue band COGs.
+        links: list[dict[str, str]] = item.get("links", [])  # type: ignore[assignment]
+        self_href = next((lnk["href"] for lnk in links if lnk.get("rel") == "self"), None)
+        if self_href:
+            return str(self_href)
+        # Fallback: construct canonical URL from collection + item ID
+        item_id = item.get("id")
+        if item_id:
+            return f"{STAC_API}/collections/{collection}/items/{item_id}"
         return None
 
     if collection == "sentinel-2-l2a":
-        for key in ("rendered_preview", "B04"):
-            if key in assets and assets[key].get("href"):
-                return str(assets[key]["href"])
+        # visual is a uint8 3-band (R/G/B) TCI COG — ideal for display.
+        # B04 (single-band uint16, 0-10000) is NOT used: its data range is
+        # incompatible with the rescale params configured for TCI tiles.
+        if "visual" in assets and assets["visual"].get("href") and _is_cog_asset(assets["visual"]):
+            return str(assets["visual"]["href"])
         return None
 
     return None
