@@ -18,7 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSON, UUID
+from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -70,6 +70,12 @@ class Parcel(Base):
         back_populates="parcel",
         cascade="all, delete-orphan",
         order_by="CensusSnapshot.year",
+    )
+    property_events: Mapped[list[PropertyEvent]] = relationship(
+        "PropertyEvent",
+        back_populates="parcel",
+        cascade="all, delete-orphan",
+        order_by="PropertyEvent.event_date",
     )
 
     __table_args__ = (
@@ -320,3 +326,83 @@ class CensusSnapshot(Base):
 
     def __repr__(self) -> str:
         return f"<CensusSnapshot dataset={self.dataset!r} year={self.year} parcel={self.parcel_id}>"
+
+
+class PropertyEvent(Base):
+    """A property history event — sale, permit, zoning change, or assessment."""
+
+    __tablename__ = "property_events"
+
+    VALID_EVENT_TYPES = (
+        "sale",
+        "permit_building",
+        "permit_demolition",
+        "permit_electrical",
+        "permit_mechanical",
+        "permit_plumbing",
+        "permit_other",
+        "zoning_change",
+        "assessment",
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    parcel_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("parcels.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    event_type: Mapped[str] = mapped_column(Text, nullable=False)
+    event_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # Sale-specific
+    sale_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Permit-specific
+    permit_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    permit_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    permit_valuation: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # General
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    source_record_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    parcel: Mapped[Parcel] = relationship(
+        "Parcel",
+        back_populates="property_events",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('sale', 'permit_building', 'permit_demolition', "
+            "'permit_electrical', 'permit_mechanical', 'permit_plumbing', "
+            "'permit_other', 'zoning_change', 'assessment')",
+            name="ck_property_events_event_type",
+        ),
+        UniqueConstraint(
+            "parcel_id",
+            "source",
+            "source_record_id",
+            name="uq_property_events_parcel_source_record",
+        ),
+        Index("idx_property_events_parcel_date", "parcel_id", "event_date"),
+        Index("idx_property_events_type", "parcel_id", "event_type"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<PropertyEvent type={self.event_type!r} "
+            f"date={self.event_date} parcel={self.parcel_id}>"
+        )

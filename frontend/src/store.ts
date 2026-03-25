@@ -10,6 +10,7 @@ import type {
   DemographicsResponse,
   GeocodeResponse,
   ImagerySnapshot,
+  PropertyEventsResponse,
   TimelineRequest,
 } from "./types";
 
@@ -28,6 +29,11 @@ export const useAppStore = create<AppState>((set) => ({
   // Demographics
   demographics: null,
   demographicsLoading: false,
+
+  // Property events
+  propertyEvents: null,
+  propertyEventsLoading: false,
+
   selectedYear: null,
 
   setParcel: (parcel: GeocodeResponse) =>
@@ -37,12 +43,14 @@ export const useAppStore = create<AppState>((set) => ({
       error: null,
       isLoading: false,
       timelineRequestId: parcel.timeline_request_id,
-      // Reset timeline + demographics state when a new parcel is loaded
+      // Reset timeline + demographics + events state when a new parcel is loaded
       timelineStatus: null,
       snapshots: [],
       selectedSnapshot: null,
       demographics: null,
       demographicsLoading: false,
+      propertyEvents: null,
+      propertyEventsLoading: false,
       selectedYear: null,
     }),
 
@@ -81,6 +89,12 @@ export const useAppStore = create<AppState>((set) => ({
   setDemographicsLoading: (demographicsLoading: boolean) =>
     set({ demographicsLoading }),
 
+  setPropertyEvents: (propertyEvents: PropertyEventsResponse | null) =>
+    set({ propertyEvents }),
+
+  setPropertyEventsLoading: (propertyEventsLoading: boolean) =>
+    set({ propertyEventsLoading }),
+
   reset: () =>
     set({
       view: "landing",
@@ -93,6 +107,8 @@ export const useAppStore = create<AppState>((set) => ({
       selectedSnapshot: null,
       demographics: null,
       demographicsLoading: false,
+      propertyEvents: null,
+      propertyEventsLoading: false,
       selectedYear: null,
     }),
 }));

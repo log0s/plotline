@@ -16,6 +16,9 @@ from typing import Any
 from app.services import stac as stac_service
 from app.services import imagery as imagery_service
 from app.services import demographics as demographics_service
+from app.services import property_events as property_events_service
+from app.services.address_normalizer import extract_search_terms, is_address_match
+from app.services.county_adapters import get_adapter_for_county
 from app.services.census import (
     ACS5_YEARS,
     DECENNIAL_YEARS,
@@ -303,6 +306,160 @@ async def _fetch_census(
     return items_saved
 
 
+async def _fetch_property(
+    parcel_id: uuid.UUID,
+    timeline_request_id: uuid.UUID,
+    county: str,
+    normalized_address: str,
+    app_token: str | None = None,
+) -> int:
+    """Fetch property history from county open data and persist events.
+
+    Returns the number of events saved.
+    """
+    from app.db import SessionLocal
+    from app.models.parcels import TimelineRequestTask
+    from sqlalchemy import select as sa_select
+
+    adapter = get_adapter_for_county(county)
+
+    # Mark task processing / skipped
+    with SessionLocal() as db:
+        task_row = db.execute(
+            sa_select(TimelineRequestTask)
+            .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+            .where(TimelineRequestTask.source == "property")
+        ).scalars().first()
+
+        if not adapter:
+            logger.info(
+                f"No property adapter for county: {county}",
+                extra={"parcel_id": str(parcel_id)},
+            )
+            if task_row:
+                imagery_service.update_request_task(
+                    db, task_row, "skipped",
+                    error_message=f"Property data not yet available for {county} County",
+                )
+            return 0
+
+        if task_row:
+            imagery_service.update_request_task(db, task_row, "processing")
+
+    # Extract search terms from the normalized address
+    street_number, street_name = extract_search_terms(normalized_address)
+    if not street_number:
+        logger.warning("Could not extract search terms from address", extra={
+            "address": normalized_address,
+        })
+        with SessionLocal() as db:
+            task_row = db.execute(
+                sa_select(TimelineRequestTask)
+                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                .where(TimelineRequestTask.source == "property")
+            ).scalars().first()
+            if task_row:
+                imagery_service.update_request_task(
+                    db, task_row, "failed",
+                    error_message="Could not extract search terms from address",
+                )
+        return 0
+
+    logger.info(
+        "Fetching property history",
+        extra={
+            "county": county,
+            "street_number": street_number,
+            "street_name": street_name,
+        },
+    )
+
+    # Fetch sales and permits in parallel
+    all_events = []
+    try:
+        sales, permits = await asyncio.gather(
+            adapter.fetch_sales(street_number, street_name, app_token=app_token),
+            adapter.fetch_permits(street_number, street_name, app_token=app_token),
+        )
+        all_events.extend(sales)
+        all_events.extend(permits)
+    except Exception as exc:
+        logger.error(f"Property fetch failed for {county}: {exc}")
+        with SessionLocal() as db:
+            task_row = db.execute(
+                sa_select(TimelineRequestTask)
+                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                .where(TimelineRequestTask.source == "property")
+            ).scalars().first()
+            if task_row:
+                imagery_service.update_request_task(
+                    db, task_row, "failed", error_message=str(exc),
+                )
+        return 0
+
+    # Filter by fuzzy address match
+    matched_events = []
+    for event in all_events:
+        # Check if raw_data has an address field to compare
+        raw_addr = (
+            event.raw_data.get("address")
+            or event.raw_data.get("situs_address")
+            or ""
+        )
+        if raw_addr and not is_address_match(normalized_address, raw_addr):
+            continue
+        matched_events.append(event)
+
+    logger.info(
+        "Property events filtered",
+        extra={
+            "raw_count": len(all_events),
+            "matched_count": len(matched_events),
+            "county": county,
+        },
+    )
+
+    # Persist events
+    items_saved = 0
+    with SessionLocal() as db:
+        for event in matched_events:
+            if not event.source_record_id:
+                continue
+            was_inserted = property_events_service.upsert_property_event(
+                db,
+                parcel_id=parcel_id,
+                event_type=event.event_type,
+                event_date=event.event_date,
+                sale_price=event.sale_price,
+                permit_type=event.permit_type,
+                permit_description=event.permit_description,
+                permit_valuation=event.permit_valuation,
+                description=event.description,
+                source=event.source,
+                source_record_id=event.source_record_id,
+                raw_data=event.raw_data,
+            )
+            if was_inserted:
+                items_saved += 1
+
+        # Update task status
+        task_row = db.execute(
+            sa_select(TimelineRequestTask)
+            .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+            .where(TimelineRequestTask.source == "property")
+        ).scalars().first()
+        if task_row:
+            imagery_service.update_request_task(
+                db, task_row, "complete", items_found=items_saved,
+            )
+
+    logger.info(
+        "Property history fetch complete",
+        extra={"items_saved": items_saved, "county": county},
+    )
+    return items_saved
+
+
 async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
     """Orchestrate all imagery sources for a timeline request."""
     from app.db import SessionLocal
@@ -333,14 +490,18 @@ async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
 
         lat, lng = parcel.latitude, parcel.longitude
         tract_fips = parcel.census_tract_id
+        county = parcel.county
+        normalized_address = parcel.normalized_address or parcel.address
 
         # Transition to processing
         imagery_service.update_timeline_request_status(db, request, "processing")
 
-        # Create per-source task rows (include census if we have a tract FIPS)
+        # Create per-source task rows
         sources = [s["source"] for s in _SOURCES]
         if tract_fips:
             sources.append("census")
+        if county:
+            sources.append("property")
         imagery_service.create_request_tasks(
             db,
             timeline_request_id=req_uuid,
@@ -367,9 +528,9 @@ async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
             )
 
     # Fetch census data if we have a tract FIPS (API key is optional)
+    from app.config import get_settings
+    settings = get_settings()
     if tract_fips:
-        from app.config import get_settings
-        settings = get_settings()
         try:
             count = await _fetch_census(
                 parcel_id, req_uuid, tract_fips,
@@ -381,6 +542,20 @@ async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
             logger.error(
                 "Unexpected error fetching census data",
                 extra={"error": str(exc)},
+            )
+
+    # Fetch property history if we know the county
+    if county:
+        try:
+            count = await _fetch_property(
+                parcel_id, req_uuid, county, normalized_address,
+                app_token=settings.socrata_app_token,
+            )
+            total_items += count
+        except Exception as exc:
+            logger.error(
+                "Unexpected error fetching property history",
+                extra={"error": str(exc), "county": county},
             )
 
     # Mark request complete

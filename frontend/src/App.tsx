@@ -15,6 +15,7 @@ import { MapView } from "./components/MapView";
 import { Timeline } from "./components/Timeline";
 import { useDemographics } from "./hooks/useDemographics";
 import { useGeocoder } from "./hooks/useGeocoder";
+import { usePropertyEvents } from "./hooks/usePropertyEvents";
 import { useTimeline } from "./hooks/useTimeline";
 import { useAppStore } from "./store";
 
@@ -24,8 +25,9 @@ export default function App() {
 
   // Start polling as soon as we have a timeline_request_id
   useTimeline();
-  // Fetch demographics once timeline completes
+  // Fetch demographics and property events once timeline completes
   useDemographics();
+  usePropertyEvents();
 
   return (
     <div className="relative w-full h-full min-h-screen bg-navy-950 overflow-hidden">

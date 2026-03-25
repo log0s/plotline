@@ -101,6 +101,52 @@ export interface DemographicsResponse {
   notes: string;
 }
 
+// ── Property Events types ─────────────────────────────────────────────────
+
+export type PropertyEventType =
+  | "sale"
+  | "permit_building"
+  | "permit_demolition"
+  | "permit_electrical"
+  | "permit_mechanical"
+  | "permit_plumbing"
+  | "permit_other"
+  | "zoning_change"
+  | "assessment";
+
+export interface PropertyEvent {
+  id: string;
+  event_type: PropertyEventType;
+  event_date: string | null; // ISO date string "YYYY-MM-DD"
+  description: string | null;
+  sale_price: number | null;
+  permit_type: string | null;
+  permit_description: string | null;
+  permit_valuation: number | null;
+  source: string;
+}
+
+export interface PricePoint {
+  date: string;
+  price: number;
+}
+
+export interface EventsSummary {
+  total_events: number;
+  total_sales: number;
+  total_permits: number;
+  price_history: PricePoint[];
+  appreciation: string | null;
+}
+
+export interface PropertyEventsResponse {
+  parcel_id: string;
+  county: string | null;
+  supported: boolean;
+  events: PropertyEvent[];
+  summary: EventsSummary;
+}
+
 // ── API Error shape ───────────────────────────────────────────────────────────
 
 export interface ApiError {
@@ -128,6 +174,10 @@ export interface AppState {
   demographics: DemographicsResponse | null;
   demographicsLoading: boolean;
 
+  // Property events state
+  propertyEvents: PropertyEventsResponse | null;
+  propertyEventsLoading: boolean;
+
   // The year the user is "focused" on (from clicking an imagery snapshot)
   selectedYear: number | null;
 
@@ -140,5 +190,7 @@ export interface AppState {
   setSelectedSnapshot: (snapshot: ImagerySnapshot | null) => void;
   setDemographics: (data: DemographicsResponse | null) => void;
   setDemographicsLoading: (loading: boolean) => void;
+  setPropertyEvents: (data: PropertyEventsResponse | null) => void;
+  setPropertyEventsLoading: (loading: boolean) => void;
   reset: () => void;
 }

@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     )
     census_geocoder_timeout: float = 20.0  # seconds — Census API is genuinely slow
 
+    # ── Socrata (county open data) ────────────────────────────────────────────
+    socrata_app_token: str | None = None  # Optional; increases rate limit 1K→10K/hr
+
     # ── Parcel deduplication ──────────────────────────────────────────────────
     parcel_dedup_radius_meters: float = 50.0
 

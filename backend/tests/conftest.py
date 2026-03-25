@@ -135,6 +135,26 @@ def _create_test_tables() -> None:
                 )
             """)
         )
+        conn.execute(
+            text("""
+                CREATE TABLE IF NOT EXISTS property_events (
+                    id                  TEXT PRIMARY KEY,
+                    parcel_id           TEXT NOT NULL REFERENCES parcels(id),
+                    event_type          TEXT NOT NULL,
+                    event_date          TEXT,
+                    sale_price          INTEGER,
+                    permit_type         TEXT,
+                    permit_description  TEXT,
+                    permit_valuation    INTEGER,
+                    description         TEXT,
+                    source              TEXT NOT NULL,
+                    source_record_id    TEXT,
+                    raw_data            TEXT,
+                    created_at          TEXT DEFAULT (datetime('now')),
+                    UNIQUE (parcel_id, source, source_record_id)
+                )
+            """)
+        )
         conn.commit()
 
 
