@@ -26,3 +26,13 @@ Took ~20 minutes to build this phase out completely. Got everything technically 
 * Misses a lot of basic UX stuff (loading indicators, transitions, etc) but I suspect that's more from my lack of direction than anything else. Makes sense to add/address it later anyway.
 * Surprisingly good at debugging somewhat complex issues (e.g. found that `extract_cog_url` was pulling in rendered preview PNGs instead of an actual COG, debugged signing expiration issues when hitting external APIs)
 * Definitely has the most issues exactly where I expected (GIS/imagery implementation). Not surprising due to it likely having much less training data for that domain. Kept trying to do things like store signed URLs in the DB.
+
+### Phase 3
+
+Took about 20 minutes again to build everything out. Debug took about eight minutes for basic functionality (i.e. things not being completely broken) and another six or so fixing bugs that were introduced, some regressions, etc. Had lots of issues with older data getting saved and not cleaned up after code changes. It did ask once, when addressing a known issue with Landsat 7 imagery having missing sections, but only that one time.
+
+* Started getting some more front-end errors in this one (missing packages, paths off, etc).
+* Seems to fairly consistently forget to do things like rebuilding Docker images, but this is probably more an error on my part; planning to make a lot of additions to the global Claude config after this with lessons learned.
+* One very common recurring issue is logic around caching; it seems to struggle with knowing what is and is not appropriate to cache, and when to ignore caching even if it is appropriate for some cases/uses. This could also be a configuration thing, but I'm leaning towards it being a general limitation of the tool's capabilities in general, as there's a lot of nuance around this.
+* Also consistently forgets to clean up after itself (clear out DB, update old implementations stored, etc) with major data changes. Probably worth noting and saving as a global Claude config.
+* Related to the above, it frequently misconstrues the actual issue, and tries to patch in fixes for old/missing/misconfigured data instead of just cleaning up.
