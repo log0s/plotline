@@ -2,37 +2,33 @@
  * Hook that fetches demographics data once the timeline completes.
  *
  * Watches the timeline status — when it reaches "complete", fires a
- * one-shot fetch for the demographics endpoint. This data doesn't need
- * polling since census data is fetched once and cached.
+ * one-shot fetch for the demographics endpoint.
  */
 import { useEffect, useRef } from "react";
 import { getDemographics } from "../api/demographics";
 import { useAppStore } from "../store";
 
 export function useDemographics() {
-  const { parcel, timelineStatus, setDemographics, setDemographicsLoading } =
-    useAppStore();
+  const parcelId = useAppStore((s) => s.parcel?.parcel_id ?? null);
+  const timelineStatus = useAppStore((s) => s.timelineStatus?.status ?? null);
   const fetchedRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!parcel?.parcel_id) return;
-    if (timelineStatus?.status !== "complete") return;
+    if (!parcelId || timelineStatus !== "complete") return;
+    if (fetchedRef.current === parcelId) return;
+    fetchedRef.current = parcelId;
 
-    // Only fetch once per parcel
-    if (fetchedRef.current === parcel.parcel_id) return;
-    fetchedRef.current = parcel.parcel_id;
+    useAppStore.getState().setDemographicsLoading(true);
 
-    setDemographicsLoading(true);
-
-    getDemographics(parcel.parcel_id)
+    getDemographics(parcelId)
       .then((data) => {
-        setDemographics(data);
+        useAppStore.getState().setDemographics(data);
       })
       .catch((err) => {
         console.error("Failed to fetch demographics:", err);
       })
       .finally(() => {
-        setDemographicsLoading(false);
+        useAppStore.getState().setDemographicsLoading(false);
       });
-  }, [parcel?.parcel_id, timelineStatus?.status, setDemographics, setDemographicsLoading]);
+  }, [parcelId, timelineStatus]);
 }

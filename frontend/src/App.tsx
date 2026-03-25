@@ -135,7 +135,7 @@ export default function App() {
               </div>
 
               {/* Demographics — right side on desktop, below timeline on mobile */}
-              <div className="lg:w-[360px] lg:shrink-0 overflow-hidden">
+              <div className="lg:w-[360px] lg:shrink-0 overflow-y-auto">
                 <DemographicsPanel />
               </div>
             </div>

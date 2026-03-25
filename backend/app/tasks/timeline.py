@@ -196,7 +196,7 @@ async def _fetch_census(
     parcel_id: uuid.UUID,
     timeline_request_id: uuid.UUID,
     tract_fips: str,
-    api_key: str,
+    api_key: str | None = None,
     timeout: float = 30.0,
 ) -> int:
     """Fetch Census Bureau data for a parcel's tract and persist snapshots.
@@ -366,25 +366,22 @@ async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
                 extra={"error": str(exc)},
             )
 
-    # Fetch census data if we have a tract FIPS and an API key
+    # Fetch census data if we have a tract FIPS (API key is optional)
     if tract_fips:
         from app.config import get_settings
         settings = get_settings()
-        if settings.census_api_key:
-            try:
-                count = await _fetch_census(
-                    parcel_id, req_uuid, tract_fips,
-                    api_key=settings.census_api_key,
-                    timeout=settings.census_api_timeout,
-                )
-                total_items += count
-            except Exception as exc:
-                logger.error(
-                    "Unexpected error fetching census data",
-                    extra={"error": str(exc)},
-                )
-        else:
-            logger.info("No CENSUS_API_KEY configured, skipping census fetch")
+        try:
+            count = await _fetch_census(
+                parcel_id, req_uuid, tract_fips,
+                api_key=settings.census_api_key,
+                timeout=settings.census_api_timeout,
+            )
+            total_items += count
+        except Exception as exc:
+            logger.error(
+                "Unexpected error fetching census data",
+                extra={"error": str(exc)},
+            )
 
     # Mark request complete
     with SessionLocal() as db:

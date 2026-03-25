@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     census_api_key: str | None = None
     census_api_timeout: float = 30.0  # seconds — Census data API
     census_geocoder_url: str = (
-        "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
+        "https://geocoding.geo.census.gov/geocoder/geographies/onelineaddress"
     )
     census_geocoder_timeout: float = 20.0  # seconds — Census API is genuinely slow
 

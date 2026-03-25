@@ -77,7 +77,7 @@ class CensusFetcher:
 
     BASE_URL = "https://api.census.gov/data"
 
-    def __init__(self, api_key: str, timeout: float = 30.0) -> None:
+    def __init__(self, api_key: str | None = None, timeout: float = 30.0) -> None:
         self.api_key = api_key
         self.client = httpx.AsyncClient(timeout=timeout)
 
@@ -153,12 +153,13 @@ class CensusFetcher:
         tract_code: str,
     ) -> list[list[str]] | None:
         """Make a Census API request. Returns None on 204/404 (tract not found)."""
-        params = {
+        params: dict[str, str] = {
             "get": ",".join(variables),
             "for": f"tract:{tract_code}",
             "in": f"state:{state_fips} county:{county_fips}",
-            "key": self.api_key,
         }
+        if self.api_key:
+            params["key"] = self.api_key
 
         try:
             resp = await self.client.get(url, params=params)
