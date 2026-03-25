@@ -75,6 +75,32 @@ export interface ImageryListResponse {
   snapshots: ImagerySnapshot[];
 }
 
+// ── Demographics / Census types ───────────────────────────────────────────────
+
+export interface CensusSnapshot {
+  year: number;
+  dataset: "decennial" | "acs5";
+  total_population: number | null;
+  median_household_income: number | null;
+  median_home_value: number | null;
+  median_year_built: number | null;
+  total_housing_units: number | null;
+  occupied_housing_units: number | null;
+  owner_occupied_units: number | null;
+  renter_occupied_units: number | null;
+  vacancy_rate: number | null;
+  median_age: number | null;
+  median_gross_rent: number | null;
+}
+
+export interface DemographicsResponse {
+  parcel_id: string;
+  tract_fips: string | null;
+  snapshots: CensusSnapshot[];
+  subtitles: string[];
+  notes: string;
+}
+
 // ── API Error shape ───────────────────────────────────────────────────────────
 
 export interface ApiError {
@@ -98,6 +124,13 @@ export interface AppState {
   snapshots: ImagerySnapshot[];
   selectedSnapshot: ImagerySnapshot | null;
 
+  // Demographics state
+  demographics: DemographicsResponse | null;
+  demographicsLoading: boolean;
+
+  // The year the user is "focused" on (from clicking an imagery snapshot)
+  selectedYear: number | null;
+
   // Actions
   setParcel: (parcel: GeocodeResponse) => void;
   setLoading: (loading: boolean) => void;
@@ -105,5 +138,7 @@ export interface AppState {
   setTimelineStatus: (status: TimelineRequest | null) => void;
   setSnapshots: (snapshots: ImagerySnapshot[]) => void;
   setSelectedSnapshot: (snapshot: ImagerySnapshot | null) => void;
+  setDemographics: (data: DemographicsResponse | null) => void;
+  setDemographicsLoading: (loading: boolean) => void;
   reset: () => void;
 }

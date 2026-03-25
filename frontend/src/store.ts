@@ -7,6 +7,7 @@
 import { create } from "zustand";
 import type {
   AppState,
+  DemographicsResponse,
   GeocodeResponse,
   ImagerySnapshot,
   TimelineRequest,
@@ -24,6 +25,11 @@ export const useAppStore = create<AppState>((set) => ({
   snapshots: [],
   selectedSnapshot: null,
 
+  // Demographics
+  demographics: null,
+  demographicsLoading: false,
+  selectedYear: null,
+
   setParcel: (parcel: GeocodeResponse) =>
     set({
       parcel,
@@ -31,10 +37,13 @@ export const useAppStore = create<AppState>((set) => ({
       error: null,
       isLoading: false,
       timelineRequestId: parcel.timeline_request_id,
-      // Reset timeline state when a new parcel is loaded
+      // Reset timeline + demographics state when a new parcel is loaded
       timelineStatus: null,
       snapshots: [],
       selectedSnapshot: null,
+      demographics: null,
+      demographicsLoading: false,
+      selectedYear: null,
     }),
 
   setLoading: (isLoading: boolean) => set({ isLoading }),
@@ -58,7 +67,19 @@ export const useAppStore = create<AppState>((set) => ({
   },
 
   setSelectedSnapshot: (selectedSnapshot: ImagerySnapshot | null) =>
-    set({ selectedSnapshot }),
+    set({
+      selectedSnapshot,
+      // Sync the year focus for demographics highlighting
+      selectedYear: selectedSnapshot
+        ? parseInt(selectedSnapshot.capture_date.slice(0, 4), 10)
+        : null,
+    }),
+
+  setDemographics: (demographics: DemographicsResponse | null) =>
+    set({ demographics }),
+
+  setDemographicsLoading: (demographicsLoading: boolean) =>
+    set({ demographicsLoading }),
 
   reset: () =>
     set({
@@ -70,5 +91,8 @@ export const useAppStore = create<AppState>((set) => ({
       timelineStatus: null,
       snapshots: [],
       selectedSnapshot: null,
+      demographics: null,
+      demographicsLoading: false,
+      selectedYear: null,
     }),
 }));

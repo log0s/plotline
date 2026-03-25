@@ -18,7 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -64,6 +64,12 @@ class Parcel(Base):
         back_populates="parcel",
         cascade="all, delete-orphan",
         order_by="ImagerySnapshot.capture_date",
+    )
+    census_snapshots: Mapped[list[CensusSnapshot]] = relationship(
+        "CensusSnapshot",
+        back_populates="parcel",
+        cascade="all, delete-orphan",
+        order_by="CensusSnapshot.year",
     )
 
     __table_args__ = (
@@ -248,3 +254,69 @@ class ImagerySnapshot(Base):
             f"<ImagerySnapshot source={self.source!r} "
             f"date={self.capture_date} parcel={self.parcel_id}>"
         )
+
+
+class CensusSnapshot(Base):
+    """A single census data point for a parcel's tract in a given year."""
+
+    __tablename__ = "census_snapshots"
+
+    VALID_DATASETS = ("decennial", "acs5")
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    parcel_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("parcels.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    tract_fips: Mapped[str] = mapped_column(Text, nullable=False)
+    dataset: Mapped[str] = mapped_column(Text, nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Demographics — nullable, not every field available every year
+    total_population: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    median_household_income: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    median_home_value: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    median_year_built: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_housing_units: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    occupied_housing_units: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    owner_occupied_units: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    renter_occupied_units: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    vacancy_rate: Mapped[float | None] = mapped_column(Double, nullable=True)
+    median_age: Mapped[float | None] = mapped_column(Double, nullable=True)
+    median_gross_rent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    parcel: Mapped[Parcel] = relationship(
+        "Parcel",
+        back_populates="census_snapshots",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "dataset IN ('decennial', 'acs5')",
+            name="ck_census_snapshots_dataset",
+        ),
+        UniqueConstraint(
+            "parcel_id",
+            "dataset",
+            "year",
+            name="uq_census_snapshots_parcel_dataset_year",
+        ),
+        Index("idx_census_parcel_year", "parcel_id", "year"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<CensusSnapshot dataset={self.dataset!r} year={self.year} parcel={self.parcel_id}>"

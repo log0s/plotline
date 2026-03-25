@@ -8,10 +8,12 @@
  * Phase 2: adds Timeline component and useTimeline polling hook.
  */
 import { AnimatePresence, motion } from "framer-motion";
+import { DemographicsPanel } from "./components/DemographicsPanel";
 import { ParcelInfo } from "./components/ParcelInfo";
 import { SearchBar } from "./components/SearchBar";
 import { MapView } from "./components/MapView";
 import { Timeline } from "./components/Timeline";
+import { useDemographics } from "./hooks/useDemographics";
 import { useGeocoder } from "./hooks/useGeocoder";
 import { useTimeline } from "./hooks/useTimeline";
 import { useAppStore } from "./store";
@@ -22,6 +24,8 @@ export default function App() {
 
   // Start polling as soon as we have a timeline_request_id
   useTimeline();
+  // Fetch demographics once timeline completes
+  useDemographics();
 
   return (
     <div className="relative w-full h-full min-h-screen bg-navy-950 overflow-hidden">
@@ -123,8 +127,18 @@ export default function App() {
               </AnimatePresence>
             </div>
 
-            {/* Timeline strip — always visible at bottom */}
-            <Timeline />
+            {/* Timeline + demographics panel */}
+            <div className="flex flex-col lg:flex-row border-t border-navy-700/60 max-h-[45vh] lg:max-h-[40vh]">
+              {/* Timeline strip — takes left side on desktop, full width on mobile */}
+              <div className="lg:flex-1 lg:min-w-0 lg:border-r lg:border-navy-700/40 overflow-hidden">
+                <Timeline />
+              </div>
+
+              {/* Demographics — right side on desktop, below timeline on mobile */}
+              <div className="lg:w-[360px] lg:shrink-0 overflow-hidden">
+                <DemographicsPanel />
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

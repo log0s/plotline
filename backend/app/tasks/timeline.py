@@ -1,7 +1,8 @@
-"""Imagery timeline Celery task.
+"""Imagery timeline + census demographics Celery task.
 
 Searches Planetary Computer STAC for NAIP, Landsat, and Sentinel-2 imagery
 at a parcel location, then persists the results as imagery_snapshots rows.
+Also fetches Census Bureau demographic data for the parcel's tract.
 """
 
 from __future__ import annotations
@@ -14,6 +15,14 @@ from typing import Any
 
 from app.services import stac as stac_service
 from app.services import imagery as imagery_service
+from app.services import demographics as demographics_service
+from app.services.census import (
+    ACS5_YEARS,
+    DECENNIAL_YEARS,
+    CensusApiError,
+    CensusFetcher,
+    parse_tract_fips,
+)
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -183,6 +192,117 @@ async def _fetch_source(
     return items_saved
 
 
+async def _fetch_census(
+    parcel_id: uuid.UUID,
+    timeline_request_id: uuid.UUID,
+    tract_fips: str,
+    api_key: str,
+    timeout: float = 30.0,
+) -> int:
+    """Fetch Census Bureau data for a parcel's tract and persist snapshots.
+
+    Returns the number of census snapshots saved.
+    """
+    from app.db import SessionLocal
+    from app.models.parcels import TimelineRequestTask
+    from sqlalchemy import select as sa_select
+
+    try:
+        state_fips, county_fips, tract_code = parse_tract_fips(tract_fips)
+    except ValueError as exc:
+        logger.warning(f"Invalid tract FIPS: {exc}")
+        with SessionLocal() as db:
+            task_row = db.execute(
+                sa_select(TimelineRequestTask)
+                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                .where(TimelineRequestTask.source == "census")
+            ).scalars().first()
+            if task_row:
+                imagery_service.update_request_task(
+                    db, task_row, "skipped", error_message=str(exc)
+                )
+        return 0
+
+    # Mark task as processing
+    with SessionLocal() as db:
+        task_row = db.execute(
+            sa_select(TimelineRequestTask)
+            .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+            .where(TimelineRequestTask.source == "census")
+        ).scalars().first()
+        if task_row:
+            imagery_service.update_request_task(db, task_row, "processing")
+
+    fetcher = CensusFetcher(api_key=api_key, timeout=timeout)
+    items_saved = 0
+
+    try:
+        # Fetch decennial data
+        for year in DECENNIAL_YEARS:
+            try:
+                data = await fetcher.fetch_decennial(
+                    year, state_fips, county_fips, tract_code
+                )
+                if data:
+                    with SessionLocal() as db:
+                        demographics_service.upsert_census_snapshot(
+                            db,
+                            parcel_id=parcel_id,
+                            tract_fips=tract_fips,
+                            dataset="decennial",
+                            year=year,
+                            data=data,
+                            raw_data=data,
+                        )
+                        items_saved += 1
+                    logger.info(f"Census decennial {year} saved", extra={"tract": tract_fips})
+            except CensusApiError as exc:
+                logger.warning(f"Census decennial {year} failed: {exc}")
+            # Be a good citizen — small delay between requests
+            await asyncio.sleep(0.5)
+
+        # Fetch ACS 5-year data
+        for year in ACS5_YEARS:
+            try:
+                data = await fetcher.fetch_acs5(
+                    year, state_fips, county_fips, tract_code
+                )
+                if data:
+                    with SessionLocal() as db:
+                        demographics_service.upsert_census_snapshot(
+                            db,
+                            parcel_id=parcel_id,
+                            tract_fips=tract_fips,
+                            dataset="acs5",
+                            year=year,
+                            data=data,
+                            raw_data=data,
+                        )
+                        items_saved += 1
+                    logger.info(f"Census ACS5 {year} saved", extra={"tract": tract_fips})
+            except CensusApiError as exc:
+                logger.warning(f"Census ACS5 {year} failed: {exc}")
+            await asyncio.sleep(0.5)
+
+    finally:
+        await fetcher.close()
+
+    # Update task status
+    with SessionLocal() as db:
+        task_row = db.execute(
+            sa_select(TimelineRequestTask)
+            .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+            .where(TimelineRequestTask.source == "census")
+        ).scalars().first()
+        if task_row:
+            imagery_service.update_request_task(
+                db, task_row, "complete", items_found=items_saved
+            )
+
+    logger.info(f"Census fetch complete", extra={"items_saved": items_saved, "tract": tract_fips})
+    return items_saved
+
+
 async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
     """Orchestrate all imagery sources for a timeline request."""
     from app.db import SessionLocal
@@ -212,15 +332,19 @@ async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
             raise ValueError(f"Parcel {parcel_id} not found")
 
         lat, lng = parcel.latitude, parcel.longitude
+        tract_fips = parcel.census_tract_id
 
         # Transition to processing
         imagery_service.update_timeline_request_status(db, request, "processing")
 
-        # Create per-source task rows
+        # Create per-source task rows (include census if we have a tract FIPS)
+        sources = [s["source"] for s in _SOURCES]
+        if tract_fips:
+            sources.append("census")
         imagery_service.create_request_tasks(
             db,
             timeline_request_id=req_uuid,
-            sources=[s["source"] for s in _SOURCES],
+            sources=sources,
         )
 
     # Compute bounding box
@@ -230,7 +354,7 @@ async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
         extra={"parcel_id": str(parcel_id), "bbox": bbox},
     )
 
-    # Fetch each source independently — one failure doesn't block others
+    # Fetch each imagery source independently — one failure doesn't block others
     total_items = 0
     for source_cfg in _SOURCES:
         try:
@@ -241,6 +365,26 @@ async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
                 f"Unexpected error for source {source_cfg['source']}",
                 extra={"error": str(exc)},
             )
+
+    # Fetch census data if we have a tract FIPS and an API key
+    if tract_fips:
+        from app.config import get_settings
+        settings = get_settings()
+        if settings.census_api_key:
+            try:
+                count = await _fetch_census(
+                    parcel_id, req_uuid, tract_fips,
+                    api_key=settings.census_api_key,
+                    timeout=settings.census_api_timeout,
+                )
+                total_items += count
+            except Exception as exc:
+                logger.error(
+                    "Unexpected error fetching census data",
+                    extra={"error": str(exc)},
+                )
+        else:
+            logger.info("No CENSUS_API_KEY configured, skipping census fetch")
 
     # Mark request complete
     with SessionLocal() as db:

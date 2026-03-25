@@ -110,6 +110,31 @@ def _create_test_tables() -> None:
                 )
             """)
         )
+        conn.execute(
+            text("""
+                CREATE TABLE IF NOT EXISTS census_snapshots (
+                    id                       TEXT PRIMARY KEY,
+                    parcel_id                TEXT NOT NULL REFERENCES parcels(id),
+                    tract_fips               TEXT NOT NULL,
+                    dataset                  TEXT NOT NULL,
+                    year                     INTEGER NOT NULL,
+                    total_population         INTEGER,
+                    median_household_income   INTEGER,
+                    median_home_value        INTEGER,
+                    median_year_built        INTEGER,
+                    total_housing_units      INTEGER,
+                    occupied_housing_units   INTEGER,
+                    owner_occupied_units     INTEGER,
+                    renter_occupied_units    INTEGER,
+                    vacancy_rate             REAL,
+                    median_age               REAL,
+                    median_gross_rent        INTEGER,
+                    raw_data                 TEXT,
+                    created_at               TEXT DEFAULT (datetime('now')),
+                    UNIQUE (parcel_id, dataset, year)
+                )
+            """)
+        )
         conn.commit()
 
 

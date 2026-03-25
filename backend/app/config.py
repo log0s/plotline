@@ -45,6 +45,7 @@ class Settings(BaseSettings):
 
     # ── External APIs ─────────────────────────────────────────────────────────
     census_api_key: str | None = None
+    census_api_timeout: float = 30.0  # seconds — Census data API
     census_geocoder_url: str = (
         "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
     )

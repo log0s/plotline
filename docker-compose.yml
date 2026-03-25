@@ -36,6 +36,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       TITILER_URL: http://titiler:80
       API_INTERNAL_URL: http://api:8000
+      CENSUS_API_KEY: ${CENSUS_API_KEY:-}
     volumes:
       - ./backend:/app
       - ./scripts:/app/scripts
@@ -61,6 +62,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       TITILER_URL: http://titiler:80
       API_INTERNAL_URL: http://api:8000
+      CENSUS_API_KEY: ${CENSUS_API_KEY:-}
     volumes:
       - ./backend:/app
     depends_on:
