@@ -84,13 +84,39 @@ async def geocode_address(
             db, parcel.id
         )
         timeline_request_id = timeline_req.id
+
+        # If the existing request is complete but has no census data, and we
+        # now have a tract FIPS (backfilled), force a new request so the
+        # census task runs.
+        if (
+            not is_new_request
+            and timeline_req.status == "complete"
+            and parcel.census_tract_id
+        ):
+            from app.services import demographics as demographics_service
+
+            existing_census = demographics_service.get_census_snapshots(db, parcel.id)
+            if not existing_census:
+                from app.models.parcels import TimelineRequest
+
+                new_req = TimelineRequest(parcel_id=parcel.id, status="queued")
+                db.add(new_req)
+                db.commit()
+                db.refresh(new_req)
+                timeline_request_id = new_req.id
+                is_new_request = True
+                logger.info(
+                    "Created new timeline request for census backfill",
+                    extra={"parcel_id": str(parcel.id), "request_id": str(new_req.id)},
+                )
+
         if is_new_request:
             from app.tasks.timeline import fetch_imagery_timeline
 
-            fetch_imagery_timeline.delay(str(timeline_req.id))
+            fetch_imagery_timeline.delay(str(timeline_request_id))
             logger.info(
                 "Imagery timeline task dispatched",
-                extra={"parcel_id": str(parcel.id), "request_id": str(timeline_req.id)},
+                extra={"parcel_id": str(parcel.id), "request_id": str(timeline_request_id)},
             )
     except Exception as exc:
         # Non-fatal — geocode response is still returned

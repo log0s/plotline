@@ -294,6 +294,7 @@ function IncomeValueChart({
           {selectedYear && (
             <ReferenceLine
               x={selectedYear}
+              yAxisId="left"
               stroke={COLORS.reference}
               strokeDasharray="4 4"
               strokeWidth={1.5}

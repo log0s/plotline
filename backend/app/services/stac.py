@@ -166,7 +166,16 @@ def select_naip_items(items: list[dict[str, object]]) -> list[dict[str, object]]
 
 
 def select_landsat_items(items: list[dict[str, object]]) -> list[dict[str, object]]:
-    """One Landsat item per year — lowest cloud cover within that year."""
+    """One Landsat item per year — lowest cloud cover within that year.
+
+    Excludes Landsat 7 ETM+ (LE07) scenes because SLC-off failure since
+    2003 produces diagonal stripes of missing data in every scene.
+    """
+    # Filter out Landsat 7 SLC-off scenes
+    items = [
+        i for i in items
+        if not str(i.get("id", "")).startswith("LE07")
+    ]
     by_year: dict[int, list[dict[str, object]]] = defaultdict(list)
     for item in items:
         by_year[_capture_date(item).year].append(item)

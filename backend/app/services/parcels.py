@@ -85,6 +85,18 @@ def get_or_create_parcel(
     )
 
     if existing:
+        # Backfill census tract if the existing parcel is missing it
+        # (happens for parcels geocoded before the /geographies/ URL fix)
+        if not existing.census_tract_id and geocode_result.census_tract_id:
+            existing.census_tract_id = geocode_result.census_tract_id
+            existing.county = existing.county or geocode_result.county
+            existing.state_fips = existing.state_fips or geocode_result.state_fips
+            db.commit()
+            db.refresh(existing)
+            logger.info(
+                "Backfilled census tract on existing parcel",
+                extra={"parcel_id": str(existing.id), "tract": geocode_result.census_tract_id},
+            )
         logger.info(
             "Deduplication hit — returning existing parcel",
             extra={"parcel_id": str(existing.id), "radius_m": settings.parcel_dedup_radius_meters},
