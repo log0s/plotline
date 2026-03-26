@@ -1,6 +1,10 @@
 /**
- * CompareView — dual synchronized MapLibre maps with a draggable divider
+ * CompareView — dual synchronized MapLibre maps with a draggable swipe divider
  * for before/after imagery comparison.
+ *
+ * Architecture: both maps are full-width, stacked on top of each other.
+ * The right map (B) is clipped with clip-path so only the portion to
+ * the right of the divider is visible, revealing map A underneath on the left.
  */
 import maplibregl from "maplibre-gl";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -66,7 +70,7 @@ export function CompareView({ parcel }: CompareViewProps) {
     [],
   );
 
-  // Initialize both maps
+  // Initialize both maps — both are full-size, stacked
   useEffect(() => {
     if (!leftContainerRef.current || !rightContainerRef.current) return;
 
@@ -121,7 +125,8 @@ export function CompareView({ parcel }: CompareViewProps) {
   useApplySnapshot(rightMapRef, rightReadyRef, snapB, parcel);
 
   // Draggable divider handlers
-  const handleDragStart = useCallback(() => {
+  const handleDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
     isDraggingRef.current = true;
   }, []);
 
@@ -131,7 +136,7 @@ export function CompareView({ parcel }: CompareViewProps) {
       const rect = containerRef.current.getBoundingClientRect();
       const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
       const pct = ((clientX - rect.left) / rect.width) * 100;
-      setDividerPos(Math.max(10, Math.min(90, pct)));
+      setDividerPos(Math.max(5, Math.min(95, pct)));
     };
 
     const handleDragEnd = () => {
@@ -151,39 +156,30 @@ export function CompareView({ parcel }: CompareViewProps) {
     };
   }, []);
 
-  // Resize maps when divider moves
-  useEffect(() => {
-    leftMapRef.current?.resize();
-    rightMapRef.current?.resize();
-  }, [dividerPos]);
-
   return (
     <div ref={containerRef} className="relative w-full h-full select-none">
-      {/* Left map */}
-      <div
-        className="absolute top-0 left-0 bottom-0 overflow-hidden"
-        style={{ width: `${dividerPos}%` }}
-      >
-        <div ref={leftContainerRef} className="w-full h-full" style={{ minWidth: containerRef.current?.offsetWidth }} />
-      </div>
+      {/* Map A (left / underneath) — full size */}
+      <div ref={leftContainerRef} className="absolute inset-0" />
 
-      {/* Right map */}
+      {/* Map B (right / on top) — full size, clipped to show only right of divider */}
       <div
-        className="absolute top-0 right-0 bottom-0 overflow-hidden"
-        style={{ left: `${dividerPos}%` }}
+        className="absolute inset-0"
+        style={{ clipPath: `inset(0 0 0 ${dividerPos}%)` }}
       >
-        <div ref={rightContainerRef} className="w-full h-full" style={{ minWidth: containerRef.current?.offsetWidth }} />
+        <div ref={rightContainerRef} className="w-full h-full" />
       </div>
 
       {/* Draggable divider */}
       <div
-        className="absolute top-0 bottom-0 z-20 cursor-col-resize flex items-center"
-        style={{ left: `${dividerPos}%`, transform: "translateX(-50%)" }}
+        className="absolute top-0 bottom-0 z-20 cursor-col-resize"
+        style={{ left: `${dividerPos}%`, transform: "translateX(-50%)", width: "40px" }}
         onMouseDown={handleDragStart}
         onTouchStart={handleDragStart}
       >
-        <div className="w-1 h-full bg-amber-400/80" />
-        <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 left-1/2 w-8 h-8 rounded-full bg-navy-900/90 border-2 border-amber-400 flex items-center justify-center">
+        {/* Visible divider line */}
+        <div className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-1 bg-amber-400/80" />
+        {/* Drag handle */}
+        <div className="absolute top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-navy-900/90 border-2 border-amber-400 flex items-center justify-center shadow-lg">
           <svg className="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l-3 3 3 3M16 9l3 3-3 3" />
           </svg>

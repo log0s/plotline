@@ -46,7 +46,7 @@ FEATURED_LOCATIONS = [
         "display_order": 2,
     },
     {
-        "address": "4900 E 48th Ave, Denver, CO 80216",
+        "address": "4800 Telluride St, Denver, CO 80249",
         "name": "Green Valley Ranch",
         "subtitle": "Prairie to planned community in 15 years of explosive growth",
         "slug": "green-valley-ranch",
@@ -151,9 +151,66 @@ def main() -> None:
             print(f"FAILED: {exc}")
             continue
 
+    # Step 4: Pre-warm tiles for all featured locations
+    print(f"\n{'='*60}")
+    print("Pre-warming tiles for featured locations...")
+    print(f"{'='*60}")
+    _prewarm_featured_tiles(client, api)
+
     print(f"\n{'='*60}")
     print("Featured location seeding complete!")
     print(f"{'='*60}")
+
+
+def _prewarm_featured_tiles(client: httpx.Client, api: str) -> None:
+    """Hit the tile proxy for featured parcels to warm SAS/STAC caches."""
+    import math
+
+    try:
+        from app.db import SessionLocal
+        from app.models.parcels import FeaturedLocation as FL, ImagerySnapshot, Parcel
+        from sqlalchemy import select
+
+        db = SessionLocal()
+        try:
+            locations = db.scalars(select(FL).order_by(FL.display_order)).all()
+            for loc in locations:
+                parcel = db.get(Parcel, loc.parcel_id)
+                if not parcel:
+                    continue
+
+                # Get a few snapshots to warm (earliest + latest per source)
+                snaps = db.execute(
+                    select(ImagerySnapshot.id, ImagerySnapshot.source)
+                    .where(ImagerySnapshot.parcel_id == loc.parcel_id)
+                    .order_by(ImagerySnapshot.capture_date.desc())
+                    .limit(6)
+                ).all()
+
+                if not snaps:
+                    print(f"  {loc.name}: no snapshots, skipping")
+                    continue
+
+                lat, lng = parcel.latitude, parcel.longitude
+                warmed = 0
+                for snap_id, source in snaps[:3]:  # warm up to 3 snapshots
+                    for z in [14, 15]:
+                        n = 2 ** z
+                        x = int((lng + 180) / 360 * n)
+                        lat_rad = math.radians(lat)
+                        y = int((1 - math.log(math.tan(lat_rad) + 1 / math.cos(lat_rad)) / math.pi) / 2 * n)
+                        url = f"{api}/api/v1/imagery/{snap_id}/tiles/{z}/{x}/{y}"
+                        try:
+                            resp = client.get(url, timeout=30)
+                            if resp.status_code == 200:
+                                warmed += 1
+                        except Exception:
+                            pass
+                print(f"  {loc.name}: warmed {warmed} tiles")
+        finally:
+            db.close()
+    except Exception as exc:
+        print(f"  Pre-warming failed: {exc}")
 
 
 if __name__ == "__main__":

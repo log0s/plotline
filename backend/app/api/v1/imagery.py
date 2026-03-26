@@ -200,6 +200,16 @@ _COG_PARAMS: dict[str, dict[str, object]] = {
 }
 
 
+# 1x1 transparent PNG (68 bytes) — returned for out-of-bounds tile requests
+# so MapLibre doesn't log 404 errors for edge tiles.
+_TRANSPARENT_PNG = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+    b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+    b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
+    b"\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
 async def _fetch_titiler(
     titiler_url: str,
     params: dict[str, object] | list[tuple[str, str]],
@@ -221,6 +231,16 @@ async def _fetch_titiler(
             extra={"titiler_body": upstream.text[:500]},
         )
         raise HTTPException(status_code=502, detail="Titiler upstream error")
+
+    # Return a transparent tile for out-of-bounds requests instead of 404,
+    # so MapLibre doesn't log errors for edge tiles outside the COG extent.
+    if upstream.status_code == 404:
+        return Response(
+            content=_TRANSPARENT_PNG,
+            status_code=200,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=86400, immutable"},
+        )
 
     return Response(
         content=upstream.content,
@@ -332,17 +352,39 @@ async def get_signed_stac_item(
     # Release the DB connection before outbound HTTP calls
     db.close()
 
-    # Fetch the original STAC item from Planetary Computer
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(snap.cog_url)
-            resp.raise_for_status()
-            stac_item = resp.json()
-    except Exception as exc:
-        logger.error("Failed to fetch STAC item from %s", snap.cog_url, exc_info=exc)
-        raise HTTPException(status_code=502, detail="Failed to fetch STAC item") from exc
+    # Try Redis cache for the raw (unsigned) STAC item JSON.
+    # The item metadata is immutable; only band URLs need fresh signing.
+    from app.db import get_redis
 
-    # Sign the band assets Titiler will read (concurrently)
+    cache_key = f"stac:{snapshot_id}"
+    stac_item = None
+
+    try:
+        cached = get_redis().get(cache_key)
+        if cached:
+            stac_item = json.loads(cached)
+    except Exception:
+        pass  # Redis down — fall through to fetch
+
+    if stac_item is None:
+        # Fetch the original STAC item from Planetary Computer
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(snap.cog_url)
+                resp.raise_for_status()
+                stac_item = resp.json()
+        except Exception as exc:
+            logger.error("Failed to fetch STAC item from %s", snap.cog_url, exc_info=exc)
+            raise HTTPException(status_code=502, detail="Failed to fetch STAC item") from exc
+
+        # Cache the raw item (before signing) for 1 hour
+        try:
+            get_redis().setex(cache_key, 3600, json.dumps(stac_item))
+        except Exception:
+            pass
+
+    # Sign the band assets Titiler will read (concurrently).
+    # SAS tokens are cached separately in sign_pc_url().
     assets = stac_item.get("assets", {})
     bands = [b for b in ("red", "green", "blue") if b in assets and "href" in assets[b]]
     try:

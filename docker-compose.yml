@@ -78,7 +78,7 @@ services:
       - "8001:80"
     environment:
       - WORKERS_PER_CORE=1
-      - MAX_WORKERS=2
+      - MAX_WORKERS=4
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:80/healthz || exit 1"]
       interval: 15s

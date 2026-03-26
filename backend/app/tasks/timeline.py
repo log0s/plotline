@@ -71,6 +71,8 @@ async def _fetch_source(
     bbox: tuple[float, float, float, float],
     parcel_id: uuid.UUID,
     timeline_request_id: uuid.UUID,
+    lat: float = 0.0,
+    lng: float = 0.0,
 ) -> int:
     """Fetch one imagery source and persist snapshots. Returns items_found count."""
     from app.db import SessionLocal
@@ -132,6 +134,12 @@ async def _fetch_source(
                     db, task_row, "failed", error_message=str(exc)
                 )
         return 0
+
+    # Filter to items whose bbox actually contains the parcel point.
+    # The STAC search uses a buffered bbox, so adjacent tiles that don't
+    # cover the parcel can slip through.
+    if lat and lng:
+        raw_items = stac_service.filter_items_containing_point(raw_items, lat, lng)
 
     # Select representative items (one per year/quarter)
     selected = source_cfg["selector"](raw_items)
@@ -519,7 +527,7 @@ async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
     total_items = 0
     for source_cfg in _SOURCES:
         try:
-            count = await _fetch_source(source_cfg, bbox, parcel_id, req_uuid)
+            count = await _fetch_source(source_cfg, bbox, parcel_id, req_uuid, lat, lng)
             total_items += count
         except Exception as exc:
             logger.error(

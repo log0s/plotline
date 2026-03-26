@@ -49,3 +49,28 @@ def check_db_connection() -> bool:
         return True
     except Exception:
         return False
+
+
+# ── Redis ────────────────────────────────────────────────────────────────────
+
+import redis as _redis_lib  # noqa: E402
+
+_redis_client: _redis_lib.Redis | None = None
+
+
+def get_redis() -> _redis_lib.Redis:
+    """Return a shared Redis client (binary mode for tile bytes)."""
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = _redis_lib.from_url(
+            settings.redis_url, decode_responses=False
+        )
+    return _redis_client
+
+
+def check_redis_connection() -> bool:
+    """Probe Redis — used by the health endpoint."""
+    try:
+        return get_redis().ping()
+    except Exception:
+        return False

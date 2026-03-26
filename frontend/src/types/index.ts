@@ -157,8 +157,10 @@ export interface FeaturedLocation {
   slug: string;
   key_stat: string | null;
   description: string | null;
-  earliest_thumbnail: string | null;
-  latest_thumbnail: string | null;
+  latitude: number;
+  longitude: number;
+  earliest_snapshot_id: string | null;
+  latest_snapshot_id: string | null;
 }
 
 // ── API Error shape ───────────────────────────────────────────────────────────

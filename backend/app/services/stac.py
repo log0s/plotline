@@ -125,15 +125,63 @@ async def search_stac(
 # ── URL signing ───────────────────────────────────────────────────────────────
 
 
+_SAS_CACHE_TTL = 600  # 10 minutes (tokens last ~30 min)
+
+
 async def sign_pc_url(url: str) -> str:
     """Sign a Planetary Computer asset URL for authenticated access.
 
-    SAS tokens are short-lived; always sign at response time, never cache.
+    Signed URLs are cached in Redis for 10 minutes to avoid redundant
+    roundtrips to the SAS signing endpoint. Tokens last ~30 min so
+    the 10-min TTL provides a safe margin.
     """
+    from app.db import get_redis
+
+    cache_key = f"sas:{url}"
+    try:
+        cached = get_redis().get(cache_key)
+        if cached:
+            return cached.decode()
+    except Exception:
+        pass  # Redis down — fall through to signing
+
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(PC_SIGN_URL, params={"href": url})
         resp.raise_for_status()
-        return str(resp.json()["href"])
+        signed = str(resp.json()["href"])
+
+    try:
+        get_redis().setex(cache_key, _SAS_CACHE_TTL, signed.encode())
+    except Exception:
+        pass  # Redis down — signed URL still works, just not cached
+
+    return signed
+
+
+# ── Spatial filtering ─────────────────────────────────────────────────────────
+
+
+def filter_items_containing_point(
+    items: list[dict[str, object]],
+    lat: float,
+    lng: float,
+) -> list[dict[str, object]]:
+    """Keep only STAC items whose bbox actually contains the given point.
+
+    The STAC search uses a buffered bbox, so it can return items that
+    intersect the search area but don't cover the parcel itself (e.g.
+    adjacent NAIP tiles).  This filters them out.
+    """
+    result = []
+    for item in items:
+        bbox = item.get("bbox")
+        if not bbox or len(bbox) < 4:  # type: ignore[arg-type]
+            result.append(item)  # no bbox — keep it, can't verify
+            continue
+        w, s, e, n = float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])
+        if w <= lng <= e and s <= lat <= n:
+            result.append(item)
+    return result
 
 
 # ── Item selection (deduplication per time period) ────────────────────────────

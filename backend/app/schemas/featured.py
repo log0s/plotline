@@ -15,8 +15,10 @@ class FeaturedLocationResponse(BaseModel):
     slug: str
     key_stat: str | None
     description: str | None
-    earliest_thumbnail: str | None
-    latest_thumbnail: str | None
+    latitude: float
+    longitude: float
+    earliest_snapshot_id: str | None
+    latest_snapshot_id: str | None
 
     model_config = {"from_attributes": True}
 

@@ -5,7 +5,7 @@
  * Reads ?snap= query param to pre-select a snapshot.
  */
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getParcel } from "../api/geocode";
 import { getImagery, triggerTimeline } from "../api/imagery";
@@ -28,6 +28,7 @@ export default function ExplorePage() {
     parcel,
     setParcel,
     setSnapshots,
+    setTimelineStatus,
     snapshots,
     selectedSnapshot,
     setSelectedSnapshot,
@@ -74,6 +75,14 @@ export default function ExplorePage() {
             if (imagery.snapshots.length > 0) {
               setParcel(geocodeShape);
               setSnapshots(imagery.snapshots);
+              // Mark timeline as complete so demographics/events hooks fire
+              setTimelineStatus({
+                id: "",
+                parcel_id: data.id,
+                status: "complete",
+                tasks: [],
+                completed_at: null,
+              });
             } else {
               // No existing imagery — trigger a new timeline fetch
               const { timeline_request_id } = await triggerTimeline(data.id);
@@ -103,27 +112,28 @@ export default function ExplorePage() {
     return () => {
       cancelled = true;
     };
-  }, [parcelId, parcel, setParcel, setSnapshots]);
+  }, [parcelId, parcel, setParcel, setSnapshots, setTimelineStatus]);
 
-  // Apply ?snap= query param to select a snapshot
+  // Apply ?snap= query param on initial load (deep link support).
+  // Only runs when snapshots first arrive, not on every URL change.
+  const snapParamApplied = useRef(false);
   useEffect(() => {
+    if (snapParamApplied.current || snapshots.length === 0) return;
     const snapId = searchParams.get("snap");
-    if (!snapId || snapshots.length === 0) return;
+    if (!snapId) return;
 
     const match = snapshots.find((s) => s.id === snapId);
-    if (match && match.id !== selectedSnapshot?.id) {
+    if (match) {
       setSelectedSnapshot(match);
+      snapParamApplied.current = true;
     }
-  }, [searchParams, snapshots, selectedSnapshot, setSelectedSnapshot]);
+  }, [snapshots]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync URL when snapshot changes (user clicks in timeline)
   useEffect(() => {
     if (!selectedSnapshot) return;
-    const current = searchParams.get("snap");
-    if (current !== selectedSnapshot.id) {
-      setSearchParams({ snap: selectedSnapshot.id }, { replace: true });
-    }
-  }, [selectedSnapshot, searchParams, setSearchParams]);
+    setSearchParams({ snap: selectedSnapshot.id }, { replace: true });
+  }, [selectedSnapshot]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Error state — parcel not found
   if (loadError) {
