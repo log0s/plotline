@@ -333,7 +333,7 @@ Add a collapsible panel below (or beside) the imagery timeline. When census data
 - Left axis: median household income
 - Right axis: median home value
 - Two lines, clearly labeled
-- Add a note: "Nominal dollars (not inflation-adjusted)" — we're not adjusting for inflation in Phase 3 because the CPI calculation adds complexity for minimal portfolio-project value. If you want to be thorough, add it, but it's not required.
+- Add a note: "Nominal dollars (not inflation-adjusted)"
 
 **4. Neighborhood Snapshot Card** — Not a chart, just a styled info card showing the *most recent* ACS data:
 - Median age

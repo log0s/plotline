@@ -183,7 +183,7 @@ CREATE INDEX idx_property_events_type ON property_events (parcel_id, event_type)
 
 ## County Data Adapters
 
-Build an adapter pattern so each county's quirks are isolated. This is important architectural signal for a portfolio project — it shows you know how to handle messy real-world integrations cleanly.
+Build an adapter pattern so each county's quirks are isolated.
 
 ```python
 from abc import ABC, abstractmethod
