@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+from app.services.arcgis import query_feature_service
 from app.services.socrata import query_socrata
 
 logger = logging.getLogger(__name__)
@@ -104,13 +105,16 @@ class CountyAdapter(ABC):
 
 
 class DenverAdapter(CountyAdapter):
-    """Adapter for Denver County open data (data.denvergov.org)."""
+    """Adapter for Denver County open data (ArcGIS Hub).
 
-    DOMAIN = "data.denvergov.org"
-    # Denver Real Property Sales
-    SALES_RESOURCE = "hmrh-5s3x"
-    # Denver Building Permits
-    PERMITS_RESOURCE = "jea5-cqgq"
+    Denver migrated from Socrata (data.denvergov.org) to ArcGIS Hub in ~2025.
+    Permits are available via ArcGIS Feature Services (residential + commercial).
+    Property sales data is no longer available via public API.
+    """
+
+    _ARCGIS_BASE = "https://services1.arcgis.com/zdB7qR0BtYrg0Xpl/arcgis/rest/services"
+    RESIDENTIAL_PERMITS_URL = f"{_ARCGIS_BASE}/ODC_DEV_RESIDENTIALCONSTPERMIT_P/FeatureServer/316"
+    COMMERCIAL_PERMITS_URL = f"{_ARCGIS_BASE}/ODC_DEV_COMMERCIALCONSTPERMIT_P/FeatureServer/317"
 
     @property
     def county_name(self) -> str:
@@ -123,39 +127,9 @@ class DenverAdapter(CountyAdapter):
         *,
         app_token: str | None = None,
     ) -> list[PropertyEventData]:
-        where = f"upper(address) LIKE '{street_number} {street_name}%'"
-        try:
-            rows = await query_socrata(
-                self.DOMAIN,
-                self.SALES_RESOURCE,
-                where=where,
-                order="sale_date DESC",
-                app_token=app_token,
-            )
-        except Exception as exc:
-            logger.warning(f"Denver sales query failed: {exc}")
-            return []
-        return [self._parse_sale(row) for row in rows]
-
-    def _parse_sale(self, row: dict[str, Any]) -> PropertyEventData:
-        return PropertyEventData(
-            event_type="sale",
-            event_date=parse_date(row.get("sale_date")),
-            sale_price=safe_int(row.get("sale_price")),
-            permit_type=None,
-            permit_description=None,
-            permit_valuation=None,
-            description=self._format_sale_description(row),
-            source="denver_sales",
-            source_record_id=row.get("reception_num") or row.get("id", ""),
-            raw_data=row,
-        )
-
-    def _format_sale_description(self, row: dict[str, Any]) -> str:
-        price = safe_int(row.get("sale_price"))
-        if price and price > 0:
-            return f"Sold for ${price:,}"
-        return "Property sale recorded (price not disclosed)"
+        # Denver property sales are no longer available via public API
+        # (Socrata dataset hmrh-5s3x was retired when Denver moved to ArcGIS Hub)
+        return []
 
     async def fetch_permits(
         self,
@@ -164,44 +138,62 @@ class DenverAdapter(CountyAdapter):
         *,
         app_token: str | None = None,
     ) -> list[PropertyEventData]:
-        where = f"upper(address) LIKE '{street_number} {street_name}%'"
-        try:
-            rows = await query_socrata(
-                self.DOMAIN,
-                self.PERMITS_RESOURCE,
-                where=where,
-                order="issue_date DESC",
-                app_token=app_token,
-            )
-        except Exception as exc:
-            logger.warning(f"Denver permits query failed: {exc}")
-            return []
-        return [self._parse_permit(row) for row in rows]
+        # Use the full ADDRESS field with LIKE — handles directional prefixes
+        # (e.g. "1437 N BANNOCK ST") and case variations reliably.
+        where = f"upper(ADDRESS) LIKE '{street_number} %{street_name}%'"
+        results: list[PropertyEventData] = []
+        for url, label in [
+            (self.RESIDENTIAL_PERMITS_URL, "residential"),
+            (self.COMMERCIAL_PERMITS_URL, "commercial"),
+        ]:
+            try:
+                rows = await query_feature_service(
+                    url,
+                    where=where,
+                    order_by="DATE_ISSUED DESC",
+                    result_record_count=100,
+                )
+            except Exception as exc:
+                logger.warning(f"Denver {label} permits query failed: {exc}")
+                continue
+            results.extend(self._parse_permit(row) for row in rows)
+        return results
 
     def _parse_permit(self, row: dict[str, Any]) -> PropertyEventData:
+        # ArcGIS returns epoch-ms timestamps for date fields
+        raw_date = row.get("DATE_ISSUED")
+        event_date: date | None = None
+        if raw_date is not None:
+            try:
+                from datetime import datetime, timezone
+                event_date = datetime.fromtimestamp(
+                    int(raw_date) / 1000, tz=timezone.utc
+                ).date()
+            except (ValueError, TypeError, OSError):
+                event_date = parse_date(str(raw_date))
+
+        raw_type = row.get("CLASS") or "Permit"
         return PropertyEventData(
-            event_type=classify_permit(row.get("permit_type", "")),
-            event_date=parse_date(row.get("issue_date")),
+            event_type=classify_permit(raw_type),
+            event_date=event_date,
             sale_price=None,
-            permit_type=row.get("permit_type"),
-            permit_description=row.get("project_description"),
-            permit_valuation=safe_int(row.get("valuation")),
-            description=self._format_permit_description(row),
+            permit_type=raw_type,
+            permit_description=None,
+            permit_valuation=safe_int(row.get("VALUATION")),
+            description=self._format_permit_description(row, raw_type),
             source="denver_permits",
-            source_record_id=row.get("permit_num") or row.get("id", ""),
+            source_record_id=row.get("PERMIT_NUM") or "",
             raw_data=row,
         )
 
-    def _format_permit_description(self, row: dict[str, Any]) -> str:
-        parts: list[str] = []
-        ptype = row.get("permit_type", "Permit")
-        parts.append(ptype)
-        desc = row.get("project_description")
-        if desc:
-            parts.append(f"— {desc[:120]}")
-        val = safe_int(row.get("valuation"))
+    def _format_permit_description(self, row: dict[str, Any], ptype: str) -> str:
+        parts: list[str] = [ptype]
+        val = safe_int(row.get("VALUATION"))
         if val and val > 0:
             parts.append(f"(${val:,} valuation)")
+        contractor = row.get("CONTRACTOR_NAME")
+        if contractor:
+            parts.append(f"— {contractor[:80]}")
         return " ".join(parts)
 
 
@@ -209,16 +201,21 @@ class DenverAdapter(CountyAdapter):
 
 
 class AdamsCountyAdapter(CountyAdapter):
-    """Adapter for Adams County open data (data.adcogov.org).
+    """Adapter for Adams County open data (ArcGIS Hub).
 
-    Adams County's data portal is less standardized than Denver's.
-    Resource IDs may need verification against the portal.
+    Adams County migrated from Socrata (data.adcogov.org) to ArcGIS Hub.
+    Building permits are available via the "Eye On Adams" Feature Service.
+    Property sales data is not available via public API.
+
+    Note: Adams County only covers unincorporated areas. Municipalities like
+    Thornton, Westminster, etc. issue their own permits, so addresses within
+    those cities may return no results.
     """
 
-    DOMAIN = "data.adcogov.org"
-    # These resource IDs should be verified against the portal
-    SALES_RESOURCE = "s3yg-wa5f"
-    PERMITS_RESOURCE = "37ih-ctda"
+    PERMITS_URL = (
+        "https://services3.arcgis.com/4PNQOtAivErR7nbT/arcgis/rest/services"
+        "/Building_Permits_Eye_On_Adams/FeatureServer/0"
+    )
 
     @property
     def county_name(self) -> str:
@@ -231,35 +228,8 @@ class AdamsCountyAdapter(CountyAdapter):
         *,
         app_token: str | None = None,
     ) -> list[PropertyEventData]:
-        where = f"upper(situs_address) LIKE '{street_number} {street_name}%'"
-        try:
-            rows = await query_socrata(
-                self.DOMAIN,
-                self.SALES_RESOURCE,
-                where=where,
-                order="sale_date DESC",
-                app_token=app_token,
-            )
-        except Exception as exc:
-            logger.warning(f"Adams County sales query failed: {exc}")
-            return []
-        return [self._parse_sale(row) for row in rows]
-
-    def _parse_sale(self, row: dict[str, Any]) -> PropertyEventData:
-        price = safe_int(row.get("sale_price"))
-        desc = f"Sold for ${price:,}" if price and price > 0 else "Property sale recorded"
-        return PropertyEventData(
-            event_type="sale",
-            event_date=parse_date(row.get("sale_date")),
-            sale_price=price,
-            permit_type=None,
-            permit_description=None,
-            permit_valuation=None,
-            description=desc,
-            source="adams_sales",
-            source_record_id=row.get("reception_number") or row.get("id", ""),
-            raw_data=row,
-        )
+        # Adams County property sales are not available via public API
+        return []
 
     async def fetch_permits(
         self,
@@ -268,14 +238,13 @@ class AdamsCountyAdapter(CountyAdapter):
         *,
         app_token: str | None = None,
     ) -> list[PropertyEventData]:
-        where = f"upper(address) LIKE '{street_number} {street_name}%'"
+        where = f"upper(CombinedAddress) LIKE '{street_number} %{street_name}%'"
         try:
-            rows = await query_socrata(
-                self.DOMAIN,
-                self.PERMITS_RESOURCE,
+            rows = await query_feature_service(
+                self.PERMITS_URL,
                 where=where,
-                order="issue_date DESC",
-                app_token=app_token,
+                order_by="CaseOpened DESC",
+                result_record_count=100,
             )
         except Exception as exc:
             logger.warning(f"Adams County permits query failed: {exc}")
@@ -283,19 +252,40 @@ class AdamsCountyAdapter(CountyAdapter):
         return [self._parse_permit(row) for row in rows]
 
     def _parse_permit(self, row: dict[str, Any]) -> PropertyEventData:
-        raw_type = row.get("type") or row.get("permit_type", "")
+        # ArcGIS returns epoch-ms timestamps
+        raw_date = row.get("CaseOpened")
+        event_date: date | None = None
+        if raw_date is not None:
+            try:
+                from datetime import datetime, timezone
+                event_date = datetime.fromtimestamp(
+                    int(raw_date) / 1000, tz=timezone.utc
+                ).date()
+            except (ValueError, TypeError, OSError):
+                event_date = parse_date(str(raw_date))
+
+        raw_type = row.get("TypeOfWork") or row.get("ClassOfWork") or "Permit"
+        description_text = row.get("Description") or ""
         return PropertyEventData(
             event_type=classify_permit(raw_type),
-            event_date=parse_date(row.get("issue_date")),
+            event_date=event_date,
             sale_price=None,
             permit_type=raw_type,
-            permit_description=row.get("description"),
-            permit_valuation=safe_int(row.get("valuation")),
-            description=f"{raw_type} — {row.get('description', '')[:120]}".strip(" —"),
+            permit_description=description_text or None,
+            permit_valuation=None,
+            description=self._format_permit_description(row, raw_type, description_text),
             source="adams_permits",
-            source_record_id=row.get("permit_number") or row.get("id", ""),
+            source_record_id=row.get("RecordID_") or "",
             raw_data=row,
         )
+
+    def _format_permit_description(
+        self, row: dict[str, Any], ptype: str, description: str,
+    ) -> str:
+        parts: list[str] = [ptype]
+        if description:
+            parts.append(f"— {description[:120]}")
+        return " ".join(parts)
 
 
 # ── Permit classification ─────────────────────────────────────────────────────
@@ -312,7 +302,10 @@ def classify_permit(raw_type: str) -> str:
         return "permit_mechanical"
     if "PLUM" in raw:
         return "permit_plumbing"
-    if any(k in raw for k in ("BUILD", "BLDR", "NEW", "ADDITION", "REMODEL")):
+    if any(k in raw for k in (
+        "BUILD", "BLDR", "NEW", "ADDITION", "REMODEL",
+        "ALTERATION", "TENANT FINISH", "RENOVATION",
+    )):
         return "permit_building"
     return "permit_other"
 

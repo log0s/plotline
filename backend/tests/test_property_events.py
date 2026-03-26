@@ -190,62 +190,59 @@ class TestAdapterRegistry:
 
 
 class TestDenverAdapterParsing:
-    def test_parse_sale(self) -> None:
+    def test_fetch_sales_returns_empty(self) -> None:
+        """Denver sales data is no longer available via public API."""
+        import asyncio
         adapter = DenverAdapter()
-        row = {
-            "address": "123 MAIN ST",
-            "sale_date": "2020-06-15T00:00:00.000",
-            "sale_price": "450000",
-            "reception_num": "2020123456",
-        }
-        event = adapter._parse_sale(row)
-        assert event.event_type == "sale"
-        assert event.event_date == date(2020, 6, 15)
-        assert event.sale_price == 450000
-        assert event.source == "denver_sales"
-        assert event.source_record_id == "2020123456"
-        assert "450,000" in event.description
+        result = asyncio.get_event_loop().run_until_complete(
+            adapter.fetch_sales("123", "MAIN")
+        )
+        assert result == []
 
-    def test_parse_sale_no_price(self) -> None:
+    def test_parse_permit_building(self) -> None:
         adapter = DenverAdapter()
+        # ArcGIS row with epoch-ms timestamp
         row = {
-            "address": "456 ELM AVE",
-            "sale_date": "2019-01-01T00:00:00.000",
-            "sale_price": "0",
-            "reception_num": "2019999999",
-        }
-        event = adapter._parse_sale(row)
-        assert "not disclosed" in event.description
-
-    def test_parse_permit(self) -> None:
-        adapter = DenverAdapter()
-        row = {
-            "address": "123 MAIN ST",
-            "issue_date": "2021-03-10T00:00:00.000",
-            "permit_type": "BLDR",
-            "project_description": "New single family residence",
-            "valuation": "350000",
-            "permit_num": "P2021-001",
+            "ADDRESS": "123 N MAIN ST",
+            "DATE_ISSUED": 1615334400000,  # 2021-03-10 UTC
+            "CLASS": "Alteration/Tenant Finish",
+            "VALUATION": 350000,
+            "PERMIT_NUM": "2021-COMMCON-001",
+            "CONTRACTOR_NAME": "ACME BUILDERS",
         }
         event = adapter._parse_permit(row)
         assert event.event_type == "permit_building"
         assert event.event_date == date(2021, 3, 10)
         assert event.permit_valuation == 350000
         assert event.source == "denver_permits"
-        assert "BLDR" in event.description
+        assert event.source_record_id == "2021-COMMCON-001"
+        assert "Alteration/Tenant Finish" in event.description
 
     def test_parse_permit_demolition(self) -> None:
         adapter = DenverAdapter()
         row = {
-            "address": "789 OAK DR",
-            "issue_date": "2018-09-22T00:00:00.000",
-            "permit_type": "DEMO",
-            "project_description": "Demolition of single family",
-            "valuation": "12000",
-            "permit_num": "P2018-555",
+            "ADDRESS": "789 OAK DR",
+            "DATE_ISSUED": 1537574400000,  # 2018-09-22 UTC
+            "CLASS": "Demolition",
+            "VALUATION": 12000,
+            "PERMIT_NUM": "2018-COMMCON-555",
         }
         event = adapter._parse_permit(row)
         assert event.event_type == "permit_demolition"
+        assert event.event_date == date(2018, 9, 22)
+
+    def test_parse_permit_no_date(self) -> None:
+        adapter = DenverAdapter()
+        row = {
+            "ADDRESS": "100 TEST ST",
+            "DATE_ISSUED": None,
+            "CLASS": "Special Event",
+            "VALUATION": 500,
+            "PERMIT_NUM": "2020-COMMCON-999",
+        }
+        event = adapter._parse_permit(row)
+        assert event.event_date is None
+        assert event.event_type == "permit_other"
 
 
 # ── Property Events DB Operations ────────────────────────────────────────────

@@ -61,7 +61,7 @@ async def query_socrata(
         extra={"domain": domain, "resource": resource_id, "where": where},
     )
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
         try:
             resp = await client.get(url, params=params, headers=headers)
         except httpx.TimeoutException as exc:

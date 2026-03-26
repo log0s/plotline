@@ -13,6 +13,11 @@ export function usePropertyEvents() {
   const timelineStatus = useAppStore((s) => s.timelineStatus?.status ?? null);
   const fetchedRef = useRef<string | null>(null);
 
+  // Reset the guard when the parcel changes so a new search always fetches
+  useEffect(() => {
+    fetchedRef.current = null;
+  }, [parcelId]);
+
   useEffect(() => {
     if (!parcelId || timelineStatus !== "complete") return;
     if (fetchedRef.current === parcelId) return;

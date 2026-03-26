@@ -72,7 +72,7 @@ async def geocode_address(address: str, settings: Settings) -> GeocodeResult:
         "address": address,
         "benchmark": _BENCHMARK,
         "vintage": _VINTAGE,
-        "layers": "Census Tracts",
+        "layers": "Census Tracts,Counties",
         "format": "json",
     }
     if settings.census_api_key:
@@ -132,7 +132,13 @@ async def geocode_address(address: str, settings: Settings) -> GeocodeResult:
             tract_fips = tract.get("TRACT")
             if state_fips and county_fips and tract_fips:
                 census_tract_id = f"{state_fips}{county_fips}{tract_fips}"
-            county = tract.get("BASENAME")
+
+        # County name comes from the Counties geography, not the tract
+        counties = geographies.get("Counties", [])
+        if counties:
+            county = counties[0].get("BASENAME")
+        elif census_tracts:
+            county = census_tracts[0].get("NAME", "").split(",")[0].strip() or None
 
         logger.info(
             "Census Geocoder match found",

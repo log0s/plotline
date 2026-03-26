@@ -294,6 +294,11 @@ async def proxy_imagery_tile(
     if not snap:
         raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_id} not found")
 
+    # Close the DB session before the outbound HTTP call to Titiler so we
+    # don't hold a connection idle-in-transaction for the duration of the
+    # (potentially slow) upstream request.
+    db.close()
+
     if snap.source == "landsat":
         return await _proxy_landsat_tile(snap, z, x, y, settings)
     return await _proxy_cog_tile(snap, z, x, y, settings)
@@ -320,6 +325,9 @@ async def get_signed_stac_item(
     snap = imagery_service.get_snapshot_by_id(db, snapshot_id)
     if not snap or snap.source != "landsat":
         raise HTTPException(status_code=404, detail="Not found or not a STAC-tile source")
+
+    # Release the DB connection before outbound HTTP calls
+    db.close()
 
     # Fetch the original STAC item from Planetary Computer
     try:
