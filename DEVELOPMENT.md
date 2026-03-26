@@ -36,3 +36,13 @@ Took about 20 minutes again to build everything out. Debug took about eight minu
 * One very common recurring issue is logic around caching; it seems to struggle with knowing what is and is not appropriate to cache, and when to ignore caching even if it is appropriate for some cases/uses. This could also be a configuration thing, but I'm leaning towards it being a general limitation of the tool's capabilities in general, as there's a lot of nuance around this.
 * Also consistently forgets to clean up after itself (clear out DB, update old implementations stored, etc) with major data changes. Probably worth noting and saving as a global Claude config.
 * Related to the above, it frequently misconstrues the actual issue, and tries to patch in fixes for old/missing/misconfigured data instead of just cleaning up.
+
+### Phase 4
+
+Slightly faster this time at only ~16 minutes to build, which makes sense given the tighter scope. Got it mostly right from the jump even with outdated data sources. Took about thirty or so minutes to debug everything, a significant chunk of which was dedicated to finding/updating open data sources. Overall seemed a bit cleaner in this phase, likely as a result of getting the junk out of CLAUDE.md and not polluting context. Speaking of context, this session really showed the power of it; it took ~13 minutes to find a new open data source for Denver, and then barely 3 minutes later to accomplish the same for Adams county.
+
+* Has a tendency to sometimes ignore instructions in order to make tests pass (e.g. changing a TypeScript definition to "any"); hard to say if this is a general tendency or context being overly full without more data, though.
+* Actually did a decent job filling in some UX gaps on this one (e.g. loading indicators). Pleasantly surprised.
+* Some more basic mistakes, which to be honest I didn't expect --- not closing connections properly after use, blocking cleanup from async calls (not actually doing async), etc.
+* Does a good job on thinking through UI data freshness bugs; actually takes the time to follow the logical thread through various issues and find the actual problem. Seems overall much better at this than at semi-equivalent DB issues.
+* Can work through some surprisingly complex issues fairly well (e.g. tracking down new open data endpoint for Denver through multiple trails).
