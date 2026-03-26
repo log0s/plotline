@@ -1,15 +1,15 @@
 /**
  * MapView — MapLibre GL map centered on the geocoded parcel.
  *
- * Phase 2 additions:
- *   - Imagery layer: when a snapshot is selected in the Timeline, it's displayed
- *     as a raster layer with a crossfade transition.
- *   - Info chip: shows the selected imagery source, date, and resolution.
+ * When a snapshot is selected in the Timeline, it's displayed
+ * as a raster layer with a crossfade transition via the shared
+ * applyImageryLayer utility.
  */
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
-import type { GeocodeResponse, ImagerySnapshot } from "../types";
+import { applyImageryLayer } from "../utils/applyImageryLayer";
 import { useAppStore } from "../store";
+import type { GeocodeResponse, ImagerySnapshot } from "../types";
 
 interface MapViewProps {
   parcel: GeocodeResponse;
@@ -24,8 +24,14 @@ const SOURCE_LABELS: Record<string, string> = {
   sentinel2: "Sentinel-2",
 };
 
-const IMAGERY_SOURCE_ID = "plotline-imagery";
-const IMAGERY_LAYER_ID = "plotline-imagery-layer";
+function isWebGLSupported(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    return !!(canvas.getContext("webgl2") || canvas.getContext("webgl"));
+  } catch {
+    return false;
+  }
+}
 
 export function MapView({ parcel }: MapViewProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -35,6 +41,22 @@ export function MapView({ parcel }: MapViewProps) {
 
   const { selectedSnapshot } = useAppStore();
   const [infoChip, setInfoChip] = useState<ImagerySnapshot | null>(null);
+  const [webglSupported] = useState(isWebGLSupported);
+
+  if (!webglSupported) {
+    return (
+      <div className="relative w-full h-full flex items-center justify-center bg-navy-900">
+        <div className="text-center px-6 max-w-md">
+          <h3 className="text-lg font-bold text-white mb-2">WebGL not supported</h3>
+          <p className="text-sm text-slate-400">
+            Your browser doesn't support WebGL, which is required to display
+            the interactive map. Please try a modern browser like Chrome, Firefox,
+            or Edge.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // Initialise map on mount
   useEffect(() => {
@@ -107,85 +129,24 @@ export function MapView({ parcel }: MapViewProps) {
     const map = mapRef.current;
     if (!map) return;
 
-    const applySnapshot = (snap: ImagerySnapshot | null) => {
+    const apply = (snap: ImagerySnapshot | null) => {
       if (!mapReadyRef.current) {
-        // Wait for map to finish loading, then retry
         const onLoad = () => {
-          applySnapshot(snap);
+          apply(snap);
           map.off("load", onLoad);
         };
         map.on("load", onLoad);
         return;
       }
 
-      // Remove existing layer + source
-      if (map.getLayer(IMAGERY_LAYER_ID)) map.removeLayer(IMAGERY_LAYER_ID);
-      if (map.getSource(IMAGERY_SOURCE_ID)) map.removeSource(IMAGERY_SOURCE_ID);
-
-      if (!snap) {
-        setInfoChip(null);
-        return;
-      }
-
-      if (snap.id) {
-        // Tile proxy endpoint — signing happens server-side per request,
-        // so SAS tokens never expire in the browser's tile URL template.
-        const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
-        const tileUrl = `${apiBase}/api/v1/imagery/${snap.id}/tiles/{z}/{x}/{y}`;
-        map.addSource(IMAGERY_SOURCE_ID, {
-          type: "raster",
-          tiles: [tileUrl],
-          tileSize: 256,
-        });
-      } else if (snap.thumbnail_url) {
-        // Fallback: static preview image overlay centered on the parcel
-        const offset = 0.003; // ~300m
-        const lat = parcel.latitude;
-        const lng = parcel.longitude;
-        map.addSource(IMAGERY_SOURCE_ID, {
-          type: "image",
-          url: snap.thumbnail_url,
-          coordinates: [
-            [lng - offset, lat + offset],
-            [lng + offset, lat + offset],
-            [lng + offset, lat - offset],
-            [lng - offset, lat - offset],
-          ],
-        });
-      } else {
-        setInfoChip(null);
-        return;
-      }
-
-      // Insert above water/landcover but below roads, buildings, and labels.
-      // "aeroway_fill" is the first layer after all landcover/water fills in
-      // the OpenFreeMap liberty style, so imagery renders on top of the base
-      // map but underneath transport and label layers.
-      const beforeLayer = map.getLayer("boundary_3") ? "boundary_3"
-        : map.getLayer("building") ? "building"
-        : undefined;
-
-      map.addLayer(
-        {
-          id: IMAGERY_LAYER_ID,
-          type: "raster",
-          source: IMAGERY_SOURCE_ID,
-          paint: { "raster-opacity": 0, "raster-opacity-transition": { duration: 600 } },
-        },
-        beforeLayer,
-      );
-
-      // Fade in
-      requestAnimationFrame(() => {
-        if (map.getLayer(IMAGERY_LAYER_ID)) {
-          map.setPaintProperty(IMAGERY_LAYER_ID, "raster-opacity", 0.85);
-        }
+      applyImageryLayer(map, snap, {
+        lat: parcel.latitude,
+        lng: parcel.longitude,
       });
-
       setInfoChip(snap);
     };
 
-    applySnapshot(selectedSnapshot);
+    apply(selectedSnapshot);
   }, [selectedSnapshot, parcel.latitude, parcel.longitude]);
 
   return (

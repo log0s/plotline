@@ -147,6 +147,20 @@ export interface PropertyEventsResponse {
   summary: EventsSummary;
 }
 
+// ── Featured Locations ────────────────────────────────────────────────────────
+
+export interface FeaturedLocation {
+  id: string;
+  parcel_id: string;
+  name: string;
+  subtitle: string;
+  slug: string;
+  key_stat: string | null;
+  description: string | null;
+  earliest_thumbnail: string | null;
+  latest_thumbnail: string | null;
+}
+
 // ── API Error shape ───────────────────────────────────────────────────────────
 
 export interface ApiError {
@@ -156,10 +170,7 @@ export interface ApiError {
 
 // ── Application state ─────────────────────────────────────────────────────────
 
-export type AppView = "landing" | "map";
-
 export interface AppState {
-  view: AppView;
   parcel: GeocodeResponse | null;
   isLoading: boolean;
   error: string | null;
@@ -181,6 +192,10 @@ export interface AppState {
   // The year the user is "focused" on (from clicking an imagery snapshot)
   selectedYear: number | null;
 
+  // Compare mode
+  compareMode: boolean;
+  compareSnapshots: [ImagerySnapshot | null, ImagerySnapshot | null];
+
   // Actions
   setParcel: (parcel: GeocodeResponse) => void;
   setLoading: (loading: boolean) => void;
@@ -192,5 +207,7 @@ export interface AppState {
   setDemographicsLoading: (loading: boolean) => void;
   setPropertyEvents: (data: PropertyEventsResponse | null) => void;
   setPropertyEventsLoading: (loading: boolean) => void;
+  setCompareMode: (mode: boolean) => void;
+  setCompareSnapshot: (index: 0 | 1, snapshot: ImagerySnapshot | null) => void;
   reset: () => void;
 }

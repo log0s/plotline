@@ -7,7 +7,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import demographics, events, geocode, health, imagery, parcels
+from app.api.v1 import demographics, events, featured, geocode, health, imagery, parcels
 from app.config import get_settings
 from app.logging_config import configure_logging
 
@@ -43,6 +43,7 @@ def create_app() -> FastAPI:
     app.include_router(imagery.router, prefix="/api/v1", tags=["imagery"])
     app.include_router(demographics.router, prefix="/api/v1", tags=["demographics"])
     app.include_router(events.router, prefix="/api/v1", tags=["events"])
+    app.include_router(featured.router, prefix="/api/v1", tags=["featured"])
 
     @app.on_event("startup")
     async def on_startup() -> None:

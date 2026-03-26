@@ -1,0 +1,115 @@
+/**
+ * FeaturedCards — grid of pre-computed example locations on the landing page.
+ * Fetches from the /api/v1/featured endpoint; falls back to static placeholders
+ * if the API returns nothing (e.g. before seeding).
+ */
+import { useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
+import { MapPin } from "lucide-react";
+import { Link } from "react-router-dom";
+import { getFeaturedLocations } from "../api/featured";
+import type { FeaturedLocation } from "../types";
+
+const PLACEHOLDER_CARDS: FeaturedLocation[] = [
+  {
+    id: "placeholder-1",
+    parcel_id: "",
+    name: "Stapleton / Central Park",
+    subtitle: "Airport to neighborhood — the largest urban redevelopment in US history",
+    slug: "stapleton-central-park",
+    key_stat: null,
+    description: null,
+    earliest_thumbnail: null,
+    latest_thumbnail: null,
+  },
+  {
+    id: "placeholder-2",
+    parcel_id: "",
+    name: "RiNo Art District",
+    subtitle: "Industrial warehouses to breweries and condos in under a decade",
+    slug: "rino-art-district",
+    key_stat: null,
+    description: null,
+    earliest_thumbnail: null,
+    latest_thumbnail: null,
+  },
+  {
+    id: "placeholder-3",
+    parcel_id: "",
+    name: "Green Valley Ranch",
+    subtitle: "Prairie to planned community in 15 years of explosive growth",
+    slug: "green-valley-ranch",
+    key_stat: null,
+    description: null,
+    earliest_thumbnail: null,
+    latest_thumbnail: null,
+  },
+];
+
+export function FeaturedCards() {
+  const { data: apiLocations } = useQuery({
+    queryKey: ["featured"],
+    queryFn: getFeaturedLocations,
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const locations =
+    apiLocations && apiLocations.length > 0 ? apiLocations : PLACEHOLDER_CARDS;
+
+  return (
+    <section className="w-full max-w-4xl mx-auto px-4 py-12">
+      <h2 className="text-sm font-medium uppercase tracking-widest text-slate-500 text-center mb-8">
+        Featured locations
+      </h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {locations.map((card, i) => {
+          const href = card.parcel_id
+            ? `/explore/${card.parcel_id}`
+            : `/featured/${card.slug}`;
+
+          return (
+            <motion.div
+              key={card.id}
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-30px" }}
+              transition={{ delay: i * 0.1, duration: 0.4 }}
+            >
+              <Link
+                to={href}
+                className="block group rounded-2xl bg-navy-800/60 border border-navy-700/50 hover:border-amber-500/30 transition-all duration-200 overflow-hidden"
+              >
+                {/* Thumbnail area */}
+                <div className="h-36 bg-navy-800 flex items-center justify-center overflow-hidden">
+                  {card.latest_thumbnail ? (
+                    <img
+                      src={card.latest_thumbnail}
+                      alt={card.name}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <MapPin className="w-8 h-8 text-navy-600" />
+                  )}
+                </div>
+                <div className="p-4">
+                  <h3 className="text-white font-medium mb-1 group-hover:text-amber-400 transition-colors">
+                    {card.name}
+                  </h3>
+                  <p className="text-xs text-slate-400 leading-relaxed mb-2">
+                    {card.subtitle}
+                  </p>
+                  {card.key_stat && (
+                    <p className="text-[10px] text-amber-400/70 font-mono">
+                      {card.key_stat}
+                    </p>
+                  )}
+                </div>
+              </Link>
+            </motion.div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}

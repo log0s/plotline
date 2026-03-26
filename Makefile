@@ -1,4 +1,4 @@
-.PHONY: up down migrate seed test logs shell-api shell-db lint fmt
+.PHONY: up down migrate seed featured test logs shell-api shell-db lint fmt format clean prod
 
 # ── Docker ──────────────────────────────────────────────────────────────────
 
@@ -38,6 +38,9 @@ migrate-history:
 seed:
 	docker compose exec api python /app/scripts/seed.py
 
+featured:
+	docker compose exec api python /app/scripts/seed_featured.py
+
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 test:
@@ -54,6 +57,20 @@ lint:
 
 fmt:
 	docker compose exec api ruff format app/ tests/
+
+format: fmt
+	cd frontend && npm run fmt
+
+# ── Cleanup ──────────────────────────────────────────────────────────────────
+
+clean:
+	docker compose down -v --remove-orphans
+	@echo "All containers, volumes, and orphans removed."
+
+# ── Production ───────────────────────────────────────────────────────────────
+
+prod:
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 
 # ── Shells ───────────────────────────────────────────────────────────────────
 

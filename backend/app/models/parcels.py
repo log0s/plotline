@@ -406,3 +406,41 @@ class PropertyEvent(Base):
             f"<PropertyEvent type={self.event_type!r} "
             f"date={self.event_date} parcel={self.parcel_id}>"
         )
+
+
+class FeaturedLocation(Base):
+    """A curated featured location for the landing page."""
+
+    __tablename__ = "featured_locations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    parcel_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("parcels.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    subtitle: Mapped[str] = mapped_column(Text, nullable=False)
+    slug: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    key_stat: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    parcel: Mapped[Parcel] = relationship("Parcel")
+
+    __table_args__ = (
+        Index("idx_featured_locations_slug", "slug", unique=True),
+    )
+
+    def __repr__(self) -> str:
+        return f"<FeaturedLocation name={self.name!r} slug={self.slug!r}>"

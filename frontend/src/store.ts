@@ -1,8 +1,9 @@
 /**
  * Global application state via Zustand.
  *
- * Tracks the current view, active parcel, timeline fetch status, and the
- * imagery snapshots available for display.
+ * Tracks the active parcel, timeline fetch status, and the
+ * imagery snapshots available for display. Navigation is handled
+ * by React Router — no view state here.
  */
 import { create } from "zustand";
 import type {
@@ -15,7 +16,6 @@ import type {
 } from "./types";
 
 export const useAppStore = create<AppState>((set) => ({
-  view: "landing",
   parcel: null,
   isLoading: false,
   error: null,
@@ -36,10 +36,13 @@ export const useAppStore = create<AppState>((set) => ({
 
   selectedYear: null,
 
+  // Compare mode
+  compareMode: false,
+  compareSnapshots: [null, null],
+
   setParcel: (parcel: GeocodeResponse) =>
     set({
       parcel,
-      view: "map",
       error: null,
       isLoading: false,
       timelineRequestId: parcel.timeline_request_id,
@@ -52,6 +55,8 @@ export const useAppStore = create<AppState>((set) => ({
       propertyEvents: null,
       propertyEventsLoading: false,
       selectedYear: null,
+      compareMode: false,
+      compareSnapshots: [null, null],
     }),
 
   setLoading: (isLoading: boolean) => set({ isLoading }),
@@ -95,9 +100,23 @@ export const useAppStore = create<AppState>((set) => ({
   setPropertyEventsLoading: (propertyEventsLoading: boolean) =>
     set({ propertyEventsLoading }),
 
+  setCompareMode: (compareMode: boolean) =>
+    set((state) => ({
+      compareMode,
+      compareSnapshots: compareMode ? state.compareSnapshots : [null, null],
+    })),
+
+  setCompareSnapshot: (index: 0 | 1, snapshot: ImagerySnapshot | null) =>
+    set((state) => {
+      const updated: [ImagerySnapshot | null, ImagerySnapshot | null] = [
+        ...state.compareSnapshots,
+      ];
+      updated[index] = snapshot;
+      return { compareSnapshots: updated };
+    }),
+
   reset: () =>
     set({
-      view: "landing",
       parcel: null,
       isLoading: false,
       error: null,
@@ -110,5 +129,7 @@ export const useAppStore = create<AppState>((set) => ({
       propertyEvents: null,
       propertyEventsLoading: false,
       selectedYear: null,
+      compareMode: false,
+      compareSnapshots: [null, null],
     }),
 }));

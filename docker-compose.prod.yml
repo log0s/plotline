@@ -1,0 +1,26 @@
+# Production overrides — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Differences from dev:
+#   - Frontend is built and served via nginx (no Vite dev server)
+#   - No volume mounts (images contain all code)
+#   - API runs with multiple workers instead of --reload
+#   - Worker has no volume mounts
+
+services:
+  api:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    volumes: []
+
+  worker:
+    volumes: []
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    volumes: []
+    ports:
+      - "80:80"
+    environment:
+      VITE_API_BASE_URL: ""

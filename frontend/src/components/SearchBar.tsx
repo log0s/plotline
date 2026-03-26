@@ -1,11 +1,12 @@
 /**
- * SearchBar — the primary address input on the landing page.
+ * SearchBar — address input used on both the landing page (hero variant)
+ * and explore page (compact variant in top nav).
  *
  * Features:
  * - Keyboard submit (Enter key)
  * - Loading spinner while geocoding
  * - Error display
- * - "Try these" example address chips
+ * - "Try these" example address chips (hero variant only)
  */
 import { AnimatePresence, motion } from "framer-motion";
 import { type FormEvent, useRef, useState } from "react";
@@ -14,6 +15,7 @@ interface SearchBarProps {
   onSearch: (address: string) => void;
   isLoading: boolean;
   error: string | null;
+  variant?: "hero" | "compact";
 }
 
 const EXAMPLE_ADDRESSES = [
@@ -23,9 +25,15 @@ const EXAMPLE_ADDRESSES = [
   "1 Infinite Loop, Cupertino, CA 95014",
 ];
 
-export function SearchBar({ onSearch, isLoading, error }: SearchBarProps) {
+export function SearchBar({
+  onSearch,
+  isLoading,
+  error,
+  variant = "hero",
+}: SearchBarProps) {
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const isCompact = variant === "compact";
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -41,10 +49,50 @@ export function SearchBar({ onSearch, isLoading, error }: SearchBarProps) {
     inputRef.current?.focus();
   };
 
+  if (isCompact) {
+    return (
+      <form onSubmit={handleSubmit} className="flex items-center gap-2">
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-navy-800 border border-navy-700/60 focus-within:border-amber-500/60 transition-colors">
+          <svg
+            className="w-4 h-4 text-slate-500 flex-shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"
+            />
+          </svg>
+          <input
+            ref={inputRef}
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="Search address..."
+            disabled={isLoading}
+            className="bg-transparent text-white placeholder-slate-500 text-sm outline-none w-48 lg:w-64 disabled:opacity-60"
+            aria-label="Address search"
+          />
+        </div>
+        {isLoading && (
+          <svg className="animate-spin w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+          </svg>
+        )}
+      </form>
+    );
+  }
+
   return (
     <div className="w-full max-w-2xl mx-auto">
       <form onSubmit={handleSubmit} className="relative group">
-        <div
+        <motion.div
+          whileFocusWithin={{ scale: 1.01 }}
+          transition={{ duration: 0.15 }}
           className={`
             flex items-center gap-3 px-5 py-4 rounded-2xl
             bg-navy-800 border
@@ -127,7 +175,7 @@ export function SearchBar({ onSearch, isLoading, error }: SearchBarProps) {
               Search
             </button>
           )}
-        </div>
+        </motion.div>
       </form>
 
       {/* Error message */}

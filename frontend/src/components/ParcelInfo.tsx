@@ -2,16 +2,16 @@
  * ParcelInfo — sidebar panel displaying geocoded parcel metadata.
  *
  * Shows the normalized address, coordinates, census tract, and
- * a back button to return to the landing page.
+ * a search-again input. Uses React Router for navigation.
  */
 import { motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
+import { useGeocoder } from "../hooks/useGeocoder";
+import { useAppStore } from "../store";
 import type { GeocodeResponse } from "../types";
 
 interface ParcelInfoProps {
   parcel: GeocodeResponse;
-  onReset: () => void;
-  onSearch: (address: string) => void;
-  isLoading: boolean;
 }
 
 interface DataRowProps {
@@ -30,7 +30,20 @@ function DataRow({ label, value, mono = false }: DataRowProps) {
   );
 }
 
-export function ParcelInfo({ parcel, onReset, onSearch, isLoading }: ParcelInfoProps) {
+export function ParcelInfo({ parcel }: ParcelInfoProps) {
+  const navigate = useNavigate();
+  const { geocode } = useGeocoder();
+  const isLoading = useAppStore((s) => s.isLoading);
+
+  const handleReset = () => {
+    useAppStore.getState().reset();
+    navigate("/");
+  };
+
+  const handleSearch = (address: string) => {
+    geocode(address, navigate);
+  };
+
   return (
     <motion.aside
       initial={{ x: "100%", opacity: 0 }}
@@ -53,7 +66,7 @@ export function ParcelInfo({ parcel, onReset, onSearch, isLoading }: ParcelInfoP
           <span className="text-sm font-medium text-slate-300">Location found</span>
         </div>
         <button
-          onClick={onReset}
+          onClick={handleReset}
           className="text-slate-500 hover:text-white transition-colors p-1 rounded-lg hover:bg-navy-700"
           aria-label="Back to search"
           title="Back to search"
@@ -101,7 +114,7 @@ export function ParcelInfo({ parcel, onReset, onSearch, isLoading }: ParcelInfoP
 
       {/* Search again footer */}
       <div className="px-5 py-4 border-t border-navy-700/60">
-        <SearchInput onSearch={onSearch} isLoading={isLoading} />
+        <SearchInput onSearch={handleSearch} isLoading={isLoading} />
       </div>
     </motion.aside>
   );

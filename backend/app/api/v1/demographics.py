@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -27,9 +27,11 @@ router = APIRouter()
 )
 def get_demographics(
     parcel_id: uuid.UUID,
+    response: Response,
     db: Session = Depends(get_db),
 ) -> DemographicsResponse:
     """Return all census snapshots for a parcel, sorted by year ascending."""
+    response.headers["Cache-Control"] = "public, max-age=3600"
     from sqlalchemy import text as sa_text
 
     # Use raw SQL to avoid GeoAlchemy2 AsEWKB incompatibility with SQLite tests

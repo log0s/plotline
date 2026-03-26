@@ -558,7 +558,15 @@ export function DemographicsPanel() {
   const showUnsupported = propertyEvents && !propertyEvents.supported;
 
   if (!hasDemo && !hasPropertyData && !showUnsupported) {
-    return null;
+    return (
+      <div className="flex items-center justify-center p-6 text-center">
+        <p className="text-xs text-slate-500">
+          No census or property data available yet.
+          <br />
+          Data will appear once the timeline finishes processing.
+        </p>
+      </div>
+    );
   }
 
   const snapshots = demographics?.snapshots ?? [];

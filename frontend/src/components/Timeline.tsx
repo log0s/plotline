@@ -18,6 +18,7 @@ import {
   Pipette,
   FileText,
   X,
+  SplitSquareHorizontal,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppStore } from "../store";
@@ -127,6 +128,10 @@ export function Timeline() {
     timelineStatus,
     propertyEvents,
     setSelectedSnapshot,
+    compareMode,
+    compareSnapshots,
+    setCompareMode,
+    setCompareSnapshot,
   } = useAppStore();
 
   const [activeFilters, setActiveFilters] = useState<Set<ImagerySource>>(
@@ -241,6 +246,26 @@ export function Timeline() {
 
   const hasEvents = (propertyEvents?.events?.length ?? 0) > 0;
 
+  // Compare mode: clicking a snapshot assigns it to slot A or B
+  const handleSnapshotClick = useCallback(
+    (snap: ImagerySnapshot) => {
+      if (!compareMode) {
+        setSelectedSnapshot(snap);
+        return;
+      }
+      // Fill slot A first, then B
+      if (!compareSnapshots[0] || compareSnapshots[0].id === snap.id) {
+        setCompareSnapshot(0, snap);
+      } else if (!compareSnapshots[1] || compareSnapshots[1].id === snap.id) {
+        setCompareSnapshot(1, snap);
+      } else {
+        // Both filled — replace B
+        setCompareSnapshot(1, snap);
+      }
+    },
+    [compareMode, compareSnapshots, setSelectedSnapshot, setCompareSnapshot],
+  );
+
   return (
     <div className="flex flex-col bg-navy-950/95 border-t border-navy-700/60 select-none">
       {/* Header bar */}
@@ -304,6 +329,25 @@ export function Timeline() {
               })}
             </>
           )}
+
+          {/* Compare toggle */}
+          {snapshots.length >= 2 && (
+            <>
+              <span className="w-px h-4 bg-navy-700/60 mx-1" />
+              <button
+                onClick={() => setCompareMode(!compareMode)}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
+                  compareMode
+                    ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                    : "bg-navy-800 text-slate-500 hover:text-slate-300"
+                }`}
+                title={compareMode ? "Exit compare mode" : "Compare two snapshots"}
+              >
+                <SplitSquareHorizontal size={12} />
+                Compare
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -340,7 +384,16 @@ export function Timeline() {
                 key={`img-${item.data.id}`}
                 snapshot={item.data}
                 isSelected={selectedSnapshot?.id === item.data.id}
-                onSelect={setSelectedSnapshot}
+                onSelect={handleSnapshotClick}
+                compareSlot={
+                  compareMode
+                    ? compareSnapshots[0]?.id === item.data.id
+                      ? "A"
+                      : compareSnapshots[1]?.id === item.data.id
+                        ? "B"
+                        : null
+                    : null
+                }
               />
             ) : (
               <EventCard
@@ -373,9 +426,10 @@ interface SnapshotCardProps {
   snapshot: ImagerySnapshot;
   isSelected: boolean;
   onSelect: (snap: ImagerySnapshot) => void;
+  compareSlot?: "A" | "B" | null;
 }
 
-function SnapshotCard({ snapshot, isSelected, onSelect }: SnapshotCardProps) {
+function SnapshotCard({ snapshot, isSelected, onSelect, compareSlot }: SnapshotCardProps) {
   const [imgError, setImgError] = useState(false);
   const source = snapshot.source as ImagerySource;
 
@@ -409,6 +463,7 @@ function SnapshotCard({ snapshot, isSelected, onSelect }: SnapshotCardProps) {
             alt={`${source} ${snapshot.capture_date}`}
             className="w-full h-full object-cover"
             loading="lazy"
+            decoding="async"
             onError={() => setImgError(true)}
           />
         ) : (
@@ -422,6 +477,13 @@ function SnapshotCard({ snapshot, isSelected, onSelect }: SnapshotCardProps) {
         {/* Selected overlay */}
         {isSelected && (
           <div className="absolute inset-0 bg-amber-400/10 pointer-events-none" />
+        )}
+
+        {/* Compare slot badge */}
+        {compareSlot && (
+          <div className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-amber-500 flex items-center justify-center">
+            <span className="text-[8px] font-bold text-navy-950">{compareSlot}</span>
+          </div>
         )}
       </div>
 

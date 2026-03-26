@@ -16,7 +16,7 @@ import uuid
 from datetime import date
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response as FastAPIResponse
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -126,12 +126,14 @@ def get_timeline_request(
 )
 async def list_imagery(
     parcel_id: uuid.UUID,
+    response: FastAPIResponse,
     source: str | None = Query(default=None, description="Filter by source: naip, landsat, sentinel2"),
     start_date: date | None = Query(default=None, description="Filter by start date (inclusive)"),
     end_date: date | None = Query(default=None, description="Filter by end date (inclusive)"),
     db: Session = Depends(get_db),
 ) -> ImageryListResponse:
     """Return imagery snapshots with signed COG URLs."""
+    response.headers["Cache-Control"] = "public, max-age=3600"
     from sqlalchemy import text as sa_text
 
     row = db.execute(
@@ -224,6 +226,7 @@ async def _fetch_titiler(
         content=upstream.content,
         status_code=upstream.status_code,
         media_type=upstream.headers.get("content-type", "image/png"),
+        headers={"Cache-Control": "public, max-age=86400, immutable"},
     )
 
 
