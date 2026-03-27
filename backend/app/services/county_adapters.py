@@ -18,6 +18,7 @@ from datetime import date
 from typing import Any
 
 from app.services.arcgis import query_feature_service
+from app.services.ckan import query_ckan_datastore
 from app.services.socrata import query_socrata
 
 logger = logging.getLogger(__name__)
@@ -160,17 +161,7 @@ class DenverAdapter(CountyAdapter):
         return results
 
     def _parse_permit(self, row: dict[str, Any]) -> PropertyEventData:
-        # ArcGIS returns epoch-ms timestamps for date fields
-        raw_date = row.get("DATE_ISSUED")
-        event_date: date | None = None
-        if raw_date is not None:
-            try:
-                from datetime import datetime, timezone
-                event_date = datetime.fromtimestamp(
-                    int(raw_date) / 1000, tz=timezone.utc
-                ).date()
-            except (ValueError, TypeError, OSError):
-                event_date = parse_date(str(raw_date))
+        event_date = _parse_epoch_ms(row.get("DATE_ISSUED"))
 
         raw_type = row.get("CLASS") or "Permit"
         return PropertyEventData(
@@ -252,17 +243,7 @@ class AdamsCountyAdapter(CountyAdapter):
         return [self._parse_permit(row) for row in rows]
 
     def _parse_permit(self, row: dict[str, Any]) -> PropertyEventData:
-        # ArcGIS returns epoch-ms timestamps
-        raw_date = row.get("CaseOpened")
-        event_date: date | None = None
-        if raw_date is not None:
-            try:
-                from datetime import datetime, timezone
-                event_date = datetime.fromtimestamp(
-                    int(raw_date) / 1000, tz=timezone.utc
-                ).date()
-            except (ValueError, TypeError, OSError):
-                event_date = parse_date(str(raw_date))
+        event_date = _parse_epoch_ms(row.get("CaseOpened"))
 
         raw_type = row.get("TypeOfWork") or row.get("ClassOfWork") or "Permit"
         description_text = row.get("Description") or ""
@@ -286,6 +267,433 @@ class AdamsCountyAdapter(CountyAdapter):
         if description:
             parts.append(f"— {description[:120]}")
         return " ".join(parts)
+
+
+# ── District of Columbia adapter ──────────────────────────────────────────────
+
+
+class DCAdapter(CountyAdapter):
+    """Adapter for District of Columbia open data (ArcGIS Hub).
+
+    DC publishes property data via DCGIS ArcGIS REST services:
+    - Sales: ITSPE FACTS table (Property and Land MapServer, layer 56)
+    - Permits: DCRA Building Permits split by year (FEEDS/DCRA MapServer)
+    """
+
+    _PROPERTY_BASE = (
+        "https://maps2.dcgis.dc.gov/dcgis/rest/services"
+        "/DCGIS_DATA/Property_and_Land_WebMercator/MapServer"
+    )
+    SALES_URL = f"{_PROPERTY_BASE}/56"  # ITSPE FACTS — address + last sale
+
+    _PERMITS_BASE = (
+        "https://maps2.dcgis.dc.gov/dcgis/rest/services/FEEDS/DCRA/MapServer"
+    )
+    # Year-specific permit layers (query recent years for reasonable coverage)
+    PERMIT_LAYERS: list[tuple[int, str]] = [
+        (18, "2026"),
+        (17, "2025"),
+        (16, "2024"),
+        (15, "2023"),
+        (14, "2022"),
+        (3, "2021"),
+        (2, "2020"),
+    ]
+
+    @property
+    def county_name(self) -> str:
+        return "District of Columbia"
+
+    async def fetch_sales(
+        self,
+        street_number: str,
+        street_name: str,
+        *,
+        app_token: str | None = None,
+    ) -> list[PropertyEventData]:
+        where = (
+            f"upper(PROPERTY_ADDRESS) LIKE '%{street_number} %{street_name}%'"
+        )
+        try:
+            rows = await query_feature_service(
+                self.SALES_URL,
+                where=where,
+                out_fields=(
+                    "SSL,PROPERTY_ADDRESS,LAST_SALE_PRICE,LAST_SALE_DATE,"
+                    "DEED_DATE,LAND_USE_DESCRIPTION,"
+                    "APPRAISED_VALUE_CURRENT_TOTAL"
+                ),
+                result_record_count=20,
+            )
+        except Exception as exc:
+            logger.warning(f"DC sales query failed: {exc}")
+            return []
+        return [self._parse_sale(row) for row in rows if row.get("LAST_SALE_PRICE")]
+
+    def _parse_sale(self, row: dict[str, Any]) -> PropertyEventData:
+        raw_date = row.get("LAST_SALE_DATE") or row.get("DEED_DATE")
+        event_date = _parse_epoch_ms(raw_date)
+        price = safe_int(row.get("LAST_SALE_PRICE"))
+
+        parts: list[str] = ["Property sale"]
+        if price and price > 0:
+            parts.append(f"for ${price:,}")
+        land_use = row.get("LAND_USE_DESCRIPTION")
+        if land_use:
+            parts.append(f"({land_use})")
+
+        return PropertyEventData(
+            event_type="sale",
+            event_date=event_date,
+            sale_price=price,
+            permit_type=None,
+            permit_description=None,
+            permit_valuation=None,
+            description=" ".join(parts),
+            source="dc_sales",
+            source_record_id=row.get("SSL") or "",
+            raw_data=row,
+        )
+
+    async def fetch_permits(
+        self,
+        street_number: str,
+        street_name: str,
+        *,
+        app_token: str | None = None,
+    ) -> list[PropertyEventData]:
+        where = f"upper(FULL_ADDRESS) LIKE '%{street_number} %{street_name}%'"
+        results: list[PropertyEventData] = []
+        for layer_id, year_label in self.PERMIT_LAYERS:
+            url = f"{self._PERMITS_BASE}/{layer_id}"
+            try:
+                rows = await query_feature_service(
+                    url,
+                    where=where,
+                    order_by="ISSUE_DATE DESC",
+                    result_record_count=50,
+                )
+            except Exception as exc:
+                logger.warning(f"DC permits {year_label} query failed: {exc}")
+                continue
+            results.extend(self._parse_permit(row) for row in rows)
+        return results
+
+    def _parse_permit(self, row: dict[str, Any]) -> PropertyEventData:
+        event_date = _parse_epoch_ms(row.get("ISSUE_DATE"))
+
+        # Combine type and subtype for richer classification
+        raw_type = row.get("PERMIT_TYPE_NAME") or "Permit"
+        subtype = row.get("PERMIT_SUBTYPE_NAME") or ""
+        classify_input = f"{raw_type} {subtype}".strip()
+
+        desc_of_work = row.get("DESC_OF_WORK") or ""
+        parts: list[str] = [raw_type]
+        if subtype:
+            parts.append(f"— {subtype}")
+        if desc_of_work:
+            parts.append(f": {desc_of_work[:120]}")
+        fees = safe_int(row.get("FEES_PAID"))
+        if fees and fees > 0:
+            parts.append(f"(${fees:,} fees)")
+
+        return PropertyEventData(
+            event_type=classify_permit(classify_input),
+            event_date=event_date,
+            sale_price=None,
+            permit_type=raw_type,
+            permit_description=desc_of_work or None,
+            permit_valuation=fees,
+            description=" ".join(parts),
+            source="dc_permits",
+            source_record_id=row.get("PERMIT_ID") or "",
+            raw_data=row,
+        )
+
+
+# ── Santa Clara County adapter (San Jose) ────────────────────────────────────
+
+
+class SantaClaraAdapter(CountyAdapter):
+    """Adapter for Santa Clara County / City of San Jose open data (CKAN).
+
+    San Jose publishes building permits on data.sanjoseca.gov (CKAN-based).
+    Property sales data is not publicly available via API.
+
+    Note: This adapter covers City of San Jose addresses. Other cities in
+    Santa Clara County (Sunnyvale, Mountain View, Cupertino, etc.) may have
+    their own portals or no public data.
+    """
+
+    DOMAIN = "data.sanjoseca.gov"
+    # Multiple permit datasets cover different statuses
+    PERMIT_RESOURCES: list[tuple[str, str]] = [
+        ("761b7ae8-3be1-4ad6-923d-c7af6404a904", "active"),
+        ("89ccdad9-7309-4826-a5f3-2fcf1fcb20fa", "under_inspection"),
+        ("df4b8461-0c7a-4d16-b85d-ff7f71c5fed5", "expired"),
+    ]
+
+    @property
+    def county_name(self) -> str:
+        return "Santa Clara"
+
+    async def fetch_sales(
+        self,
+        street_number: str,
+        street_name: str,
+        *,
+        app_token: str | None = None,
+    ) -> list[PropertyEventData]:
+        # Santa Clara County property sales are not available via public API
+        return []
+
+    async def fetch_permits(
+        self,
+        street_number: str,
+        street_name: str,
+        *,
+        app_token: str | None = None,
+    ) -> list[PropertyEventData]:
+        # CKAN full-text search across gx_location field
+        search_term = f"{street_number} {street_name}"
+        results: list[PropertyEventData] = []
+        for resource_id, label in self.PERMIT_RESOURCES:
+            try:
+                rows = await query_ckan_datastore(
+                    self.DOMAIN,
+                    resource_id,
+                    q=search_term,
+                    limit=100,
+                )
+            except Exception as exc:
+                logger.warning(f"San Jose {label} permits query failed: {exc}")
+                continue
+            # Filter to rows that actually match the address
+            for row in rows:
+                location = (row.get("gx_location") or "").upper()
+                if street_number in location and street_name.upper() in location:
+                    results.append(self._parse_permit(row))
+        return results
+
+    def _parse_permit(self, row: dict[str, Any]) -> PropertyEventData:
+        event_date = self._parse_sj_date(row.get("ISSUEDATE"))
+
+        raw_type = row.get("WORKDESCRIPTION") or row.get("FOLDERDESC") or "Permit"
+        folder_name = row.get("FOLDERNAME") or ""
+
+        parts: list[str] = [raw_type]
+        if folder_name:
+            parts.append(f"— {folder_name[:120]}")
+        val = safe_int(row.get("PERMITVALUATION"))
+        if val and val > 0:
+            parts.append(f"(${val:,} valuation)")
+        contractor = row.get("CONTRACTOR")
+        if contractor:
+            parts.append(f"by {contractor[:60]}")
+
+        return PropertyEventData(
+            event_type=classify_permit(raw_type),
+            event_date=event_date,
+            sale_price=None,
+            permit_type=raw_type,
+            permit_description=folder_name or None,
+            permit_valuation=safe_int(row.get("PERMITVALUATION")),
+            description=" ".join(parts),
+            source="san_jose_permits",
+            source_record_id=row.get("FOLDERNUMBER") or "",
+            raw_data=row,
+        )
+
+    @staticmethod
+    def _parse_sj_date(value: str | None) -> date | None:
+        """Parse San Jose date format: '3/8/2026 12:00:00 AM'."""
+        if not value:
+            return None
+        try:
+            # Take only the date part before the space
+            date_part = value.split(" ")[0]
+            parts = date_part.split("/")
+            if len(parts) == 3:
+                month, day, year = int(parts[0]), int(parts[1]), int(parts[2])
+                return date(year, month, day)
+        except (ValueError, TypeError, IndexError):
+            pass
+        # Fall back to ISO parse
+        return parse_date(value)
+
+
+# ── New York County (Manhattan) adapter ──────────────────────────────────────
+
+
+class NewYorkCountyAdapter(CountyAdapter):
+    """Adapter for New York County (Manhattan) via NYC Open Data (Socrata).
+
+    NYC publishes comprehensive property data on data.cityofnewyork.us:
+    - Sales: NYC Citywide Rolling Calendar Sales (usep-8jbt), filtered to
+      borough 1 (Manhattan).
+    - Permits: DOB Permit Issuance (ipu4-2q9a), filtered to borough MANHATTAN.
+    """
+
+    DOMAIN = "data.cityofnewyork.us"
+    SALES_RESOURCE = "usep-8jbt"
+    PERMITS_RESOURCE = "ipu4-2q9a"
+
+    @property
+    def county_name(self) -> str:
+        return "New York"
+
+    async def fetch_sales(
+        self,
+        street_number: str,
+        street_name: str,
+        *,
+        app_token: str | None = None,
+    ) -> list[PropertyEventData]:
+        where = (
+            f"borough='1' AND upper(address) LIKE '%{street_number} {street_name}%' "
+            f"AND sale_price > '0'"
+        )
+        try:
+            rows = await query_socrata(
+                self.DOMAIN,
+                self.SALES_RESOURCE,
+                where=where,
+                order="sale_date DESC",
+                limit=100,
+                app_token=app_token,
+            )
+        except Exception as exc:
+            logger.warning(f"NYC sales query failed: {exc}")
+            return []
+        return [self._parse_sale(row) for row in rows]
+
+    def _parse_sale(self, row: dict[str, Any]) -> PropertyEventData:
+        event_date = parse_date(row.get("sale_date"))
+        price = safe_int(row.get("sale_price"))
+
+        parts: list[str] = ["Property sale"]
+        if price and price > 0:
+            parts.append(f"for ${price:,}")
+        neighborhood = row.get("neighborhood")
+        if neighborhood:
+            parts.append(f"in {neighborhood.title()}")
+        bldg_class = row.get("building_class_category")
+        if bldg_class:
+            parts.append(f"({bldg_class.strip()})")
+
+        # Unique ID from block + lot + sale date
+        block = row.get("block", "")
+        lot = row.get("lot", "")
+        sale_dt = row.get("sale_date", "")[:10]
+        source_id = f"{block}-{lot}-{sale_dt}"
+
+        return PropertyEventData(
+            event_type="sale",
+            event_date=event_date,
+            sale_price=price,
+            permit_type=None,
+            permit_description=None,
+            permit_valuation=None,
+            description=" ".join(parts),
+            source="nyc_sales",
+            source_record_id=source_id,
+            raw_data=row,
+        )
+
+    async def fetch_permits(
+        self,
+        street_number: str,
+        street_name: str,
+        *,
+        app_token: str | None = None,
+    ) -> list[PropertyEventData]:
+        where = (
+            f"borough='MANHATTAN' AND house__='{street_number}' "
+            f"AND upper(street_name) LIKE '%{street_name}%'"
+        )
+        try:
+            rows = await query_socrata(
+                self.DOMAIN,
+                self.PERMITS_RESOURCE,
+                where=where,
+                order="issuance_date DESC",
+                limit=100,
+                app_token=app_token,
+            )
+        except Exception as exc:
+            logger.warning(f"NYC permits query failed: {exc}")
+            return []
+        return [self._parse_permit(row) for row in rows]
+
+    def _parse_permit(self, row: dict[str, Any]) -> PropertyEventData:
+        event_date = self._parse_nyc_date(row.get("issuance_date"))
+
+        job_type = row.get("job_type", "")
+        permit_type_raw = row.get("permit_type", "")
+        # Map NYC DOB job types to human-readable labels
+        job_type_labels = {
+            "NB": "New Building",
+            "A1": "Major Alteration",
+            "A2": "Minor Alteration",
+            "A3": "Minor Alteration",
+            "DM": "Demolition",
+        }
+        readable_type = job_type_labels.get(job_type, permit_type_raw or "Permit")
+
+        parts: list[str] = [readable_type]
+        owner = row.get("owner_s_business_name")
+        if owner:
+            parts.append(f"— {owner[:80]}")
+        filing = row.get("filing_status")
+        if filing and filing != "INITIAL":
+            parts.append(f"({filing})")
+
+        return PropertyEventData(
+            event_type=classify_permit(readable_type),
+            event_date=event_date,
+            sale_price=None,
+            permit_type=readable_type,
+            permit_description=None,
+            permit_valuation=None,
+            description=" ".join(parts),
+            source="nyc_permits",
+            source_record_id=row.get("job__") or "",
+            raw_data=row,
+        )
+
+    @staticmethod
+    def _parse_nyc_date(value: str | None) -> date | None:
+        """Parse NYC DOB date format: 'MM/DD/YYYY' or ISO-8601."""
+        if not value:
+            return None
+        # Try ISO first (some fields use it)
+        iso_result = parse_date(value)
+        if iso_result:
+            return iso_result
+        # Try MM/DD/YYYY
+        try:
+            parts = value.split("/")
+            if len(parts) == 3:
+                month, day, year = int(parts[0]), int(parts[1]), int(parts[2])
+                return date(year, month, day)
+        except (ValueError, TypeError, IndexError):
+            pass
+        return None
+
+
+# ── Shared epoch-ms date parser ──────────────────────────────────────────────
+
+
+def _parse_epoch_ms(value: Any) -> date | None:
+    """Parse an ArcGIS epoch-millisecond timestamp to a date."""
+    if value is None:
+        return None
+    try:
+        from datetime import datetime, timezone
+
+        return datetime.fromtimestamp(int(value) / 1000, tz=timezone.utc).date()
+    except (ValueError, TypeError, OSError):
+        return parse_date(str(value))
 
 
 # ── Permit classification ─────────────────────────────────────────────────────
@@ -315,6 +723,9 @@ def classify_permit(raw_type: str) -> str:
 COUNTY_ADAPTERS: dict[str, CountyAdapter] = {
     "denver": DenverAdapter(),
     "adams": AdamsCountyAdapter(),
+    "district of columbia": DCAdapter(),
+    "santa clara": SantaClaraAdapter(),
+    "new york": NewYorkCountyAdapter(),
 }
 
 
