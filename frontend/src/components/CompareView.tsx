@@ -81,18 +81,18 @@ export function CompareView({ parcel }: CompareViewProps) {
       style: MAP_STYLE,
       center,
       zoom: 15,
-      attributionControl: false,
+      attributionControl: true,
     });
+
+    leftMap.addControl(new maplibregl.NavigationControl(), "bottom-left");
 
     const rightMap = new maplibregl.Map({
       container: rightContainerRef.current,
       style: MAP_STYLE,
       center,
       zoom: 15,
-      attributionControl: true,
+      attributionControl: false,
     });
-
-    rightMap.addControl(new maplibregl.NavigationControl(), "top-right");
 
     leftMap.on("load", () => {
       leftReadyRef.current = true;
@@ -136,7 +136,7 @@ export function CompareView({ parcel }: CompareViewProps) {
       const rect = containerRef.current.getBoundingClientRect();
       const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
       const pct = ((clientX - rect.left) / rect.width) * 100;
-      setDividerPos(Math.max(5, Math.min(95, pct)));
+      setDividerPos(Math.max(0, Math.min(100, pct)));
     };
 
     const handleDragEnd = () => {
@@ -157,7 +157,7 @@ export function CompareView({ parcel }: CompareViewProps) {
   }, []);
 
   return (
-    <div ref={containerRef} className="relative w-full h-full select-none">
+    <div ref={containerRef} className="relative w-full h-full select-none overflow-hidden">
       {/* Map A (left / underneath) — full size */}
       <div ref={leftContainerRef} className="absolute inset-0" />
 
@@ -169,17 +169,28 @@ export function CompareView({ parcel }: CompareViewProps) {
         <div ref={rightContainerRef} className="w-full h-full" />
       </div>
 
-      {/* Draggable divider */}
+      {/* Divider line (visual only, no pointer events) */}
       <div
-        className="absolute top-0 bottom-0 z-20 cursor-col-resize"
-        style={{ left: `${dividerPos}%`, transform: "translateX(-50%)", width: "40px" }}
+        className="absolute top-0 bottom-0 z-[5] pointer-events-none"
+        style={{ left: `${dividerPos}%`, transform: "translateX(-50%)", width: "4px" }}
+      >
+        <div className="w-1 h-full bg-amber-400/80 mx-auto" />
+      </div>
+
+      {/* Drag handle (centered on divider) */}
+      <div
+        className="absolute z-[5] cursor-col-resize"
+        style={{
+          left: `${dividerPos}%`,
+          top: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "40px",
+          height: "40px",
+        }}
         onMouseDown={handleDragStart}
         onTouchStart={handleDragStart}
       >
-        {/* Visible divider line */}
-        <div className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-1 bg-amber-400/80" />
-        {/* Drag handle */}
-        <div className="absolute top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-navy-900/90 border-2 border-amber-400 flex items-center justify-center shadow-lg">
+        <div className="w-8 h-8 mx-auto mt-1 rounded-full bg-navy-900/90 border-2 border-amber-400 flex items-center justify-center shadow-lg">
           <svg className="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l-3 3 3 3M16 9l3 3-3 3" />
           </svg>
@@ -188,12 +199,12 @@ export function CompareView({ parcel }: CompareViewProps) {
 
       {/* Labels */}
       {snapA && (
-        <div className="absolute top-3 left-3 z-10">
+        <div className="absolute top-14 left-3 z-30">
           <SnapshotLabel snapshot={snapA} side="A" />
         </div>
       )}
       {snapB && (
-        <div className="absolute top-3 right-3 z-10">
+        <div className="absolute top-14 right-3 z-30">
           <SnapshotLabel snapshot={snapB} side="B" />
         </div>
       )}

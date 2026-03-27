@@ -10,7 +10,6 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getParcel } from "../api/geocode";
 import { getImagery, triggerTimeline } from "../api/imagery";
 import { CompareView } from "../components/CompareView";
-import { DemographicsPanel } from "../components/DemographicsPanel";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { MapView } from "../components/MapView";
 import { ParcelInfo } from "../components/ParcelInfo";
@@ -216,17 +215,9 @@ export default function ExplorePage() {
         )}
       </div>
 
-      {/* Timeline + demographics panel */}
-      <div className="flex flex-col lg:flex-row border-t border-navy-700/60 max-h-[45vh] lg:max-h-[40vh]">
-        {/* Timeline strip */}
-        <div className="lg:flex-1 lg:min-w-0 lg:border-r lg:border-navy-700/40 overflow-hidden">
-          <Timeline />
-        </div>
-
-        {/* Demographics */}
-        <div className="lg:w-[360px] lg:shrink-0 overflow-y-auto">
-          <DemographicsPanel />
-        </div>
+      {/* Timeline strip */}
+      <div className="border-t border-navy-700/60">
+        <Timeline />
       </div>
     </motion.div>
   );

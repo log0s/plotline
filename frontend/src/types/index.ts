@@ -201,6 +201,7 @@ export interface AppState {
   // Property events state
   propertyEvents: PropertyEventsResponse | null;
   propertyEventsLoading: boolean;
+  selectedEvent: PropertyEvent | null;
 
   // The year the user is "focused" on (from clicking an imagery snapshot)
   selectedYear: number | null;
@@ -220,6 +221,7 @@ export interface AppState {
   setDemographicsLoading: (loading: boolean) => void;
   setPropertyEvents: (data: PropertyEventsResponse | null) => void;
   setPropertyEventsLoading: (loading: boolean) => void;
+  setSelectedEvent: (event: PropertyEvent | null) => void;
   setCompareMode: (mode: boolean) => void;
   setCompareSnapshot: (index: 0 | 1, snapshot: ImagerySnapshot | null) => void;
   reset: () => void;

@@ -9,7 +9,7 @@ export default function AppShell() {
   const location = useLocation();
 
   return (
-    <div className="relative w-full h-full min-h-screen bg-navy-950 overflow-hidden">
+    <div className="relative w-full min-h-screen bg-navy-950 overflow-y-auto">
       <AnimatePresence mode="wait">
         <Outlet key={location.pathname} />
       </AnimatePresence>

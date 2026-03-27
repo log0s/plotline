@@ -17,7 +17,6 @@ import {
   Zap,
   Pipette,
   FileText,
-  X,
   SplitSquareHorizontal,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -128,7 +127,9 @@ export function Timeline() {
     timelineRequestId,
     timelineStatus,
     propertyEvents,
+    selectedEvent,
     setSelectedSnapshot,
+    setSelectedEvent,
     compareMode,
     compareSnapshots,
     setCompareMode,
@@ -142,8 +143,6 @@ export function Timeline() {
   const [activeEventFilters, setActiveEventFilters] = useState<Set<EventFilterKey>>(
     new Set(["sales", "building_permits"]),
   );
-
-  const [selectedEvent, setSelectedEvent] = useState<PropertyEvent | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Build unified timeline
@@ -334,21 +333,18 @@ export function Timeline() {
 
           {/* Compare toggle */}
           {snapshots.length >= 2 && (
-            <>
-              <span className="w-px h-4 bg-navy-700/60 mx-1" />
-              <button
-                onClick={() => setCompareMode(!compareMode)}
-                className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
-                  compareMode
-                    ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
-                    : "bg-navy-800 text-slate-500 hover:text-slate-300"
-                }`}
-                title={compareMode ? "Exit compare mode" : "Compare two snapshots"}
-              >
-                <SplitSquareHorizontal size={12} />
-                Compare
-              </button>
-            </>
+            <button
+              onClick={() => setCompareMode(!compareMode)}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all ml-auto ${
+                compareMode
+                  ? "bg-amber-500 text-navy-950 font-semibold"
+                  : "border border-amber-500/40 text-amber-400/70 hover:border-amber-500 hover:text-amber-400"
+              }`}
+              title={compareMode ? "Exit compare mode" : "Compare two snapshots"}
+            >
+              <SplitSquareHorizontal size={14} />
+              Compare
+            </button>
           )}
         </div>
       </div>
@@ -402,22 +398,13 @@ export function Timeline() {
                 key={`evt-${item.data.id}`}
                 event={item.data}
                 isSelected={selectedEvent?.id === item.data.id}
-                onSelect={setSelectedEvent}
+                onSelect={(evt) => setSelectedEvent(selectedEvent?.id === evt.id ? null : evt)}
               />
             ),
           )}
         </AnimatePresence>
       </div>
 
-      {/* Event detail popover */}
-      <AnimatePresence>
-        {selectedEvent && (
-          <EventDetailPopover
-            event={selectedEvent}
-            onClose={() => setSelectedEvent(null)}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 }
@@ -563,84 +550,3 @@ function EventCard({ event, isSelected, onSelect }: EventCardProps) {
   );
 }
 
-// ── Event detail popover ──────────────────────────────────────────────────────
-
-function EventDetailPopover({
-  event,
-  onClose,
-}: {
-  event: PropertyEvent;
-  onClose: () => void;
-}) {
-  const config = EVENT_TYPE_CONFIG[event.event_type] ?? EVENT_TYPE_CONFIG.permit_other;
-  const Icon = config.icon;
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 8 }}
-      transition={{ duration: 0.15 }}
-      className="mx-4 mb-2 rounded-lg bg-navy-900/95 border border-navy-700/60 px-4 py-3 shadow-xl backdrop-blur-sm"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className={`p-1.5 rounded-md ${config.color}`}>
-            <Icon size={14} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-white truncate">
-              {event.description ?? config.label}
-            </p>
-            <p className="text-[11px] text-slate-400">
-              {event.event_date ? new Date(event.event_date + "T00:00:00").toLocaleDateString(
-                "en-US",
-                { year: "numeric", month: "long", day: "numeric" },
-              ) : "Date unknown"}
-              {" \u00b7 "}
-              {event.source.replace("_", " ")}
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={onClose}
-          className="p-1 rounded hover:bg-navy-800 text-slate-500 hover:text-slate-300 transition-colors shrink-0"
-        >
-          <X size={14} />
-        </button>
-      </div>
-
-      {/* Detail fields */}
-      <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
-        {event.sale_price != null && event.sale_price > 0 && (
-          <div>
-            <span className="text-slate-500">Sale Price</span>
-            <p className="text-amber-400 font-mono font-medium">
-              ${event.sale_price.toLocaleString()}
-            </p>
-          </div>
-        )}
-        {event.permit_type && (
-          <div>
-            <span className="text-slate-500">Permit Type</span>
-            <p className="text-slate-300">{event.permit_type}</p>
-          </div>
-        )}
-        {event.permit_valuation != null && event.permit_valuation > 0 && (
-          <div>
-            <span className="text-slate-500">Valuation</span>
-            <p className="text-slate-300 font-mono">
-              ${event.permit_valuation.toLocaleString()}
-            </p>
-          </div>
-        )}
-        {event.permit_description && (
-          <div className="col-span-2">
-            <span className="text-slate-500">Description</span>
-            <p className="text-slate-300">{event.permit_description}</p>
-          </div>
-        )}
-      </div>
-    </motion.div>
-  );
-}

@@ -33,6 +33,7 @@ export const useAppStore = create<AppState>((set) => ({
   // Property events
   propertyEvents: null,
   propertyEventsLoading: false,
+  selectedEvent: null,
 
   selectedYear: null,
 
@@ -54,6 +55,7 @@ export const useAppStore = create<AppState>((set) => ({
       demographicsLoading: false,
       propertyEvents: null,
       propertyEventsLoading: false,
+      selectedEvent: null,
       selectedYear: null,
       compareMode: false,
       compareSnapshots: [null, null],
@@ -100,6 +102,8 @@ export const useAppStore = create<AppState>((set) => ({
   setPropertyEventsLoading: (propertyEventsLoading: boolean) =>
     set({ propertyEventsLoading }),
 
+  setSelectedEvent: (selectedEvent) => set({ selectedEvent }),
+
   setCompareMode: (compareMode: boolean) =>
     set((state) => ({
       compareMode,
@@ -131,6 +135,7 @@ export const useAppStore = create<AppState>((set) => ({
       demographicsLoading: false,
       propertyEvents: null,
       propertyEventsLoading: false,
+      selectedEvent: null,
       selectedYear: null,
       compareMode: false,
       compareSnapshots: [null, null],
