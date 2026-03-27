@@ -2,10 +2,11 @@
  * Hook that polls the timeline request status and fetches imagery once ready.
  *
  * Lifecycle:
- *   1. Receives a timeline_request_id from the geocode response.
- *   2. Polls GET /timeline-requests/{id} every 2 seconds.
- *   3. When status is "complete", fetches all imagery snapshots.
- *   4. Populates the store with snapshots.
+ *   1. If timeline_request_id is present, polls GET /timeline-requests/{id}
+ *      every 2 seconds until complete, then fetches imagery.
+ *   2. If timeline_request_id is null but a parcel is loaded (existing parcel
+ *      with pre-built imagery), fetches imagery directly and marks the
+ *      timeline as complete.
  */
 import { useCallback, useEffect, useRef } from "react";
 import { getImagery, getTimelineRequest } from "../api/imagery";
@@ -17,12 +18,15 @@ export function useTimeline() {
   const {
     timelineRequestId,
     parcel,
+    timelineStatus,
+    snapshots,
     setTimelineStatus,
     setSnapshots,
   } = useAppStore();
 
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isPollingRef = useRef(false);
+  const directFetchedRef = useRef<string | null>(null);
 
   const fetchSnapshots = useCallback(
     async (parcelId: string) => {
@@ -69,6 +73,7 @@ export function useTimeline() {
     [setTimelineStatus, fetchSnapshots],
   );
 
+  // Poll when we have a timeline request ID
   useEffect(() => {
     if (!timelineRequestId || !parcel?.parcel_id) return;
 
@@ -83,6 +88,33 @@ export function useTimeline() {
       if (pollRef.current) clearTimeout(pollRef.current);
     };
   }, [timelineRequestId, parcel?.parcel_id, poll]);
+
+  // Fallback: when parcel is loaded but there's no timeline request ID
+  // (e.g., backend returned null), fetch existing imagery directly.
+  useEffect(() => {
+    if (timelineRequestId) return; // polling handles this case
+    if (!parcel?.parcel_id) return;
+    if (timelineStatus != null) return; // already have status
+    if (snapshots.length > 0) return; // already have imagery
+    if (directFetchedRef.current === parcel.parcel_id) return;
+    directFetchedRef.current = parcel.parcel_id;
+
+    void (async () => {
+      await fetchSnapshots(parcel.parcel_id);
+      setTimelineStatus({
+        id: "",
+        parcel_id: parcel.parcel_id,
+        status: "complete",
+        tasks: [],
+        completed_at: null,
+      });
+    })();
+  }, [timelineRequestId, parcel?.parcel_id, timelineStatus, snapshots.length, fetchSnapshots, setTimelineStatus]);
+
+  // Reset the direct-fetch guard when the parcel changes
+  useEffect(() => {
+    directFetchedRef.current = null;
+  }, [parcel?.parcel_id]);
 
   return null;
 }
