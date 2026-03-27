@@ -110,6 +110,7 @@ export default function ExplorePage() {
 
     return () => {
       cancelled = true;
+      setDeepLinkLoading(false);
     };
   }, [parcelId, parcel, setParcel, setSnapshots, setTimelineStatus]);
 
