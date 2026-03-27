@@ -14,9 +14,9 @@ export function useGeocoder() {
   const mutation = useMutation<
     GeocodeResponse,
     Error,
-    { address: string; navigate: NavigateFunction }
+    { address: string; lat?: number; lon?: number; navigate: NavigateFunction }
   >({
-    mutationFn: ({ address }) => geocodeAddress({ address }),
+    mutationFn: ({ address, lat, lon }) => geocodeAddress({ address, lat, lon }),
     onMutate: () => {
       setLoading(true);
       setError(null);
@@ -32,8 +32,8 @@ export function useGeocoder() {
   });
 
   return {
-    geocode: (address: string, navigate: NavigateFunction) =>
-      mutation.mutate({ address, navigate }),
+    geocode: (address: string, navigate: NavigateFunction, coords?: { lat: number; lon: number }) =>
+      mutation.mutate({ address, navigate, ...coords }),
     isLoading: mutation.isPending,
     error: mutation.error?.message ?? null,
   };

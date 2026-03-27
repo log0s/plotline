@@ -16,8 +16,8 @@ export default function LandingPage() {
   const { geocode } = useGeocoder();
   const navigate = useNavigate();
 
-  const handleSearch = (address: string) => {
-    geocode(address, navigate);
+  const handleSearch = (address: string, coords?: { lat: number; lon: number }) => {
+    geocode(address, navigate, coords);
   };
 
   return (

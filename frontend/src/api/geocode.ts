@@ -1,7 +1,12 @@
 /**
  * API client functions for the geocode and parcels endpoints.
  */
-import type { GeocodeRequest, GeocodeResponse, ParcelResponse } from "../types";
+import type {
+  AutocompleteSuggestion,
+  GeocodeRequest,
+  GeocodeResponse,
+  ParcelResponse,
+} from "../types";
 
 // VITE_API_BASE_URL is empty in local dev (Vite proxy handles routing),
 // and set to the full API origin (e.g. https://api.example.com) in production.
@@ -53,6 +58,20 @@ export async function geocodeAddress(
 export async function getParcel(parcelId: string): Promise<ParcelResponse> {
   const response = await fetch(`${BASE_URL}/parcels/${parcelId}`);
   return handleResponse<ParcelResponse>(response);
+}
+
+/**
+ * Fetch address autocomplete suggestions.
+ * GET /api/v1/geocode/autocomplete?q=...
+ */
+export async function fetchAutocompleteSuggestions(
+  query: string,
+): Promise<AutocompleteSuggestion[]> {
+  const response = await fetch(
+    `${BASE_URL}/geocode/autocomplete?q=${encodeURIComponent(query)}`,
+  );
+  if (!response.ok) return [];
+  return response.json() as Promise<AutocompleteSuggestion[]>;
 }
 
 export { ApiRequestError };

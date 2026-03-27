@@ -7,6 +7,17 @@
 
 export interface GeocodeRequest {
   address: string;
+  lat?: number;
+  lon?: number;
+}
+
+export interface AutocompleteSuggestion {
+  display_name: string;
+  lat: number;
+  lon: number;
+  place_type: string;
+  city: string;
+  state: string;
 }
 
 export interface GeocodeResponse {

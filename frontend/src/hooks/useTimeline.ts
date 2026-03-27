@@ -42,15 +42,17 @@ export function useTimeline() {
 
       try {
         const status = await getTimelineRequest(requestId);
-        setTimelineStatus(status);
 
         if (status.status === "complete" || status.status === "failed") {
           isPollingRef.current = false;
           if (status.status === "complete") {
             await fetchSnapshots(parcelId);
           }
+          setTimelineStatus(status);
           return;
         }
+
+        setTimelineStatus(status);
 
         // Continue polling
         pollRef.current = setTimeout(() => {

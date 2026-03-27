@@ -125,6 +125,7 @@ export function Timeline() {
   const {
     snapshots,
     selectedSnapshot,
+    timelineRequestId,
     timelineStatus,
     propertyEvents,
     setSelectedSnapshot,
@@ -240,7 +241,8 @@ export function Timeline() {
 
   const isProcessing =
     timelineStatus?.status === "queued" ||
-    timelineStatus?.status === "processing";
+    timelineStatus?.status === "processing" ||
+    (timelineRequestId != null && timelineStatus == null);
 
   const isEmpty = !isProcessing && snapshots.length === 0;
 

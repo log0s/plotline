@@ -17,11 +17,30 @@ class GeocodeRequest(BaseModel):
         description="Full US street address to geocode",
         examples=["1600 Pennsylvania Ave NW, Washington, DC 20500"],
     )
+    lat: float | None = Field(
+        default=None,
+        description="Latitude from autocomplete — skips Census address lookup when provided with lon",
+    )
+    lon: float | None = Field(
+        default=None,
+        description="Longitude from autocomplete — skips Census address lookup when provided with lat",
+    )
 
     @field_validator("address")
     @classmethod
     def strip_address(cls, v: str) -> str:
         return v.strip()
+
+
+class AutocompleteSuggestion(BaseModel):
+    """A single address autocomplete suggestion from Nominatim."""
+
+    display_name: str = Field(description="Full formatted address")
+    lat: float
+    lon: float
+    place_type: str = Field(default="", description="OSM place type (house, street, etc.)")
+    city: str = Field(default="")
+    state: str = Field(default="")
 
 
 class GeocodeResponse(BaseModel):
