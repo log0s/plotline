@@ -259,9 +259,7 @@ async def geocode_address(
                         .where(TimelineRequestTask.timeline_request_id == timeline_req.id)
                         .where(TimelineRequestTask.source == "property")
                     ).scalars().first()
-                    if not prop_task or prop_task.status == "skipped" or (
-                        prop_task.status == "complete" and prop_task.items_found == 0
-                    ):
+                    if not prop_task or prop_task.status == "skipped":
                         needs_refetch = True
                         logger.info(
                             "Property data missing/skipped — adapter now available, will re-fetch",
