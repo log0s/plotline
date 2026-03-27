@@ -46,3 +46,15 @@ Slightly faster this time at only ~16 minutes to build, which makes sense given 
 * Some more basic mistakes, which to be honest I didn't expect --- not closing connections properly after use, blocking cleanup from async calls (not actually doing async), etc.
 * Does a good job on thinking through UI data freshness bugs; actually takes the time to follow the logical thread through various issues and find the actual problem. Seems overall much better at this than at semi-equivalent DB issues.
 * Can work through some surprisingly complex issues fairly well (e.g. tracking down new open data endpoint for Denver through multiple trails).
+
+### Phase 5
+
+Right around the same time to build as usual at ~22 minutes. Less than ten minutes of debugging to get everything working properly, plus another five or so to pull in some better/more relevant/more fleshed out featured examples. Unsurprisingly, other than the addition of some of the GIS stuff in phase 3 this was the phase that required the most manual intervention; I suspected that the final polish would be the trickiest thing to automate.
+
+* Planning mode is great. Breaks things down into steps on its own, gives reasoning, easy to tweak. Really powerful tool.
+* Added a lot of explicit error state handling (especially UI in this one). Handled building them out well once specifically told to do so.
+* Noticing more of the tendency to ignore direct instructions at times. Context too full possibly, but at this point it's seeming more and more to be just an inherent property of the system to some extent.
+* Makes very basic mistakes (UI infinite redirect due to overlapping/conflicting hooks, not handling URL updates well, etc) but is at least very quick to find/correct them when called out.
+* Very useful that it can also do more "research" projects; in this case choosing a new featured spot with better data
+* Shockingly smart when given specific directions. Came up with a fairly good caching strategy to speed up tiling that required only minor tweaks.
+* Seeing a similar pattern to earlier, where it will often think it has properly fixed the issue (especially if given vague guidance) and have to revisit it several times.
