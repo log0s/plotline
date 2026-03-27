@@ -161,8 +161,8 @@ export function Timeline() {
     items.push({ kind: "imagery", data: snap, dateStr: snap.capture_date });
   }
 
-  // Add visible property events
-  if (propertyEvents?.events) {
+  // Add visible property events (hidden in compare mode)
+  if (!compareMode && propertyEvents?.events) {
     for (const evt of propertyEvents.events) {
       if (!visibleEventTypes.has(evt.event_type)) continue;
       if (evt.event_date) {
@@ -304,24 +304,33 @@ export function Timeline() {
 
   const hasEvents = (propertyEvents?.events?.length ?? 0) > 0;
 
-  // Compare mode: clicking a snapshot assigns it to slot A or B
+  const compareSlotsSelected =
+    (compareSnapshots[0] ? 1 : 0) + (compareSnapshots[1] ? 1 : 0);
+  const compareAwaiting = compareMode && compareSlotsSelected < 2;
+
+  // Clicking a snapshot: select/deselect in normal mode, assign/unassign slots in compare mode
   const handleSnapshotClick = useCallback(
     (snap: ImagerySnapshot) => {
       if (!compareMode) {
-        setSelectedSnapshot(snap);
+        // Toggle: deselect if already selected
+        setSelectedSnapshot(selectedSnapshot?.id === snap.id ? null : snap);
         return;
       }
-      // Fill slot A first, then B
-      if (!compareSnapshots[0] || compareSnapshots[0].id === snap.id) {
+      // Compare mode: toggle slot if already assigned, otherwise fill next open slot
+      if (compareSnapshots[0]?.id === snap.id) {
+        setCompareSnapshot(0, null);
+      } else if (compareSnapshots[1]?.id === snap.id) {
+        setCompareSnapshot(1, null);
+      } else if (!compareSnapshots[0]) {
         setCompareSnapshot(0, snap);
-      } else if (!compareSnapshots[1] || compareSnapshots[1].id === snap.id) {
+      } else if (!compareSnapshots[1]) {
         setCompareSnapshot(1, snap);
       } else {
         // Both filled — replace B
         setCompareSnapshot(1, snap);
       }
     },
-    [compareMode, compareSnapshots, setSelectedSnapshot, setCompareSnapshot],
+    [compareMode, compareSnapshots, selectedSnapshot, setSelectedSnapshot, setCompareSnapshot],
   );
 
   return (
@@ -364,8 +373,8 @@ export function Timeline() {
               );
             })}
 
-          {/* Event filter toggles */}
-          {hasEvents && (
+          {/* Event filter toggles (hidden in compare mode) */}
+          {hasEvents && !compareMode && (
             <>
               <span className="w-px h-4 bg-navy-700/60 mx-1" />
               {(Object.keys(EVENT_FILTER_LABELS) as EventFilterKey[]).map((key) => {
@@ -432,6 +441,23 @@ export function Timeline() {
           </div>
         )}
 
+        {/* Compare mode instruction — outer div stretches to card height, pill aligned to thumbnail center */}
+        {compareAwaiting && (
+          <div className="self-stretch shrink-0 flex items-center pb-[30px]">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-dashed border-amber-500/30 bg-amber-500/5">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-400" />
+              </span>
+              <span className="text-[10px] text-amber-400/80 whitespace-nowrap">
+                {compareSlotsSelected === 0
+                  ? "Select two images"
+                  : "Select a second image"}
+              </span>
+            </div>
+          </div>
+        )}
+
         <AnimatePresence initial={false}>
           {items.map((item) =>
             item.kind === "imagery" ? (
@@ -440,6 +466,11 @@ export function Timeline() {
                 snapshot={item.data}
                 isSelected={selectedSnapshot?.id === item.data.id}
                 onSelect={handleSnapshotClick}
+                compareAwaiting={
+                  compareAwaiting &&
+                  compareSnapshots[0]?.id !== item.data.id &&
+                  compareSnapshots[1]?.id !== item.data.id
+                }
                 compareSlot={
                   compareMode
                     ? compareSnapshots[0]?.id === item.data.id
@@ -473,9 +504,10 @@ interface SnapshotCardProps {
   isSelected: boolean;
   onSelect: (snap: ImagerySnapshot) => void;
   compareSlot?: "A" | "B" | null;
+  compareAwaiting?: boolean;
 }
 
-function SnapshotCard({ snapshot, isSelected, onSelect, compareSlot }: SnapshotCardProps) {
+function SnapshotCard({ snapshot, isSelected, onSelect, compareSlot, compareAwaiting }: SnapshotCardProps) {
   const [imgError, setImgError] = useState(false);
   const source = snapshot.source as ImagerySource;
 
@@ -498,9 +530,13 @@ function SnapshotCard({ snapshot, isSelected, onSelect, compareSlot }: SnapshotC
       {/* Thumbnail */}
       <div
         className={`relative w-16 h-16 rounded-md overflow-hidden transition-all duration-150 ${
-          isSelected
+          compareSlot
             ? "ring-2 ring-amber-400 ring-offset-1 ring-offset-navy-950"
-            : "ring-1 ring-navy-700 group-hover:ring-navy-500"
+            : compareAwaiting
+              ? "ring-2 ring-amber-500/40 group-hover:ring-amber-400/70"
+              : isSelected
+                ? "ring-2 ring-amber-400 ring-offset-1 ring-offset-navy-950"
+                : "ring-1 ring-navy-700 group-hover:ring-navy-500"
         }`}
       >
         {snapshot.thumbnail_url && !imgError ? (

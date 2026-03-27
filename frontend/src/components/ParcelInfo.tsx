@@ -80,6 +80,7 @@ export function ParcelInfo({ parcel }: ParcelInfoProps) {
   const navigate = useNavigate();
   const { geocode } = useGeocoder();
   const isLoading = useAppStore((s) => s.isLoading);
+  const error = useAppStore((s) => s.error);
   const selectedEvent = useAppStore((s) => s.selectedEvent);
   const setSelectedEvent = useAppStore((s) => s.setSelectedEvent);
   const timelineRequestId = useAppStore((s) => s.timelineRequestId);
@@ -203,7 +204,7 @@ export function ParcelInfo({ parcel }: ParcelInfoProps) {
 
       {/* Search again footer */}
       <div className="px-5 py-4 border-t border-navy-700/60">
-        <SearchInput onSearch={handleSearch} isLoading={isLoading} />
+        <SearchInput onSearch={handleSearch} isLoading={isLoading} error={error} />
       </div>
     </motion.aside>
   );
@@ -214,6 +215,7 @@ export function ParcelInfo({ parcel }: ParcelInfoProps) {
 interface SearchInputProps {
   onSearch: (address: string, coords?: { lat: number; lon: number }) => void;
   isLoading: boolean;
+  error: string | null;
 }
 
 function EventDetail({ event, onClose }: { event: PropertyEvent; onClose: () => void }) {
@@ -303,8 +305,9 @@ function EventDetail({ event, onClose }: { event: PropertyEvent; onClose: () => 
   );
 }
 
-function SearchInput({ onSearch, isLoading }: SearchInputProps) {
+function SearchInput({ onSearch, isLoading, error }: SearchInputProps) {
   const { setQuery, suggestions, clear } = useAddressAutocomplete();
+  const setError = useAppStore((s) => s.setError);
   const [value, setValue] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(-1);
@@ -347,6 +350,7 @@ function SearchInput({ onSearch, isLoading }: SearchInputProps) {
   };
 
   return (
+    <div>
     <form onSubmit={handleSubmit} className="relative flex gap-2">
       <div className="relative flex-1">
         <input
@@ -358,6 +362,7 @@ function SearchInput({ onSearch, isLoading }: SearchInputProps) {
             setQuery(e.target.value);
             setShowSuggestions(true);
             setHighlightIndex(-1);
+            if (error) setError(null);
           }}
           onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
           onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
@@ -365,10 +370,11 @@ function SearchInput({ onSearch, isLoading }: SearchInputProps) {
           placeholder="Search another address..."
           disabled={isLoading}
           className={`
-            w-full px-3 py-2 rounded-xl bg-navy-800 border border-navy-600
+            w-full px-3 py-2 rounded-xl bg-navy-800 border
             text-sm text-white placeholder-slate-500
             focus:outline-none focus:border-amber-500/60
             disabled:opacity-50
+            ${error ? "border-red-500/60" : "border-navy-600"}
           `}
         />
         {showSuggestions && suggestions.length > 0 && (
@@ -423,5 +429,18 @@ function SearchInput({ onSearch, isLoading }: SearchInputProps) {
         {isLoading ? "..." : "Go"}
       </button>
     </form>
+    <AnimatePresence>
+      {error && (
+        <motion.p
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          className="mt-2 text-xs text-red-400"
+        >
+          {error}
+        </motion.p>
+      )}
+    </AnimatePresence>
+    </div>
   );
 }

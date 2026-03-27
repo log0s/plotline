@@ -105,6 +105,27 @@ export function CompareView({ parcel }: CompareViewProps) {
     leftMap.on("move", () => syncMaps(leftMap, rightMap));
     rightMap.on("move", () => syncMaps(rightMap, leftMap));
 
+    // Add marker to both maps so it's visible on both sides of the divider
+    for (const map of [leftMap, rightMap]) {
+      const el = document.createElement("div");
+      el.className = "plotline-marker";
+      el.innerHTML = `
+        <div style="
+          width: 20px;
+          height: 20px;
+          background: #f59e0b;
+          border: 3px solid #fff;
+          border-radius: 50% 50% 50% 0;
+          transform: rotate(-45deg);
+          box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+          pointer-events: none;
+        "></div>
+      `;
+      new maplibregl.Marker({ element: el, anchor: "bottom" })
+        .setLngLat(center)
+        .addTo(map);
+    }
+
     leftMapRef.current = leftMap;
     rightMapRef.current = rightMap;
 

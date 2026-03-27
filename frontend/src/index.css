@@ -29,6 +29,12 @@
   .maplibregl-ctrl-attrib a {
     color: rgba(251, 191, 36, 0.8) !important;
   }
+
+}
+
+/* Push MapLibre nav controls below the brand chip (outside @layer for full specificity) */
+.maplibregl-ctrl-top-left {
+  top: 58px !important;
 }
 
 @layer utilities {

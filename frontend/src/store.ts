@@ -107,9 +107,10 @@ export const useAppStore = create<AppState>((set) => ({
   setCompareMode: (compareMode: boolean) =>
     set((state) => ({
       compareMode,
-      // Clear selected snapshot when entering compare so it doesn't leak
+      // Clear selections when entering compare so they don't leak
       // into the compare view; restore nothing when exiting (user re-selects)
       selectedSnapshot: compareMode ? null : state.selectedSnapshot,
+      selectedEvent: compareMode ? null : state.selectedEvent,
       compareSnapshots: compareMode ? state.compareSnapshots : [null, null],
     })),
 
