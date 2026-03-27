@@ -214,6 +214,63 @@ export function Timeline() {
     el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }, [selectedSnapshot]);
 
+  // Middle-mouse-button drag to scroll the timeline horizontally
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    let isDragging = false;
+    let startX = 0;
+    let scrollLeft = 0;
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 1) return; // only middle mouse button
+      e.preventDefault();
+      isDragging = true;
+      startX = e.clientX;
+      scrollLeft = container.scrollLeft;
+      container.style.cursor = "grabbing";
+      container.style.userSelect = "none";
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      const dx = e.clientX - startX;
+      container.scrollLeft = scrollLeft - dx;
+    };
+
+    const onMouseUp = (e: MouseEvent) => {
+      if (!isDragging) return;
+      if (e.button === 1) e.preventDefault();
+      isDragging = false;
+      container.style.cursor = "";
+      container.style.userSelect = "";
+    };
+
+    // Convert vertical scroll wheel into horizontal scroll on the timeline
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY === 0) return;
+      e.preventDefault();
+      container.scrollLeft += e.deltaY;
+    };
+
+    container.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    container.addEventListener("wheel", onWheel, { passive: false });
+    // Prevent default middle-click auto-scroll behavior
+    container.addEventListener("auxclick", (e) => {
+      if (e.button === 1) e.preventDefault();
+    });
+
+    return () => {
+      container.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      container.removeEventListener("wheel", onWheel);
+    };
+  }, []);
+
   const toggleFilter = (source: ImagerySource) => {
     setActiveFilters((prev) => {
       const next = new Set(prev);
