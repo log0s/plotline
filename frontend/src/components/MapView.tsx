@@ -67,10 +67,12 @@ export function MapView({ parcel }: MapViewProps) {
       style: MAP_STYLE,
       center: [parcel.longitude, parcel.latitude],
       zoom: 15,
-      attributionControl: true,
+      attributionControl: false,
     });
 
-    map.addControl(new maplibregl.NavigationControl(), "top-right");
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-left");
+
+    map.addControl(new maplibregl.NavigationControl(), "top-left");
     map.addControl(new maplibregl.ScaleControl({ unit: "imperial" }), "bottom-left");
 
     map.on("load", () => {
@@ -144,6 +146,13 @@ export function MapView({ parcel }: MapViewProps) {
         lng: parcel.longitude,
       });
       setInfoChip(snap);
+
+      // Landsat/Sentinel look bad when zoomed in too close
+      const isLowRes =
+        snap?.source === "landsat" || snap?.source === "sentinel2";
+      if (isLowRes && map.getZoom() >= 14) {
+        map.easeTo({ zoom: 13, duration: 600 });
+      }
     };
 
     apply(selectedSnapshot);
