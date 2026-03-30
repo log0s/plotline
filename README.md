@@ -4,7 +4,7 @@
 
 Plotline turns a US address into a rich, scrollable timeline (decades of satellite and aerial imagery, neighborhood demographics, and property records) so you can watch a place evolve from farmland to subdivision, warehouse district to condo corridor, or quiet town to sprawling suburb.
 
-<video src="media/hero.mp4" autoplay loop muted playsinline width="100%"></video>
+![Plotline Demo](media/hero.gif)
 
 > **📍 Try it live**: *COMING SOON*
 >
