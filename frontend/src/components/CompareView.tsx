@@ -81,7 +81,7 @@ export function CompareView({ parcel }: CompareViewProps) {
       style: MAP_STYLE,
       center,
       zoom: 15,
-      attributionControl: true,
+      attributionControl: {},
     });
 
     leftMap.addControl(new maplibregl.NavigationControl(), "bottom-left");

@@ -71,11 +71,11 @@ export function applyImageryLayer(
       source: sourceId,
       paint: {
         "raster-opacity": 0,
-        "raster-opacity-transition": { duration: 600 },
       },
     },
     beforeLayer,
   );
+  map.setPaintProperty(layerId, "raster-opacity-transition", { duration: 600 });
 
   // Fade in
   requestAnimationFrame(() => {

@@ -234,12 +234,11 @@ export function SearchBar({
     <div className="w-full max-w-2xl mx-auto">
       <form onSubmit={handleSubmit} className="relative group">
         <motion.div
-          whileFocusWithin={{ scale: 1.01 }}
-          transition={{ duration: 0.15 }}
           className={`
             flex items-center gap-3 px-5 py-4 rounded-2xl
             bg-navy-800 border
             transition-all duration-200
+            group-focus-within:scale-[1.01]
             ${error ? "border-red-500/60" : "border-navy-600 group-focus-within:border-amber-500/60"}
             shadow-xl shadow-black/30
           `}

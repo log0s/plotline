@@ -66,8 +66,16 @@ class Settings(BaseSettings):
     @field_validator("database_url")
     @classmethod
     def validate_database_url(cls, v: str) -> str:
-        if not v.startswith("postgresql"):
+        if not v.startswith(("postgresql", "postgres")):
             raise ValueError("DATABASE_URL must be a PostgreSQL connection string")
+        # Normalize shorthand schemes to the full form with psycopg2 driver
+        v = v.replace("postgresql+asyncpg://", "postgresql://")
+        v = v.replace("postgres://", "postgresql://")
+        # psycopg2 uses 'sslmode', not 'ssl'
+        v = v.replace("?ssl=true", "?sslmode=require")
+        v = v.replace("&ssl=true", "&sslmode=require")
+        v = v.replace("?ssl=require", "?sslmode=require")
+        v = v.replace("&ssl=require", "&sslmode=require")
         return v
 
 

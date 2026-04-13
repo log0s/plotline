@@ -1,0 +1,22 @@
+app = "log0s-plotline-api"
+   primary_region = "lax"
+
+   [build]
+     dockerfile = "Dockerfile.fly"
+
+   [env]
+     APP_ENV = "production"
+     ENABLE_TITILER = "true"
+     TITILER_URL = "https://plotline-titiler.fly.dev"
+
+   [http_service]
+     internal_port = 8000
+     force_https = true
+     auto_stop_machines = "stop"
+     auto_start_machines = true
+     min_machines_running = 0
+
+   [[vm]]
+     memory = "512mb"
+     cpu_kind = "shared"
+     cpus = 1

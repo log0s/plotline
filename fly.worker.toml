@@ -1,0 +1,24 @@
+# fly.toml app configuration file generated for plotline-worker on 2026-04-13T13:04:24-06:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'plotline-worker'
+primary_region = 'lax'
+
+[build]
+  dockerfile = 'Dockerfile.fly'
+
+[env]
+  APP_ENV = 'production'
+  ENABLE_TITILER = 'true'
+  TITILER_URL = 'https://plotline-titiler.fly.dev'
+
+[processes]
+  worker = 'celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2'
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512

@@ -16,10 +16,21 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
+
+def _redis_url_with_ssl(url: str) -> str:
+    """Upstash/Fly Redis use rediss://; redis-py requires ssl_cert_reqs in the URL."""
+    if url.startswith("rediss://") and "ssl_cert_reqs=" not in url:
+        sep = "&" if "?" in url else "?"
+        return f"{url}{sep}ssl_cert_reqs=CERT_NONE"
+    return url
+
+
+_redis_url = _redis_url_with_ssl(settings.redis_url)
+
 celery_app = Celery(
     "plotline",
-    broker=settings.redis_url,
-    backend=settings.redis_url,
+    broker=_redis_url,
+    backend=_redis_url,
     include=["app.tasks.timeline"],
 )
 
@@ -34,3 +45,4 @@ celery_app.conf.update(
     task_reject_on_worker_lost=True,
     worker_prefetch_multiplier=1,
 )
+

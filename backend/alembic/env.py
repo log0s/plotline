@@ -32,6 +32,14 @@ def get_url() -> str:
             "DATABASE_URL environment variable is not set. "
             "Copy .env.example to .env and configure it."
         )
+    # Normalize async driver schemes to psycopg2 (sync) for Alembic migrations
+    url = url.replace("postgresql+asyncpg://", "postgresql://")
+    url = url.replace("postgres://", "postgresql://")
+    # psycopg2 uses 'sslmode', not 'ssl'
+    url = url.replace("?ssl=true", "?sslmode=require")
+    url = url.replace("&ssl=true", "&sslmode=require")
+    url = url.replace("?ssl=require", "?sslmode=require")
+    url = url.replace("&ssl=require", "&sslmode=require")
     return url
 
 
