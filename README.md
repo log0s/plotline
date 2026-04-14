@@ -6,7 +6,7 @@ Plotline turns a US address into a rich, scrollable timeline (decades of satelli
 
 ![Plotline Demo](media/hero.gif)
 
-> **📍 Try it live**: *COMING SOON*
+> **📍 Try it live**: [plotline.land](https://plotline.land) 
 >
 > Or run it locally — one command, see [Getting Started](#getting-started) below.
 
