@@ -24,6 +24,9 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copy backend source
 COPY backend/ .
 
+# Copy seed/maintenance scripts (run manually via `fly ssh console`)
+COPY scripts/ /app/scripts/
+
 # Entrypoint runs migrations then starts the app
 RUN chmod +x /app/entrypoint.sh && cp /app/entrypoint.sh /entrypoint.sh
 
