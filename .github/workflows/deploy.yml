@@ -5,7 +5,36 @@ on:
     branches: [main]
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      api: ${{ steps.filter.outputs.api }}
+      worker: ${{ steps.filter.outputs.worker }}
+      titiler: ${{ steps.filter.outputs.titiler }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'Dockerfile.fly'
+            api:
+              - 'backend/**'
+              - 'Dockerfile.fly'
+              - 'fly.toml'
+            worker:
+              - 'backend/**'
+              - 'Dockerfile.fly'
+              - 'fly.worker.toml'
+            titiler:
+              - 'fly.titiler.toml'
+
   test:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +49,8 @@ jobs:
           pytest -v
 
   deploy-api:
-    needs: test
+    needs: [changes, test]
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +60,8 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
   deploy-worker:
-    needs: test
+    needs: [changes, test]
+    if: needs.changes.outputs.worker == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,11 +71,9 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
   deploy-titiler:
-    needs: test
+    needs: changes
+    if: needs.changes.outputs.titiler == 'true'
     runs-on: ubuntu-latest
-    # Only deploy Titiler if its config changed (it uses a pre-built image,
-    # so there's rarely a reason to redeploy)
-    if: contains(github.event.head_commit.modified, 'fly.titiler.toml')
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
