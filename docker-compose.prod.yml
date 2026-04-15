@@ -10,7 +10,8 @@
 services:
   api:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
-    volumes: []
+    volumes:
+      - featured_previews:/app/static_data
 
   worker:
     volumes: []

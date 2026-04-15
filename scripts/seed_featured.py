@@ -151,66 +151,49 @@ def main() -> None:
             print(f"FAILED: {exc}")
             continue
 
-    # Step 4: Pre-warm tiles for all featured locations
+    # Step 4: Render static preview images for all featured locations
     print(f"\n{'='*60}")
-    print("Pre-warming tiles for featured locations...")
+    print("Rendering static preview images (latest NAIP)...")
     print(f"{'='*60}")
-    _prewarm_featured_tiles(client, api)
+    _render_featured_previews()
 
     print(f"\n{'='*60}")
     print("Featured location seeding complete!")
     print(f"{'='*60}")
 
 
-def _prewarm_featured_tiles(client: httpx.Client, api: str) -> None:
-    """Hit the tile proxy for featured parcels to warm SAS/STAC caches."""
-    import math
+def _render_featured_previews() -> None:
+    """Render a static JPEG preview per featured location from latest NAIP."""
+    import asyncio
 
-    try:
-        from app.db import SessionLocal
-        from app.models.parcels import FeaturedLocation as FL, ImagerySnapshot, Parcel
-        from sqlalchemy import select
+    from app.config import get_settings
+    from app.db import SessionLocal
+    from app.models.parcels import FeaturedLocation as FL
+    from app.services.preview_renderer import render_preview
+    from sqlalchemy import select
 
+    settings = get_settings()
+
+    async def _run() -> None:
         db = SessionLocal()
         try:
             locations = db.scalars(select(FL).order_by(FL.display_order)).all()
             for loc in locations:
-                parcel = db.get(Parcel, loc.parcel_id)
-                if not parcel:
+                try:
+                    rel_url = await render_preview(db, loc, settings)
+                except Exception as exc:
+                    print(f"  {loc.name}: FAILED ({exc})")
                     continue
-
-                # Get a few snapshots to warm (earliest + latest per source)
-                snaps = db.execute(
-                    select(ImagerySnapshot.id, ImagerySnapshot.source)
-                    .where(ImagerySnapshot.parcel_id == loc.parcel_id)
-                    .order_by(ImagerySnapshot.capture_date.desc())
-                    .limit(6)
-                ).all()
-
-                if not snaps:
-                    print(f"  {loc.name}: no snapshots, skipping")
+                if rel_url is None:
+                    print(f"  {loc.name}: no NAIP snapshot, skipping")
                     continue
-
-                lat, lng = parcel.latitude, parcel.longitude
-                warmed = 0
-                for snap_id, source in snaps[:3]:  # warm up to 3 snapshots
-                    for z in [14, 15]:
-                        n = 2 ** z
-                        x = int((lng + 180) / 360 * n)
-                        lat_rad = math.radians(lat)
-                        y = int((1 - math.log(math.tan(lat_rad) + 1 / math.cos(lat_rad)) / math.pi) / 2 * n)
-                        url = f"{api}/api/v1/imagery/{snap_id}/tiles/{z}/{x}/{y}"
-                        try:
-                            resp = client.get(url, timeout=30)
-                            if resp.status_code == 200:
-                                warmed += 1
-                        except Exception:
-                            pass
-                print(f"  {loc.name}: warmed {warmed} tiles")
+                loc.preview_image_url = rel_url
+                db.commit()
+                print(f"  {loc.name}: {rel_url}")
         finally:
             db.close()
-    except Exception as exc:
-        print(f"  Pre-warming failed: {exc}")
+
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":

@@ -428,6 +428,7 @@ class FeaturedLocation(Base):
     slug: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     key_stat: Mapped[str | None] = mapped_column(Text, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    preview_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

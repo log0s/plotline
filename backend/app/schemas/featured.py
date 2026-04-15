@@ -19,6 +19,7 @@ class FeaturedLocationResponse(BaseModel):
     longitude: float
     earliest_snapshot_id: str | None
     latest_snapshot_id: str | None
+    preview_image_url: str | None
 
     model_config = {"from_attributes": True}
 

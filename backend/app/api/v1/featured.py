@@ -48,6 +48,7 @@ def _build_response(
         longitude=parcel.longitude,
         earliest_snapshot_id=earliest_id,
         latest_snapshot_id=latest_id,
+        preview_image_url=loc.preview_image_url,
     )
 
 

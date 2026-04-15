@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     # In Docker Compose this resolves via service-name DNS.
     api_internal_url: str = "http://api:8000"
 
+    # ── Static assets (pre-rendered featured previews, etc.) ──────────────────
+    static_dir: str = "/app/static_data"
+
     @field_validator("database_url")
     @classmethod
     def validate_database_url(cls, v: str) -> str:

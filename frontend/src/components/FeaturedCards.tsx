@@ -12,24 +12,6 @@ import type { FeaturedLocation } from "../types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
-/** Convert lat/lng to tile x/y at a given zoom level. */
-function latLngToTile(lat: number, lng: number, zoom: number): { x: number; y: number } {
-  const n = 2 ** zoom;
-  const x = Math.floor(((lng + 180) / 360) * n);
-  const latRad = (lat * Math.PI) / 180;
-  const y = Math.floor(
-    ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n,
-  );
-  return { x, y };
-}
-
-/** Build a tile proxy URL for a snapshot at a specific location. */
-function tileUrl(snapshotId: string, lat: number, lng: number): string {
-  const zoom = 14;
-  const { x, y } = latLngToTile(lat, lng, zoom);
-  return `${API_BASE}/api/v1/imagery/${snapshotId}/tiles/${zoom}/${x}/${y}`;
-}
-
 const PLACEHOLDER_CARDS: FeaturedLocation[] = [
   {
     id: "placeholder-1",
@@ -43,6 +25,7 @@ const PLACEHOLDER_CARDS: FeaturedLocation[] = [
     longitude: 0,
     earliest_snapshot_id: null,
     latest_snapshot_id: null,
+    preview_image_url: null,
   },
   {
     id: "placeholder-2",
@@ -56,6 +39,7 @@ const PLACEHOLDER_CARDS: FeaturedLocation[] = [
     longitude: 0,
     earliest_snapshot_id: null,
     latest_snapshot_id: null,
+    preview_image_url: null,
   },
   {
     id: "placeholder-3",
@@ -69,6 +53,7 @@ const PLACEHOLDER_CARDS: FeaturedLocation[] = [
     longitude: 0,
     earliest_snapshot_id: null,
     latest_snapshot_id: null,
+    preview_image_url: null,
   },
 ];
 
@@ -93,8 +78,10 @@ export function FeaturedCards() {
             ? `/explore/${card.parcel_id}`
             : `/featured/${card.slug}`;
 
-          const previewUrl = card.latest_snapshot_id && card.latitude
-            ? tileUrl(card.latest_snapshot_id, card.latitude, card.longitude)
+          const previewUrl = card.preview_image_url
+            ? card.preview_image_url.startsWith("http")
+              ? card.preview_image_url
+              : `${API_BASE}${card.preview_image_url}`
             : null;
 
           return (

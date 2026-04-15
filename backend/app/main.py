@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import logging
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import demographics, events, featured, geocode, health, imagery, parcels
 from app.config import get_settings
@@ -44,6 +47,10 @@ def create_app() -> FastAPI:
     app.include_router(demographics.router, prefix="/api/v1", tags=["demographics"])
     app.include_router(events.router, prefix="/api/v1", tags=["events"])
     app.include_router(featured.router, prefix="/api/v1", tags=["featured"])
+
+    # ── Static files ──────────────────────────────────────────────────────────
+    os.makedirs(settings.static_dir, exist_ok=True)
+    app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 
     @app.on_event("startup")
     async def on_startup() -> None:

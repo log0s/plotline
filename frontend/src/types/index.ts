@@ -172,6 +172,7 @@ export interface FeaturedLocation {
   longitude: number;
   earliest_snapshot_id: string | null;
   latest_snapshot_id: string | null;
+  preview_image_url: string | null;
 }
 
 // ── API Error shape ───────────────────────────────────────────────────────────
