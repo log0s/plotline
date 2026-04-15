@@ -64,7 +64,10 @@ class Settings(BaseSettings):
     api_internal_url: str = "http://api:8000"
 
     # ── Static assets (pre-rendered featured previews, etc.) ──────────────────
-    static_dir: str = "/app/static_data"
+    # Relative by default so it resolves under the process cwd — /app/static_data
+    # in the container (WORKDIR=/app), backend/static_data when running tests
+    # from the backend/ directory. Override with STATIC_DIR env var.
+    static_dir: str = "static_data"
 
     @field_validator("database_url")
     @classmethod
