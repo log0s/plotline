@@ -6,6 +6,7 @@
  * The right map (B) is clipped with clip-path so only the portion to
  * the right of the divider is visible, revealing map A underneath on the left.
  */
+import { LocateFixed } from "lucide-react";
 import maplibregl from "maplibre-gl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { applyImageryLayer } from "../utils/applyImageryLayer";
@@ -145,6 +146,18 @@ export function CompareView({ parcel }: CompareViewProps) {
   // Apply imagery to right map (snapshot B)
   useApplySnapshot(rightMapRef, rightReadyRef, snapB, parcel);
 
+  const handleRecenter = useCallback(() => {
+    // Fly the left map; the sync handler mirrors camera onto the right map.
+    leftMapRef.current?.flyTo({
+      center: [parcel.longitude, parcel.latitude],
+      zoom: 15,
+      bearing: 0,
+      pitch: 0,
+      duration: 800,
+      essential: true,
+    });
+  }, [parcel.latitude, parcel.longitude]);
+
   // Draggable divider handlers
   const handleDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
@@ -229,6 +242,17 @@ export function CompareView({ parcel }: CompareViewProps) {
           <SnapshotLabel snapshot={snapB} side="B" />
         </div>
       )}
+
+      {/* Recenter button */}
+      <button
+        type="button"
+        onClick={handleRecenter}
+        title="Recenter on searched address"
+        aria-label="Recenter on searched address"
+        className="absolute top-4 right-4 z-30 p-2 rounded-xl bg-navy-900/90 backdrop-blur-sm border border-navy-700/60 text-slate-200 hover:border-amber-500/40 hover:text-amber-400 transition-colors"
+      >
+        <LocateFixed className="w-4 h-4" aria-hidden="true" />
+      </button>
 
       {/* Exit button */}
       <button
