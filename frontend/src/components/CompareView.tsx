@@ -288,6 +288,13 @@ function useApplySnapshot(
         lat: parcel.latitude,
         lng: parcel.longitude,
       });
+
+      // Landsat/Sentinel look bad when zoomed in too close — matches MapView
+      const isLowRes =
+        snapshot?.source === "landsat" || snapshot?.source === "sentinel2";
+      if (isLowRes && map.getZoom() >= 14) {
+        map.easeTo({ zoom: 13, duration: 600 });
+      }
     };
 
     apply();
