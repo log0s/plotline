@@ -4,10 +4,6 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
 import "./index.css";
 import { router } from "./router";
-import { warmupServices } from "./utils/warmup";
-
-// Wake fly.io machines immediately — they auto-stop when idle.
-warmupServices();
 
 const queryClient = new QueryClient({
   defaultOptions: {
