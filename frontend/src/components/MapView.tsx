@@ -5,6 +5,7 @@
  * as a raster layer with a crossfade transition via the shared
  * applyImageryLayer utility.
  */
+import { LocateFixed } from "lucide-react";
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
 import { applyImageryLayer } from "../utils/applyImageryLayer";
@@ -158,6 +159,17 @@ export function MapView({ parcel }: MapViewProps) {
     apply(selectedSnapshot);
   }, [selectedSnapshot, parcel.latitude, parcel.longitude]);
 
+  const handleRecenter = () => {
+    mapRef.current?.flyTo({
+      center: [parcel.longitude, parcel.latitude],
+      zoom: 15,
+      bearing: 0,
+      pitch: 0,
+      duration: 800,
+      essential: true,
+    });
+  };
+
   return (
     <div className="relative w-full h-full">
       <div
@@ -165,6 +177,16 @@ export function MapView({ parcel }: MapViewProps) {
         className="w-full h-full"
         aria-label="Map view"
       />
+
+      <button
+        type="button"
+        onClick={handleRecenter}
+        title="Recenter on searched address"
+        aria-label="Recenter on searched address"
+        className="absolute top-4 right-[21rem] z-10 p-2 rounded-xl bg-navy-900/90 backdrop-blur-sm border border-navy-700/60 text-slate-200 hover:border-amber-500/40 hover:text-amber-400 transition-colors"
+      >
+        <LocateFixed className="w-4 h-4" aria-hidden="true" />
+      </button>
 
       {/* Imagery info chip */}
       {infoChip && (
