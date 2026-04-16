@@ -89,7 +89,7 @@ FEATURED_LOCATIONS = [
     {
         "address": "500 W 33rd St, New York, NY 10001",
         "name": "Hudson Yards",
-        "subtitle": "Midtown Manhattan rail yards became the most expensive development in US history",
+        "subtitle": "Open rail yards on Manhattan's West Side became a supertower megaproject",
         "slug": "hudson-yards",
         "key_stat": "TBD — recompute after pipeline run",
         "description": (

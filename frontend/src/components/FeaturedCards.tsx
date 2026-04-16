@@ -87,7 +87,7 @@ const PLACEHOLDER_CARDS: FeaturedLocation[] = [
     id: "placeholder-6",
     parcel_id: "",
     name: "Hudson Yards",
-    subtitle: "Midtown Manhattan rail yards became the most expensive development in US history",
+    subtitle: "Open rail yards on Manhattan's West Side became a supertower megaproject",
     slug: "hudson-yards",
     key_stat: null,
     description: null,
@@ -136,7 +136,7 @@ export function FeaturedCards() {
             >
               <Link
                 to={href}
-                className="block group rounded-2xl bg-navy-800/60 border border-navy-700/50 hover:border-amber-500/30 transition-all duration-200 overflow-hidden"
+                className="h-full flex flex-col group rounded-2xl bg-navy-800/60 border border-navy-700/50 hover:border-amber-500/30 transition-all duration-200 overflow-hidden"
               >
                 {/* Thumbnail area */}
                 <div className="h-36 bg-navy-800 flex items-center justify-center overflow-hidden">
@@ -155,7 +155,7 @@ export function FeaturedCards() {
                   <h3 className="text-white font-medium mb-1 group-hover:text-amber-400 transition-colors">
                     {card.name}
                   </h3>
-                  <p className="text-xs text-slate-400 leading-relaxed mb-2">
+                  <p className="text-xs text-slate-400 leading-relaxed mb-2 line-clamp-2">
                     {card.subtitle}
                   </p>
                   {card.key_stat && (
