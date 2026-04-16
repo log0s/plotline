@@ -40,7 +40,6 @@ services:
     volumes:
       - ./backend:/app
       - ./scripts:/app/scripts
-      - featured_previews:/app/static_data
     ports:
       - "8000:8000"
     depends_on:
@@ -102,4 +101,3 @@ services:
 
 volumes:
   postgres_data:
-  featured_previews:
