@@ -62,6 +62,7 @@ def list_featured(db: Session = Depends(get_db)) -> FeaturedListResponse:
     for loc in locations:
         parcel = db.get(Parcel, loc.parcel_id)
         if not parcel:
+            logger.warning("Featured location %r (slug=%s) references missing parcel %s — skipping", loc.name, loc.slug, loc.parcel_id)
             continue
         results.append(_build_response(loc, parcel, db))
 

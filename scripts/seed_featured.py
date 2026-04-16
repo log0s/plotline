@@ -22,7 +22,7 @@ FEATURED_LOCATIONS = [
     {
         "address": "8340 Northfield Blvd, Denver, CO 80238",
         "name": "Stapleton / Central Park",
-        "subtitle": "Airport to neighborhood — the largest urban redevelopment in US history",
+        "subtitle": "Denver's closed airport became the largest urban redevelopment in US history",
         "slug": "stapleton-central-park",
         "key_stat": "Former airport site, 4,700-acre master-planned community",
         "description": (
@@ -35,7 +35,7 @@ FEATURED_LOCATIONS = [
     {
         "address": "2901 Blake St, Denver, CO 80205",
         "name": "RiNo Art District",
-        "subtitle": "Industrial warehouses to breweries and condos in under a decade",
+        "subtitle": "An industrial corridor transformed into Denver's trendiest neighborhood",
         "slug": "rino-art-district",
         "key_stat": "Denver's fastest-appreciating neighborhood, 2014-2020",
         "description": (
@@ -48,7 +48,7 @@ FEATURED_LOCATIONS = [
     {
         "address": "4800 Telluride St, Denver, CO 80249",
         "name": "Green Valley Ranch",
-        "subtitle": "Prairie to planned community in 15 years of explosive growth",
+        "subtitle": "Open prairie east of Denver exploded into a planned community in 15 years",
         "slug": "green-valley-ranch",
         "key_stat": "Population grew thousands of percent since 2000",
         "description": (
@@ -57,6 +57,49 @@ FEATURED_LOCATIONS = [
             "schools, and commercial centers that now house tens of thousands."
         ),
         "display_order": 3,
+    },
+    {
+        "address": "9311 S Cimarron Rd, Las Vegas, NV 89178",
+        "name": "Southern Highlands, Las Vegas",
+        "subtitle": "Empty Mojave desert became one of America's fastest-growing suburbs",
+        "slug": "southern-highlands",
+        "key_stat": "Open desert in 1996, 50,000+ residents by 2010",
+        "description": (
+            "The southwest fringe of Las Vegas near Southern Highlands was empty "
+            "Mojave desert through the 1980s and 1990s. Landsat shows bare sand; "
+            "by the mid-2000s NAIP reveals a grid of rooftops, golf courses, and "
+            "arterial roads spreading into the valley."
+        ),
+        "display_order": 4,
+    },
+    {
+        "address": "24241 Atlantic Dr, Rodanthe, NC 27968",
+        "name": "Rodanthe, Outer Banks",
+        "subtitle": "Decades of coastal erosion reshaped the Outer Banks barrier islands",
+        "slug": "rodanthe-outer-banks",
+        "key_stat": "Shoreline retreated over 200 ft since 1984",
+        "description": (
+            "Rodanthe sits on one of the narrowest stretches of the Outer Banks. "
+            "Comparing Landsat imagery from the 1980s to recent NAIP shows the "
+            "shoreline migrating westward, houses lost to the surf, and NC-12 "
+            "repeatedly relocated as the barrier island rolls over itself."
+        ),
+        "display_order": 5,
+    },
+    {
+        "address": "500 W 33rd St, New York, NY 10001",
+        "name": "Hudson Yards",
+        "subtitle": "Midtown Manhattan rail yards became the most expensive development in US history",
+        "slug": "hudson-yards",
+        "key_stat": "TBD — recompute after pipeline run",
+        "description": (
+            "The Hudson Yards site on Manhattan's far west side spent decades as "
+            "an open rail yard serving Penn Station. Landsat imagery from the 1990s "
+            "shows bare tracks; by the 2010s, a platform deck was constructed over "
+            "the active rails and a cluster of supertall towers rose above it in "
+            "the largest private real-estate development in US history."
+        ),
+        "display_order": 6,
     },
 ]
 

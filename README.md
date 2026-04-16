@@ -21,11 +21,17 @@ Enter any US address. Plotline geocodes it, then searches public archives for ev
 
 These locations are pre-loaded and ready to explore:
 
-**🏘️ Green Valley Ranch, Denver** — Prairie to planned community in 15 years. NAIP imagery from 2003 shows empty grassland; by 2023 it's a dense subdivision with schools and parks. Census population grew over 4,000%.
+**✈️ Stapleton / Central Park, Denver** — Denver's closed airport became the largest urban redevelopment in US history. NAIP imagery from 2003 shows runways being demolished; by 2023, the 4,700-acre site is a dense neighborhood with schools, parks, and thousands of homes.
 
-**🏗️ RiNo District, Denver** — Industrial warehouses to breweries and condos. Demolition and new construction permits cluster between 2014–2020. Median home values tripled in a decade.
+**🏗️ RiNo Art District, Denver** — An industrial corridor of rail yards and warehouses transformed into Denver's trendiest neighborhood. Demolition and new construction permits cluster between 2014–2020, and median home values tripled in a decade.
 
-**✈️ Stapleton/Central Park** — Airport to neighborhood --- the largest urban redevelopment in US history.
+**🏘️ Green Valley Ranch, Denver** — Open prairie east of Denver exploded into a planned community in 15 years. NAIP imagery from 2003 shows empty grassland; by 2023 it's a dense subdivision with schools, parks, and tens of thousands of residents.
+
+**🏜️ Southern Highlands, Las Vegas** — Empty Mojave desert became one of America's fastest-growing suburbs. Landsat shows bare sand through the 1980s and 1990s; by the mid-2000s NAIP reveals a grid of rooftops, golf courses, and arterial roads spreading across the valley floor.
+
+**🌊 Rodanthe, Outer Banks** — Decades of coastal erosion reshaped the Outer Banks barrier islands. Satellite imagery reveals the shoreline migrating westward, with houses lost to the surf and NC-12 repeatedly relocated as the island rolls over itself.
+
+**🏙️ Hudson Yards, Manhattan** — Midtown Manhattan rail yards became the most expensive development in US history. Landsat shows open tracks through the 1990s; by the 2010s, a platform deck over the active rails supports a cluster of supertall towers.
 
 ---
 
@@ -186,6 +192,8 @@ This project was built using [Claude Code](https://docs.anthropic.com/en/docs/bu
 **Income and home values are nominal dollars.** The demographic charts show dollar values as reported in each year's Census data, not adjusted for inflation. A median income of $40,000 in 1990 is not directly comparable to $75,000 in 2023. This is noted in the UI.
 
 **Imagery availability varies by location.** NAIP coverage starts around 2003 and is limited to the continental US. Landsat goes back to 1984 but at 30m resolution — you can see land use changes but not individual buildings. Very rural areas may have sparse NAIP coverage. Areas outside the US have no NAIP or Census data.
+
+**Cross-source comparison is imperfect.** Each imagery source has its own footprint, resolution, and acquisition geometry. A 1m NAIP tile and a 30m Landsat scene cover very different areas at very different detail, and successive NAIP acquisitions don't always cover the exact same extent. The timeline reprojects and crops to a shared bounding box, but comparing fine-grained change over a specific parcel across sources can still be difficult.
 
 ---
 
