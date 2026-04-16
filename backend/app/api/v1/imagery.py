@@ -298,6 +298,27 @@ async def _proxy_landsat_tile(
 
 
 @router.get(
+    "/imagery/tiles/healthz",
+    summary="Proxy Titiler health check to wake fly.io machine",
+    description="Forwards to the Titiler /healthz endpoint. Used by the frontend on page load to wake the tiler.",
+)
+async def titiler_healthz(
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """Proxy the Titiler health check so the frontend can wake it without CORS issues."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{settings.titiler_url}/healthz")
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            media_type=resp.headers.get("content-type", "application/json"),
+        )
+    except httpx.RequestError:
+        return Response(content=b'{"status":"starting"}', status_code=503, media_type="application/json")
+
+
+@router.get(
     "/imagery/{snapshot_id}/tiles/{z}/{x}/{y}",
     summary="Proxy a tile through Titiler with fresh signed URLs",
     description=(
