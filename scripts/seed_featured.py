@@ -91,7 +91,7 @@ FEATURED_LOCATIONS = [
         "name": "Hudson Yards",
         "subtitle": "Open rail yards on Manhattan's West Side became a supertower megaproject",
         "slug": "hudson-yards",
-        "key_stat": "TBD — recompute after pipeline run",
+        "key_stat": "$25B+ built on a deck over active Penn Station rail yards",
         "description": (
             "The Hudson Yards site on Manhattan's far west side spent decades as "
             "an open rail yard serving Penn Station. Landsat imagery from the 1990s "
@@ -166,6 +166,7 @@ def main() -> None:
                         FeaturedLocationModel.slug == loc["slug"]
                     )
                 ).first()
+                preview_url = f"/static/featured/{loc['slug']}.jpg"
                 if existing:
                     print("ALREADY EXISTS, updating...")
                     existing.parcel_id = parcel_id  # type: ignore[assignment]
@@ -174,6 +175,7 @@ def main() -> None:
                     existing.key_stat = loc["key_stat"]
                     existing.description = loc["description"]
                     existing.display_order = loc["display_order"]
+                    existing.preview_image_url = preview_url
                     db.commit()
                 else:
                     featured = FeaturedLocationModel(
@@ -184,6 +186,7 @@ def main() -> None:
                         key_stat=loc["key_stat"],
                         description=loc["description"],
                         display_order=loc["display_order"],
+                        preview_image_url=preview_url,
                     )
                     db.add(featured)
                     db.commit()

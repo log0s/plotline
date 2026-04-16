@@ -65,8 +65,12 @@
 **/*.tmp
 **/*.temp
 
-# Pre-rendered static assets (featured previews) — generated, volume-backed
-**/static_data
+# Pre-rendered static assets — strip dev renders but keep the committed
+# featured previews so they ship inside the image.
+**/static_data/*
+!**/static_data/featured
+**/static_data/featured/*
+!**/static_data/featured/*.jpg
 
 # flyctl launch added from backend/.pytest_cache/.gitignore
 # Created by pytest automatically.

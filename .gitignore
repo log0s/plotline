@@ -65,6 +65,11 @@ logs/
 *.tmp
 *.temp
 
-# Pre-rendered static assets (featured previews) — generated, volume-backed
-backend/static_data/
-static_data/
+# Pre-rendered static assets. Dev renders are ignored, but the committed
+# preview JPEGs under featured/ ship inside the Docker image so every Fly
+# machine serves identical bytes.
+/static_data/
+backend/static_data/*
+!backend/static_data/featured/
+backend/static_data/featured/*
+!backend/static_data/featured/*.jpg

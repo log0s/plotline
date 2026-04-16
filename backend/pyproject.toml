@@ -24,6 +24,8 @@ dependencies = [
     # Geospatial
     "shapely>=2.0.4",
     "pyproj>=3.6.0",
+    # Imaging (alpha-composite NAIP tiles into featured previews)
+    "pillow>=10.3.0",
     # Async jobs
     "celery[redis]>=5.4.0",
     "redis>=5.0.4",
