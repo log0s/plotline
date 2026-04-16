@@ -156,11 +156,21 @@ async def list_imagery(
     for snap in snapshots:
         if snap.source == "landsat":
             signed_cog = snap.cog_url  # STAC item URL — public, no SAS needed
+            signed_extras: list[str] | None = snap.additional_cog_urls
         else:
             try:
                 signed_cog = await stac_service.sign_pc_url(snap.cog_url)
             except Exception:
                 signed_cog = snap.cog_url
+            if snap.additional_cog_urls:
+                signed_extras = []
+                for url in snap.additional_cog_urls:
+                    try:
+                        signed_extras.append(await stac_service.sign_pc_url(url))
+                    except Exception:
+                        signed_extras.append(url)
+            else:
+                signed_extras = None
 
         try:
             signed_thumb = (
@@ -178,6 +188,8 @@ async def list_imagery(
                 source=snap.source,
                 capture_date=snap.capture_date,
                 cog_url=signed_cog,
+                additional_cog_urls=signed_extras,
+                bbox=list(snap.bbox) if snap.bbox else None,
                 thumbnail_url=signed_thumb,
                 resolution_m=snap.resolution_m,
                 cloud_cover_pct=snap.cloud_cover_pct,
@@ -257,14 +269,32 @@ async def _fetch_titiler(
 
 
 async def _proxy_cog_tile(
-    snap: ImagerySnapshotRow, z: int, x: int, y: int, settings: Settings,
+    snap: ImagerySnapshotRow,
+    z: int,
+    x: int,
+    y: int,
+    settings: Settings,
+    *,
+    cog_index: int = 0,
 ) -> Response:
-    """Proxy a tile for single-file COG sources (NAIP, Sentinel-2)."""
+    """Proxy a tile for single-file COG sources (NAIP, Sentinel-2).
+
+    ``cog_index`` selects which COG to render: 0 = primary (``cog_url``),
+    1+ = ``additional_cog_urls[cog_index - 1]`` (mosaic components).
+    """
+    if cog_index == 0:
+        source_url = snap.cog_url
+    else:
+        extras = snap.additional_cog_urls or []
+        if cog_index - 1 >= len(extras):
+            raise HTTPException(status_code=404, detail="cog index out of range")
+        source_url = extras[cog_index - 1]
+
     try:
-        signed_url = await stac_service.sign_pc_url(snap.cog_url)
+        signed_url = await stac_service.sign_pc_url(source_url)
     except Exception as exc:
         logger.warning("URL signing failed, falling back to unsigned", exc_info=exc)
-        signed_url = snap.cog_url
+        signed_url = source_url
 
     band_params = _COG_PARAMS.get(snap.source, {"bidx": [1, 2, 3], "rescale": "0,255"})
     params: dict[str, object] = {"url": signed_url, **band_params}
@@ -315,6 +345,7 @@ async def proxy_imagery_tile(
     z: int,
     x: int,
     y: int,
+    cog: int = Query(default=0, ge=0, description="Mosaic tile index (0 = primary)"),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> Response:
@@ -329,8 +360,9 @@ async def proxy_imagery_tile(
     db.close()
 
     if snap.source == "landsat":
+        # Landsat mosaic components not yet supported — always render primary
         return await _proxy_landsat_tile(snap, z, x, y, settings)
-    return await _proxy_cog_tile(snap, z, x, y, settings)
+    return await _proxy_cog_tile(snap, z, x, y, settings, cog_index=cog)
 
 
 @router.get(

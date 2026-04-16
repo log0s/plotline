@@ -44,6 +44,8 @@ class ImagerySnapshotRow:
     thumbnail_url: str | None
     resolution_m: float | None
     cloud_cover_pct: float | None
+    additional_cog_urls: list[str] | None = None
+    bbox: tuple[float, float, float, float] | None = None
     created_at: datetime | None = None
 
 
@@ -170,6 +172,7 @@ def upsert_imagery_snapshot(
     stac_item_id: str,
     stac_collection: str,
     cog_url: str,
+    additional_cog_urls: list[str] | None = None,
     thumbnail_url: str | None = None,
     resolution_m: float | None = None,
     cloud_cover_pct: float | None = None,
@@ -189,12 +192,14 @@ def upsert_imagery_snapshot(
             """
             INSERT INTO imagery_snapshots
                 (id, parcel_id, source, capture_date, stac_item_id, stac_collection,
-                 bbox, cog_url, thumbnail_url, resolution_m, cloud_cover_pct)
+                 bbox, cog_url, additional_cog_urls, thumbnail_url, resolution_m, cloud_cover_pct)
             VALUES
                 (:id, :parcel_id, :source, :capture_date, :stac_item_id, :stac_collection,
-                 ST_GeomFromEWKT(:bbox), :cog_url, :thumbnail_url, :resolution_m, :cloud_cover_pct)
+                 ST_GeomFromEWKT(:bbox), :cog_url, :additional_cog_urls,
+                 :thumbnail_url, :resolution_m, :cloud_cover_pct)
             ON CONFLICT (parcel_id, stac_item_id) DO UPDATE
                 SET cog_url = EXCLUDED.cog_url,
+                    additional_cog_urls = EXCLUDED.additional_cog_urls,
                     thumbnail_url = EXCLUDED.thumbnail_url
             """
         )
@@ -207,6 +212,7 @@ def upsert_imagery_snapshot(
             "stac_collection": stac_collection,
             "bbox": bbox_wkt,
             "cog_url": cog_url,
+            "additional_cog_urls": additional_cog_urls,
             "thumbnail_url": thumbnail_url,
             "resolution_m": resolution_m,
             "cloud_cover_pct": cloud_cover_pct,
@@ -216,12 +222,13 @@ def upsert_imagery_snapshot(
             """
             INSERT INTO imagery_snapshots
                 (id, parcel_id, source, capture_date, stac_item_id, stac_collection,
-                 cog_url, thumbnail_url, resolution_m, cloud_cover_pct)
+                 cog_url, additional_cog_urls, thumbnail_url, resolution_m, cloud_cover_pct)
             VALUES
                 (:id, :parcel_id, :source, :capture_date, :stac_item_id, :stac_collection,
-                 :cog_url, :thumbnail_url, :resolution_m, :cloud_cover_pct)
+                 :cog_url, :additional_cog_urls, :thumbnail_url, :resolution_m, :cloud_cover_pct)
             ON CONFLICT (parcel_id, stac_item_id) DO UPDATE
                 SET cog_url = EXCLUDED.cog_url,
+                    additional_cog_urls = EXCLUDED.additional_cog_urls,
                     thumbnail_url = EXCLUDED.thumbnail_url
             """
         )
@@ -233,6 +240,7 @@ def upsert_imagery_snapshot(
             "stac_item_id": stac_item_id,
             "stac_collection": stac_collection,
             "cog_url": cog_url,
+            "additional_cog_urls": additional_cog_urls,
             "thumbnail_url": thumbnail_url,
             "resolution_m": resolution_m,
             "cloud_cover_pct": cloud_cover_pct,
@@ -243,12 +251,40 @@ def upsert_imagery_snapshot(
     return True
 
 
+def _is_postgres(db: Session) -> bool:
+    """Return True if the bound engine is PostgreSQL (SQLite lacks PostGIS)."""
+    try:
+        return db.get_bind().dialect.name == "postgresql"  # type: ignore[no-any-return]
+    except Exception:
+        return False
+
+
+def _bbox_select_sql() -> str:
+    """SQL fragment for the four bbox component columns.
+
+    On PostgreSQL, uses PostGIS ``ST_XMin``/``ST_YMin``/``ST_XMax``/``ST_YMax``.
+    On SQLite (test DB, no PostGIS), returns NULL columns so the query still
+    executes and the Python-side bbox tuple is None.
+    """
+    return (
+        "ST_XMin(bbox) AS bbox_w, ST_YMin(bbox) AS bbox_s, "
+        "ST_XMax(bbox) AS bbox_e, ST_YMax(bbox) AS bbox_n"
+    )
+
+
+def _bbox_select_sql_sqlite() -> str:
+    return "NULL AS bbox_w, NULL AS bbox_s, NULL AS bbox_e, NULL AS bbox_n"
+
+
 def get_snapshot_by_id(db: Session, snapshot_id: uuid.UUID) -> ImagerySnapshotRow | None:
     """Return a single imagery snapshot by ID, or None if not found."""
+    bbox_select = _bbox_select_sql() if _is_postgres(db) else _bbox_select_sql_sqlite()
     sql = sa_text(
-        """
+        f"""
         SELECT id, parcel_id, source, capture_date, stac_item_id, stac_collection,
-               cog_url, thumbnail_url, resolution_m, cloud_cover_pct, created_at
+               cog_url, additional_cog_urls, thumbnail_url,
+               resolution_m, cloud_cover_pct, created_at,
+               {bbox_select}
         FROM imagery_snapshots
         WHERE id = :id
         """
@@ -264,9 +300,11 @@ def get_snapshot_by_id(db: Session, snapshot_id: uuid.UUID) -> ImagerySnapshotRo
         stac_item_id=row["stac_item_id"],
         stac_collection=row["stac_collection"],
         cog_url=row["cog_url"],
+        additional_cog_urls=row["additional_cog_urls"],
         thumbnail_url=row["thumbnail_url"],
         cloud_cover_pct=row["cloud_cover_pct"],
         resolution_m=row["resolution_m"],
+        bbox=_row_bbox(row),
     )
 
 
@@ -295,10 +333,13 @@ def get_imagery_snapshots(
         params["end_date"] = end_date.isoformat()
 
     where_sql = " AND ".join(where_clauses)
+    bbox_select = _bbox_select_sql() if _is_postgres(db) else _bbox_select_sql_sqlite()
     sql = sa_text(
         f"""
         SELECT id, parcel_id, source, capture_date, stac_item_id, stac_collection,
-               cog_url, thumbnail_url, resolution_m, cloud_cover_pct, created_at
+               cog_url, additional_cog_urls, thumbnail_url,
+               resolution_m, cloud_cover_pct, created_at,
+               {bbox_select}
         FROM imagery_snapshots
         WHERE {where_sql}
         ORDER BY capture_date ASC
@@ -315,9 +356,22 @@ def get_imagery_snapshots(
             stac_item_id=row["stac_item_id"],
             stac_collection=row["stac_collection"],
             cog_url=row["cog_url"],
+            additional_cog_urls=row["additional_cog_urls"],
             thumbnail_url=row["thumbnail_url"],
             cloud_cover_pct=row["cloud_cover_pct"],
             resolution_m=row["resolution_m"],
+            bbox=_row_bbox(row),
         )
         for row in rows
     ]
+
+
+def _row_bbox(row: dict[str, object]) -> tuple[float, float, float, float] | None:
+    """Return (w, s, e, n) from a row's bbox_w/s/e/n columns, or None if absent."""
+    w = row.get("bbox_w")
+    s = row.get("bbox_s")
+    e = row.get("bbox_e")
+    n = row.get("bbox_n")
+    if w is None or s is None or e is None or n is None:
+        return None
+    return (float(w), float(s), float(e), float(n))

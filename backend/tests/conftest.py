@@ -94,18 +94,19 @@ def _create_test_tables() -> None:
         conn.execute(
             text("""
                 CREATE TABLE IF NOT EXISTS imagery_snapshots (
-                    id               TEXT PRIMARY KEY,
-                    parcel_id        TEXT NOT NULL REFERENCES parcels(id),
-                    source           TEXT NOT NULL,
-                    capture_date     TEXT NOT NULL,
-                    stac_item_id     TEXT NOT NULL,
-                    stac_collection  TEXT NOT NULL,
-                    bbox             TEXT,
-                    cog_url          TEXT NOT NULL,
-                    thumbnail_url    TEXT,
-                    resolution_m     REAL,
-                    cloud_cover_pct  REAL,
-                    created_at       TEXT DEFAULT (datetime('now')),
+                    id                    TEXT PRIMARY KEY,
+                    parcel_id             TEXT NOT NULL REFERENCES parcels(id),
+                    source                TEXT NOT NULL,
+                    capture_date          TEXT NOT NULL,
+                    stac_item_id          TEXT NOT NULL,
+                    stac_collection       TEXT NOT NULL,
+                    bbox                  TEXT,
+                    cog_url               TEXT NOT NULL,
+                    additional_cog_urls   TEXT,
+                    thumbnail_url         TEXT,
+                    resolution_m          REAL,
+                    cloud_cover_pct       REAL,
+                    created_at            TEXT DEFAULT (datetime('now')),
                     UNIQUE (parcel_id, stac_item_id)
                 )
             """)

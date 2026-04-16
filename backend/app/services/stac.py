@@ -184,6 +184,44 @@ def filter_items_containing_point(
     return result
 
 
+def _bbox_intersection_area(
+    a: tuple[float, float, float, float],
+    b: tuple[float, float, float, float],
+) -> float:
+    """Area of the intersection of two (w, s, e, n) bboxes in degree² units."""
+    w = max(a[0], b[0])
+    s = max(a[1], b[1])
+    e = min(a[2], b[2])
+    n = min(a[3], b[3])
+    if e <= w or n <= s:
+        return 0.0
+    return (e - w) * (n - s)
+
+
+def filter_items_intersecting_bbox(
+    items: list[dict[str, object]],
+    viewport: tuple[float, float, float, float],
+) -> list[dict[str, object]]:
+    """Keep STAC items whose bbox intersects the given viewport.
+
+    Looser than ``filter_items_containing_point`` — useful for NAIP where
+    small tiles may cover only part of the display viewport but are still
+    worth ingesting as mosaic components.
+    """
+    result = []
+    for item in items:
+        bbox = item.get("bbox")
+        if not bbox or len(bbox) < 4:  # type: ignore[arg-type]
+            result.append(item)
+            continue
+        item_bbox = (
+            float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]),
+        )
+        if _bbox_intersection_area(item_bbox, viewport) > 0:
+            result.append(item)
+    return result
+
+
 # ── Item selection (deduplication per time period) ────────────────────────────
 
 
@@ -196,52 +234,170 @@ def _doy(item: dict[str, object]) -> int:
     return _capture_date(item).timetuple().tm_yday
 
 
-def select_naip_items(items: list[dict[str, object]]) -> list[dict[str, object]]:
-    """One NAIP item per year — closest to mid-summer (day 196 ≈ July 15).
+def select_naip_items(
+    items: list[dict[str, object]],
+    viewport: tuple[float, float, float, float] | None = None,
+    *,
+    max_tiles_per_year: int = 3,
+    coverage_target: float = 0.95,
+) -> list[list[dict[str, object]]]:
+    """Select NAIP tiles per year, grouped as mosaics.
 
-    NAIP is cloud-free aerial photography; we just want the best seasonal look.
+    Returns a list of groups, one per year. Each group contains 1 to
+    ``max_tiles_per_year`` tiles selected greedily to maximise coverage of
+    the supplied ``viewport`` bbox. If ``viewport`` is None, falls back to
+    a single tile per year closest to mid-summer (legacy behaviour).
+
+    Within a year, the first tile is the one with the largest viewport
+    overlap (tie-broken by proximity to mid-summer, day 196 ≈ July 15).
+    Subsequent tiles are added only if they cover a portion of the
+    viewport not yet covered by already-selected tiles, and up to
+    ``coverage_target`` fraction of the viewport is covered.
     """
     target_doy = 196
     by_year: dict[int, list[dict[str, object]]] = defaultdict(list)
     for item in items:
         by_year[_capture_date(item).year].append(item)
 
-    selected = [
-        min(year_items, key=lambda i: abs(_doy(i) - target_doy))
-        for year_items in by_year.values()
-    ]
-    return sorted(selected, key=_capture_date)
+    groups: list[list[dict[str, object]]] = []
+
+    for year in sorted(by_year.keys()):
+        year_items = by_year[year]
+
+        if viewport is None:
+            # Legacy single-tile behaviour
+            pick = min(year_items, key=lambda i: abs(_doy(i) - target_doy))
+            groups.append([pick])
+            continue
+
+        viewport_area = (viewport[2] - viewport[0]) * (viewport[3] - viewport[1])
+        if viewport_area <= 0:
+            pick = min(year_items, key=lambda i: abs(_doy(i) - target_doy))
+            groups.append([pick])
+            continue
+
+        # Greedy: pick tile with best remaining-viewport coverage, breaking
+        # ties by proximity to mid-summer.
+        remaining = viewport
+        selected_for_year: list[dict[str, object]] = []
+        candidates = list(year_items)
+
+        while candidates and len(selected_for_year) < max_tiles_per_year:
+            def score(item: dict[str, object]) -> tuple[float, float]:
+                bbox = item.get("bbox")
+                if not bbox or len(bbox) < 4:  # type: ignore[arg-type]
+                    return (0.0, float(abs(_doy(item) - target_doy)))
+                ib = (
+                    float(bbox[0]), float(bbox[1]),  # type: ignore[index]
+                    float(bbox[2]), float(bbox[3]),  # type: ignore[index]
+                )
+                area = _bbox_intersection_area(ib, remaining)
+                # Maximize area, minimize doy distance
+                return (-area, float(abs(_doy(item) - target_doy)))
+
+            best = min(candidates, key=score)
+            best_bbox = best.get("bbox")
+            if not best_bbox or len(best_bbox) < 4:  # type: ignore[arg-type]
+                # No bbox to reason about; just take it and stop
+                selected_for_year.append(best)
+                break
+            best_ibox = (
+                float(best_bbox[0]), float(best_bbox[1]),  # type: ignore[index]
+                float(best_bbox[2]), float(best_bbox[3]),  # type: ignore[index]
+            )
+            gain = _bbox_intersection_area(best_ibox, remaining)
+            if gain <= 0 and selected_for_year:
+                break
+            selected_for_year.append(best)
+            candidates.remove(best)
+
+            # Check if we've covered enough of the viewport. We approximate
+            # "remaining uncovered" by shrinking the tracked rectangle to
+            # the portion of the viewport not covered by the selected
+            # tile's bbox. This is an approximation (a union of tiles is
+            # not a rectangle), but good enough for a few-tile mosaic.
+            covered_so_far = sum(
+                _bbox_intersection_area(
+                    (
+                        float(s["bbox"][0]),  # type: ignore[index]
+                        float(s["bbox"][1]),  # type: ignore[index]
+                        float(s["bbox"][2]),  # type: ignore[index]
+                        float(s["bbox"][3]),  # type: ignore[index]
+                    ),
+                    viewport,
+                )
+                for s in selected_for_year
+                if s.get("bbox") and len(s["bbox"]) >= 4  # type: ignore[arg-type,index]
+            )
+            if covered_so_far / viewport_area >= coverage_target:
+                break
+
+            # Update `remaining` to the sub-rectangle not covered by the
+            # selected tile along the axis where the tile overlap is largest.
+            tile_w, tile_s, tile_e, tile_n = best_ibox
+            rw, rs, re_, rn = remaining
+            # Choose the residual rectangle with the largest area: the
+            # strip of remaining viewport that lies outside the tile
+            # horizontally or vertically, whichever is bigger.
+            residuals = []
+            if tile_e < re_:
+                residuals.append((max(tile_e, rw), rs, re_, rn))
+            if tile_w > rw:
+                residuals.append((rw, rs, min(tile_w, re_), rn))
+            if tile_n < rn:
+                residuals.append((rw, max(tile_n, rs), re_, rn))
+            if tile_s > rs:
+                residuals.append((rw, rs, re_, min(tile_s, rn)))
+            if not residuals:
+                break
+            remaining = max(
+                residuals,
+                key=lambda r: max(0.0, (r[2] - r[0])) * max(0.0, (r[3] - r[1])),
+            )
+
+        groups.append(selected_for_year)
+
+    return groups
 
 
-def select_landsat_items(items: list[dict[str, object]]) -> list[dict[str, object]]:
+def select_landsat_items(items: list[dict[str, object]]) -> list[list[dict[str, object]]]:
     """One Landsat item per year — lowest cloud cover within that year.
 
-    Excludes Landsat 7 ETM+ (LE07) scenes because SLC-off failure since
-    2003 produces diagonal stripes of missing data in every scene.
+    Prefers Landsat 5/8/9 (TM, OLI-TIRS). Landsat 7 ETM+ (LE07) scenes
+    are used only as a fallback because SLC-off failure since 2003
+    produces diagonal stripes of missing data.
+
+    Returns single-item groups (outer list per year, inner list always
+    length 1) for shape consistency with NAIP multi-tile groups.
     """
-    # Filter out Landsat 7 SLC-off scenes
-    items = [
-        i for i in items
-        if not str(i.get("id", "")).startswith("LE07")
-    ]
+    def is_le07(item: dict[str, object]) -> bool:
+        return str(item.get("id", "")).startswith("LE07")
+
     by_year: dict[int, list[dict[str, object]]] = defaultdict(list)
     for item in items:
         by_year[_capture_date(item).year].append(item)
 
-    selected = [
-        min(
-            year_items,
+    selected: list[dict[str, object]] = []
+    for year_items in by_year.values():
+        non_le07 = [i for i in year_items if not is_le07(i)]
+        pool = non_le07 if non_le07 else year_items
+        pick = min(
+            pool,
             key=lambda i: float(
                 i["properties"].get("eo:cloud_cover", 100)  # type: ignore[union-attr]
             ),
         )
-        for year_items in by_year.values()
-    ]
-    return sorted(selected, key=_capture_date)
+        selected.append(pick)
+    selected.sort(key=_capture_date)
+    return [[i] for i in selected]
 
 
-def select_sentinel_items(items: list[dict[str, object]]) -> list[dict[str, object]]:
-    """One Sentinel-2 item per calendar quarter — lowest cloud cover."""
+def select_sentinel_items(items: list[dict[str, object]]) -> list[list[dict[str, object]]]:
+    """One Sentinel-2 item per calendar quarter — lowest cloud cover.
+
+    Returns single-item groups for shape consistency with NAIP multi-tile
+    groups.
+    """
     by_quarter: dict[tuple[int, int], list[dict[str, object]]] = defaultdict(list)
     for item in items:
         d = _capture_date(item)
@@ -257,7 +413,8 @@ def select_sentinel_items(items: list[dict[str, object]]) -> list[dict[str, obje
         )
         for q_items in by_quarter.values()
     ]
-    return sorted(selected, key=_capture_date)
+    selected.sort(key=_capture_date)
+    return [[i] for i in selected]
 
 
 # ── Asset extraction ──────────────────────────────────────────────────────────

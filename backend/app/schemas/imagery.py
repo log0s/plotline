@@ -48,6 +48,8 @@ class ImagerySnapshotResponse(BaseModel):
     source: str
     capture_date: date
     cog_url: str
+    additional_cog_urls: list[str] | None = None
+    bbox: list[float] | None = None
     thumbnail_url: str | None = None
     resolution_m: float | None = None
     cloud_cover_pct: float | None = None

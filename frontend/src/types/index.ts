@@ -59,6 +59,8 @@ export interface ImagerySnapshot {
   source: ImagerySource;
   capture_date: string; // ISO date string "YYYY-MM-DD"
   cog_url: string;
+  additional_cog_urls: string[] | null;
+  bbox: [number, number, number, number] | null; // [w, s, e, n]
   thumbnail_url: string | null;
   resolution_m: number | null;
   cloud_cover_pct: number | null;

@@ -18,7 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSON, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -226,6 +226,10 @@ class ImagerySnapshot(Base):
         nullable=True,
     )
     cog_url: Mapped[str] = mapped_column(Text, nullable=False)
+    additional_cog_urls: Mapped[list[str] | None] = mapped_column(
+        ARRAY(Text),
+        nullable=True,
+    )
     thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     resolution_m: Mapped[float | None] = mapped_column(Double, nullable=True)
     cloud_cover_pct: Mapped[float | None] = mapped_column(Double, nullable=True)

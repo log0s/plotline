@@ -68,18 +68,24 @@ def _make_item(dt: str, cloud_cover: float | None = None) -> dict:
     return {"id": f"item-{dt}", "properties": props, "assets": {}, "bbox": None}
 
 
-def test_select_naip_one_per_year() -> None:
-    """select_naip_items returns at most one item per year."""
+def test_select_naip_one_group_per_year() -> None:
+    """select_naip_items returns at most one group per year (legacy, no viewport)."""
     items = [
         _make_item("2020-06-01T00:00:00Z"),
         _make_item("2020-08-15T00:00:00Z"),
         _make_item("2021-07-10T00:00:00Z"),
         _make_item("2022-05-01T00:00:00Z"),
     ]
-    selected = select_naip_items(items)
-    years = [date.fromisoformat(i["properties"]["datetime"][:10]).year for i in selected]
-    assert years == sorted(set(years)), "Should have exactly one item per year"
-    assert len(selected) == 3
+    groups = select_naip_items(items)
+    # Each group is a list of one or more items; legacy mode yields 1/year
+    assert len(groups) == 3
+    for group in groups:
+        assert len(group) == 1
+    years = [
+        date.fromisoformat(g[0]["properties"]["datetime"][:10]).year
+        for g in groups
+    ]
+    assert years == sorted(set(years))
 
 
 def test_select_naip_prefers_mid_summer() -> None:
@@ -89,25 +95,30 @@ def test_select_naip_prefers_mid_summer() -> None:
         _make_item("2019-07-20T00:00:00Z"),  # closest to July 15
         _make_item("2019-11-01T00:00:00Z"),  # far from mid-summer
     ]
-    selected = select_naip_items(items)
-    assert len(selected) == 1
-    assert selected[0]["properties"]["datetime"][:10] == "2019-07-20"
+    groups = select_naip_items(items)
+    assert len(groups) == 1
+    assert len(groups[0]) == 1
+    assert groups[0][0]["properties"]["datetime"][:10] == "2019-07-20"
 
 
 # ── Landsat item selection ─────────────────────────────────────────────────────
 
 
 def test_select_landsat_one_per_year() -> None:
-    """select_landsat_items returns one item per year."""
+    """select_landsat_items returns one group per year, each with a single item."""
     items = [
         _make_item("2000-06-01T00:00:00Z", cloud_cover=15.0),
         _make_item("2000-09-01T00:00:00Z", cloud_cover=5.0),
         _make_item("2001-05-01T00:00:00Z", cloud_cover=18.0),
     ]
-    selected = select_landsat_items(items)
-    years = [date.fromisoformat(i["properties"]["datetime"][:10]).year for i in selected]
+    groups = select_landsat_items(items)
+    assert len(groups) == 2
+    for g in groups:
+        assert len(g) == 1
+    years = [
+        date.fromisoformat(g[0]["properties"]["datetime"][:10]).year for g in groups
+    ]
     assert years == sorted(set(years))
-    assert len(selected) == 2
 
 
 def test_select_landsat_picks_lowest_cloud_cover() -> None:
@@ -117,24 +128,26 @@ def test_select_landsat_picks_lowest_cloud_cover() -> None:
         _make_item("2010-07-01T00:00:00Z", cloud_cover=3.0),
         _make_item("2010-08-01T00:00:00Z", cloud_cover=12.0),
     ]
-    selected = select_landsat_items(items)
-    assert len(selected) == 1
-    assert selected[0]["properties"]["eo:cloud_cover"] == 3.0
+    groups = select_landsat_items(items)
+    assert len(groups) == 1
+    assert groups[0][0]["properties"]["eo:cloud_cover"] == 3.0
 
 
 # ── Sentinel-2 item selection ─────────────────────────────────────────────────
 
 
 def test_select_sentinel_one_per_quarter() -> None:
-    """select_sentinel_items returns one item per calendar quarter."""
+    """select_sentinel_items returns one group per calendar quarter."""
     items = [
         _make_item("2020-01-10T00:00:00Z", cloud_cover=10.0),
         _make_item("2020-02-20T00:00:00Z", cloud_cover=5.0),  # Q1 — should win
         _make_item("2020-04-05T00:00:00Z", cloud_cover=8.0),  # Q2
         _make_item("2020-07-15T00:00:00Z", cloud_cover=15.0),  # Q3
     ]
-    selected = select_sentinel_items(items)
-    assert len(selected) == 3
+    groups = select_sentinel_items(items)
+    assert len(groups) == 3
+    for g in groups:
+        assert len(g) == 1
 
 
 # ── _is_cog_asset guard ────────────────────────────────────────────────────────
