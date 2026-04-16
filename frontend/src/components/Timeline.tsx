@@ -36,10 +36,12 @@ const SOURCE_COLORS: Record<ImagerySource, string> = {
   sentinel2: "bg-violet-700 text-violet-100",
 };
 
-const SOURCE_LABELS: Record<ImagerySource, string> = {
+const SOURCE_LABELS: Record<string, string> = {
   naip: "NAIP",
   landsat: "Landsat",
   sentinel2: "Sentinel-2",
+  census: "Census",
+  property: "Property",
 };
 
 // ── Event type config ─────────────────────────────────────────────────────────
@@ -79,11 +81,11 @@ function progressLabel(
   const done = tasks.filter((t) => t.status === "complete");
   const processing = tasks.find((t) => t.status === "processing");
   const parts: string[] = done.map(
-    (t) => `${SOURCE_LABELS[t.source as ImagerySource] ?? t.source} (${t.items_found})`,
+    (t) => `${SOURCE_LABELS[t.source] ?? t.source} (${t.items_found})`,
   );
   if (processing) {
     parts.push(
-      `Loading ${SOURCE_LABELS[processing.source as ImagerySource] ?? processing.source}...`,
+      `Loading ${SOURCE_LABELS[processing.source] ?? processing.source}...`,
     );
   }
   return parts.join(" · ");
