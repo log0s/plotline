@@ -23,10 +23,18 @@ from app.services import stac as stac_service
 logger = logging.getLogger(__name__)
 
 
-def _bbox_around(lat: float, lng: float, half_side_m: float) -> tuple[float, float, float, float]:
-    """Return a lon/lat bbox ``(minx, miny, maxx, maxy)`` centred on ``(lat, lng)``."""
-    dlat = (half_side_m / 111_320.0)
-    dlng = (half_side_m / (111_320.0 * max(math.cos(math.radians(lat)), 1e-6)))
+def _bbox_around(
+    lat: float, lng: float, half_x_m: float, half_y_m: float | None = None,
+) -> tuple[float, float, float, float]:
+    """Return a lon/lat bbox ``(minx, miny, maxx, maxy)`` centred on ``(lat, lng)``.
+
+    ``half_x_m`` controls the east-west extent; ``half_y_m`` controls
+    north-south (defaults to ``half_x_m`` for a square footprint).
+    """
+    if half_y_m is None:
+        half_y_m = half_x_m
+    dlat = half_y_m / 111_320.0
+    dlng = half_x_m / (111_320.0 * max(math.cos(math.radians(lat)), 1e-6))
     return (lng - dlng, lat - dlat, lng + dlng, lat + dlat)
 
 
@@ -63,7 +71,11 @@ async def render_preview(
         logger.warning("URL signing failed for %s, using unsigned", loc.slug, exc_info=exc)
         signed_url = latest.cog_url
 
-    minx, miny, maxx, maxy = _bbox_around(parcel.latitude, parcel.longitude, half_side_m)
+    # Scale bbox to match image aspect ratio so Titiler doesn't stretch
+    aspect = width / height
+    half_y = half_side_m
+    half_x = half_side_m * aspect
+    minx, miny, maxx, maxy = _bbox_around(parcel.latitude, parcel.longitude, half_x, half_y)
     titiler_url = (
         f"{settings.titiler_url}/cog/bbox/"
         f"{minx},{miny},{maxx},{maxy}/{width}x{height}.jpg"
