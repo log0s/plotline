@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-
 import os
 
 from fastapi import FastAPI
@@ -58,8 +58,43 @@ def create_app() -> FastAPI:
             "Plotline API starting",
             extra={"env": settings.app_env, "log_level": settings.log_level},
         )
+        asyncio.create_task(_render_featured_previews(settings))
 
     return app
+
+
+async def _render_featured_previews(settings: object) -> None:
+    """Re-render featured location preview images on startup.
+
+    Runs as a background task so the app can serve requests immediately.
+    """
+    from app.db import SessionLocal
+    from app.models.parcels import FeaturedLocation
+    from app.services.preview_renderer import render_preview
+    from sqlalchemy import select
+
+    db = SessionLocal()
+    try:
+        locations = db.scalars(
+            select(FeaturedLocation).order_by(FeaturedLocation.display_order)
+        ).all()
+        if not locations:
+            return
+        logger.info("Rendering %d featured preview images...", len(locations))
+        for loc in locations:
+            try:
+                rel_url = await render_preview(db, loc, settings)  # type: ignore[arg-type]
+            except Exception:
+                logger.exception("Failed to render preview for %s", loc.slug)
+                continue
+            if rel_url and loc.preview_image_url != rel_url:
+                loc.preview_image_url = rel_url
+                db.commit()
+            logger.info("Rendered preview: %s", loc.slug)
+    except Exception:
+        logger.exception("Featured preview rendering failed")
+    finally:
+        db.close()
 
 
 app = create_app()
