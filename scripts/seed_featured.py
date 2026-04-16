@@ -194,7 +194,28 @@ def main() -> None:
             print(f"FAILED: {exc}")
             continue
 
-    # Step 4: Render static preview images for all featured locations
+    # Step 4: Prune featured rows whose slug is no longer in the seed list.
+    from app.db import SessionLocal
+    from app.models.parcels import FeaturedLocation as FeaturedLocationModel
+    from sqlalchemy import select
+
+    expected_slugs = {loc["slug"] for loc in FEATURED_LOCATIONS}
+    db = SessionLocal()
+    try:
+        stale = db.scalars(
+            select(FeaturedLocationModel).where(
+                FeaturedLocationModel.slug.notin_(expected_slugs)
+            )
+        ).all()
+        for row in stale:
+            print(f"  Pruning stale featured: {row.slug!r} ({row.name!r})")
+            db.delete(row)
+        if stale:
+            db.commit()
+    finally:
+        db.close()
+
+    # Step 5: Render static preview images for all featured locations
     print(f"\n{'='*60}")
     print("Rendering static preview images (latest NAIP)...")
     print(f"{'='*60}")
