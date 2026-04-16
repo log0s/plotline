@@ -55,8 +55,11 @@ export async function geocodeAddress(
  * Fetch a parcel by UUID.
  * GET /api/v1/parcels/{parcel_id}
  */
-export async function getParcel(parcelId: string): Promise<ParcelResponse> {
-  const response = await fetch(`${BASE_URL}/parcels/${parcelId}`);
+export async function getParcel(
+  parcelId: string,
+  signal?: AbortSignal,
+): Promise<ParcelResponse> {
+  const response = await fetch(`${BASE_URL}/parcels/${parcelId}`, { signal });
   return handleResponse<ParcelResponse>(response);
 }
 

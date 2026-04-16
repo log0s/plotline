@@ -39,9 +39,11 @@ async function handleResponse<T>(response: Response): Promise<T> {
  */
 export async function triggerTimeline(
   parcelId: string,
+  signal?: AbortSignal,
 ): Promise<{ timeline_request_id: string }> {
   const response = await fetch(`${BASE_URL}/parcels/${parcelId}/timeline`, {
     method: "POST",
+    signal,
   });
   return handleResponse<{ timeline_request_id: string }>(response);
 }
@@ -67,6 +69,7 @@ export async function getImagery(
     source?: ImagerySource;
     startDate?: string;
     endDate?: string;
+    signal?: AbortSignal;
   },
 ): Promise<ImageryListResponse> {
   const params = new URLSearchParams();
@@ -76,7 +79,7 @@ export async function getImagery(
 
   const query = params.toString();
   const url = `${BASE_URL}/parcels/${parcelId}/imagery${query ? `?${query}` : ""}`;
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: options?.signal });
   return handleResponse<ImageryListResponse>(response);
 }
 

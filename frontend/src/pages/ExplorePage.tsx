@@ -46,13 +46,15 @@ export default function ExplorePage() {
     if (!parcelId) return;
 
     // Already have this parcel loaded
-    if (parcel && parcel.parcel_id === parcelId) return;
+    if (parcel?.parcel_id === parcelId) return;
 
+    const controller = new AbortController();
+    const { signal } = controller;
     let cancelled = false;
     setDeepLinkLoading(true);
     setLoadError(null);
 
-    getParcel(parcelId)
+    getParcel(parcelId, signal)
       .then(async (data) => {
         if (cancelled) return;
         // Convert ParcelResponse to GeocodeResponse shape for the store
@@ -69,7 +71,7 @@ export default function ExplorePage() {
 
         // Try to load existing imagery first
         try {
-          const imagery = await getImagery(data.id);
+          const imagery = await getImagery(data.id, { signal });
           if (!cancelled) {
             if (imagery.snapshots.length > 0) {
               setParcel(geocodeShape);
@@ -84,35 +86,34 @@ export default function ExplorePage() {
               });
             } else {
               // No existing imagery — trigger a new timeline fetch
-              const { timeline_request_id } = await triggerTimeline(data.id);
+              const { timeline_request_id } = await triggerTimeline(data.id, signal);
               geocodeShape.timeline_request_id = timeline_request_id;
               if (!cancelled) setParcel(geocodeShape);
             }
           }
-        } catch {
+        } catch (err) {
+          if (cancelled || (err as Error)?.name === "AbortError") return;
           // Imagery fetch failed — just set parcel, trigger timeline
-          if (!cancelled) {
-            try {
-              const { timeline_request_id } = await triggerTimeline(data.id);
-              geocodeShape.timeline_request_id = timeline_request_id;
-            } catch { /* proceed without timeline */ }
-            if (!cancelled) setParcel(geocodeShape);
-          }
+          try {
+            const { timeline_request_id } = await triggerTimeline(data.id, signal);
+            geocodeShape.timeline_request_id = timeline_request_id;
+          } catch { /* proceed without timeline */ }
+          if (!cancelled) setParcel(geocodeShape);
         }
 
         if (!cancelled) setDeepLinkLoading(false);
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (cancelled || (err as Error)?.name === "AbortError") return;
         setDeepLinkLoading(false);
         setLoadError(err.message ?? "Parcel not found");
       });
 
     return () => {
       cancelled = true;
-      setDeepLinkLoading(false);
+      controller.abort();
     };
-  }, [parcelId, parcel, setParcel, setSnapshots, setTimelineStatus]);
+  }, [parcelId, parcel?.parcel_id, setParcel, setSnapshots, setTimelineStatus]);
 
   // Apply ?snap= query param on initial load (deep link support).
   // Only runs when snapshots first arrive, not on every URL change.
