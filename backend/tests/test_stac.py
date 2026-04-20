@@ -341,7 +341,14 @@ async def test_sign_pc_url() -> None:
     signed = "https://example.com/asset.tif?sv=signed"
     mock_client, _ = _make_httpx_mock_client("get", {"href": signed})
 
-    with patch("httpx.AsyncClient", return_value=mock_client):
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = None  # Cache miss
+    mock_redis.setex.return_value = None
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=mock_redis),
+    ):
         result = await sign_pc_url("https://example.com/asset.tif")
 
     assert result == signed

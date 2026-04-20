@@ -54,8 +54,10 @@ def check_db_connection() -> bool:
 # ── Redis ────────────────────────────────────────────────────────────────────
 
 import redis as _redis_lib  # noqa: E402
+import redis.asyncio as _redis_async_lib  # noqa: E402
 
 _redis_client: _redis_lib.Redis | None = None
+_async_redis_client: _redis_async_lib.Redis | None = None
 
 
 def get_redis() -> _redis_lib.Redis:
@@ -66,6 +68,16 @@ def get_redis() -> _redis_lib.Redis:
             settings.redis_url, decode_responses=False
         )
     return _redis_client
+
+
+def get_async_redis() -> _redis_async_lib.Redis:
+    """Return a shared asyncio Redis client for use inside async handlers."""
+    global _async_redis_client
+    if _async_redis_client is None:
+        _async_redis_client = _redis_async_lib.from_url(
+            settings.redis_url, decode_responses=False
+        )
+    return _async_redis_client
 
 
 def check_redis_connection() -> bool:

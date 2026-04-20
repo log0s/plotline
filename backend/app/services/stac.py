@@ -128,6 +128,20 @@ async def search_stac(
 _SAS_CACHE_TTL = 600  # 10 minutes (tokens last ~30 min)
 
 
+_sign_client: httpx.AsyncClient | None = None
+
+
+def _get_sign_client() -> httpx.AsyncClient:
+    """Module-level pooled client so parallel signs share TLS connections."""
+    global _sign_client
+    if _sign_client is None:
+        _sign_client = httpx.AsyncClient(
+            timeout=10,
+            limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
+        )
+    return _sign_client
+
+
 async def sign_pc_url(url: str) -> str:
     """Sign a Planetary Computer asset URL for authenticated access.
 
@@ -135,23 +149,23 @@ async def sign_pc_url(url: str) -> str:
     roundtrips to the SAS signing endpoint. Tokens last ~30 min so
     the 10-min TTL provides a safe margin.
     """
-    from app.db import get_redis
+    from app.db import get_async_redis
 
     cache_key = f"sas:{url}"
+    redis = get_async_redis()
     try:
-        cached = get_redis().get(cache_key)
+        cached = await redis.get(cache_key)
         if cached:
-            return cached.decode()
+            return cached.decode() if isinstance(cached, bytes) else cached
     except Exception:
         pass  # Redis down — fall through to signing
 
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(PC_SIGN_URL, params={"href": url})
-        resp.raise_for_status()
-        signed = str(resp.json()["href"])
+    resp = await _get_sign_client().get(PC_SIGN_URL, params={"href": url})
+    resp.raise_for_status()
+    signed = str(resp.json()["href"])
 
     try:
-        get_redis().setex(cache_key, _SAS_CACHE_TTL, signed.encode())
+        await redis.setex(cache_key, _SAS_CACHE_TTL, signed.encode())
     except Exception:
         pass  # Redis down — signed URL still works, just not cached
 
