@@ -152,36 +152,46 @@ async def list_imagery(
 
     # Sign COG URLs at response time (SAS tokens are short-lived).
     # Landsat cog_url is a STAC item link (public, no signing needed).
+    # Collect every URL that needs signing, then run them in parallel —
+    # a parcel can have 80+ URLs (e.g. Rodanthe with full Sentinel-2 stack)
+    # and serial awaits compound to tens of seconds even with Redis cache.
+    urls_to_sign: set[str] = set()
+    for snap in snapshots:
+        if snap.source != "landsat":
+            urls_to_sign.add(snap.cog_url)
+            if snap.additional_cog_urls:
+                urls_to_sign.update(snap.additional_cog_urls)
+        if snap.thumbnail_url:
+            urls_to_sign.add(snap.thumbnail_url)
+
+    url_list = list(urls_to_sign)
+    results = await asyncio.gather(
+        *(stac_service.sign_pc_url(u) for u in url_list),
+        return_exceptions=True,
+    )
+    signed_map: dict[str, str] = {
+        u: (r if isinstance(r, str) else u) for u, r in zip(url_list, results)
+    }
+
     snapshot_responses: list[ImagerySnapshotResponse] = []
     for snap in snapshots:
         if snap.source == "landsat":
-            signed_cog = snap.cog_url  # STAC item URL — public, no SAS needed
+            signed_cog = snap.cog_url
             signed_extras: list[str] | None = snap.additional_cog_urls
         else:
-            try:
-                signed_cog = await stac_service.sign_pc_url(snap.cog_url)
-            except Exception:
-                signed_cog = snap.cog_url
-            if snap.additional_cog_urls:
-                signed_extras = []
-                for url in snap.additional_cog_urls:
-                    try:
-                        signed_extras.append(await stac_service.sign_pc_url(url))
-                    except Exception:
-                        signed_extras.append(url)
-            else:
-                signed_extras = None
-
-        try:
-            signed_thumb = (
-                await stac_service.sign_pc_url(snap.thumbnail_url)
-                if snap.thumbnail_url
+            signed_cog = signed_map.get(snap.cog_url, snap.cog_url)
+            signed_extras = (
+                [signed_map.get(u, u) for u in snap.additional_cog_urls]
+                if snap.additional_cog_urls
                 else None
             )
-        except Exception:
-            signed_thumb = snap.thumbnail_url
 
-        # ImagerySnapshotRow is a dataclass — construct response directly
+        signed_thumb = (
+            signed_map.get(snap.thumbnail_url, snap.thumbnail_url)
+            if snap.thumbnail_url
+            else None
+        )
+
         snapshot_responses.append(
             ImagerySnapshotResponse(
                 id=snap.id,
