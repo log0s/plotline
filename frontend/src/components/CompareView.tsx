@@ -150,7 +150,6 @@ export function CompareView({ parcel }: CompareViewProps) {
     // Fly the left map; the sync handler mirrors camera onto the right map.
     leftMapRef.current?.flyTo({
       center: [parcel.longitude, parcel.latitude],
-      zoom: 15,
       bearing: 0,
       pitch: 0,
       duration: 800,
