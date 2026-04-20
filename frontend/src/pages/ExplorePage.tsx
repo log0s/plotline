@@ -1,128 +1,116 @@
 /**
  * ExplorePage — full timeline view for a parcel.
  *
- * Loads parcel data from the API if not already in the store (deep link support).
- * Reads ?snap= query param to pre-select a snapshot.
+ * Parcel, imagery, and timeline status are fetched via React Query
+ * (see src/hooks/queries.ts). A parcel that lands here with no existing
+ * imagery triggers a fresh timeline job.
  */
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { getParcel } from "../api/geocode";
-import { getImagery, triggerTimeline } from "../api/imagery";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { CompareView } from "../components/CompareView";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { MapView } from "../components/MapView";
 import { ParcelInfo } from "../components/ParcelInfo";
 import { Timeline } from "../components/Timeline";
-import { useDemographics } from "../hooks/useDemographics";
-import { usePropertyEvents } from "../hooks/usePropertyEvents";
-import { useTimeline } from "../hooks/useTimeline";
+import {
+  useImageryQuery,
+  useParcelQuery,
+  useTimelineRequestQuery,
+  useTriggerTimelineMutation,
+} from "../hooks/queries";
 import { useAppStore } from "../store";
+import type { ImagerySnapshot } from "../types";
 
 export default function ExplorePage() {
   const { parcelId } = useParams<{ parcelId: string }>();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const {
-    parcel,
-    setParcel,
-    setSnapshots,
-    setTimelineStatus,
-    snapshots,
-    selectedSnapshot,
-    setSelectedSnapshot,
-    compareMode,
-  } = useAppStore();
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [deepLinkLoading, setDeepLinkLoading] = useState(false);
 
-  // Start data polling/fetching hooks
-  useTimeline();
-  useDemographics();
-  usePropertyEvents();
+  const { setSelectedSnapshot, compareMode } = useAppStore();
 
-  // Deep link: load parcel from API if not in store
+  // Timeline request ID is ephemeral (per parcel load). It comes from either:
+  //   (a) a fresh geocode navigation: location.state.timelineRequestId
+  //   (b) a deep-link trigger when imagery is empty (local state below)
+  const navTimelineRequestId =
+    (location.state as { timelineRequestId?: string | null } | null)
+      ?.timelineRequestId ?? null;
+  const [triggeredRequestId, setTriggeredRequestId] = useState<string | null>(
+    null,
+  );
+  const timelineRequestId = navTimelineRequestId ?? triggeredRequestId;
+
+  const parcelQuery = useParcelQuery(parcelId);
+  const timelineRequestQuery = useTimelineRequestQuery(timelineRequestId);
+  const triggerTimelineMutation = useTriggerTimelineMutation();
+  const timelineActive =
+    timelineRequestId != null &&
+    !timelineRequestQuery.isError &&
+    timelineRequestQuery.data?.status !== "complete" &&
+    timelineRequestQuery.data?.status !== "failed";
+  const imageryQuery = useImageryQuery(parcelId, timelineActive);
+
+  // Deep-link recovery: if parcel exists but has no imagery and no active
+  // timeline request, trigger one. Runs at most once per parcelId.
+  const triggeredForRef = useRef<string | null>(null);
   useEffect(() => {
     if (!parcelId) return;
+    if (triggeredForRef.current === parcelId) return;
+    if (timelineRequestId) return;
+    if (imageryQuery.isLoading || !imageryQuery.data) return;
+    if (imageryQuery.data.length > 0) return;
+    triggeredForRef.current = parcelId;
+    triggerTimelineMutation.mutate(parcelId, {
+      onSuccess: (data) => setTriggeredRequestId(data.timeline_request_id),
+    });
+  }, [
+    parcelId,
+    timelineRequestId,
+    imageryQuery.isLoading,
+    imageryQuery.data,
+    triggerTimelineMutation,
+  ]);
 
-    // Already have this parcel loaded
-    if (parcel?.parcel_id === parcelId) return;
+  // When timeline hits "complete", do one last refetch after a short delay
+  // to catch any snapshot rows committed right at the tail of the final task.
+  useEffect(() => {
+    if (timelineRequestQuery.data?.status !== "complete") return;
+    const t = setTimeout(() => void imageryQuery.refetch(), 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timelineRequestQuery.data?.status]);
 
-    const controller = new AbortController();
-    const { signal } = controller;
-    let cancelled = false;
-    setDeepLinkLoading(true);
-    setLoadError(null);
+  const snapshots = useMemo(() => imageryQuery.data ?? [], [imageryQuery.data]);
 
-    getParcel(parcelId, signal)
-      .then(async (data) => {
-        if (cancelled) return;
-        // Convert ParcelResponse to GeocodeResponse shape for the store
-        const geocodeShape = {
-          parcel_id: data.id,
-          address: data.address,
-          normalized_address: data.normalized_address,
-          latitude: data.latitude,
-          longitude: data.longitude,
-          census_tract: data.census_tract_id,
-          is_new: false,
-          timeline_request_id: null as string | null,
-        };
-
-        // Try to load existing imagery first
-        try {
-          const imagery = await getImagery(data.id, { signal });
-          if (!cancelled) {
-            if (imagery.snapshots.length > 0) {
-              setParcel(geocodeShape);
-              setSnapshots(imagery.snapshots);
-              // Mark timeline as complete so demographics/events hooks fire
-              setTimelineStatus({
-                id: "",
-                parcel_id: data.id,
-                status: "complete",
-                tasks: [],
-                completed_at: null,
-              });
-            } else {
-              // No existing imagery — trigger a new timeline fetch
-              const { timeline_request_id } = await triggerTimeline(data.id, signal);
-              geocodeShape.timeline_request_id = timeline_request_id;
-              if (!cancelled) setParcel(geocodeShape);
-            }
-          }
-        } catch (err) {
-          if (cancelled || (err as Error)?.name === "AbortError") return;
-          // Imagery fetch failed — just set parcel, trigger timeline
-          try {
-            const { timeline_request_id } = await triggerTimeline(data.id, signal);
-            geocodeShape.timeline_request_id = timeline_request_id;
-          } catch { /* proceed without timeline */ }
-          if (!cancelled) setParcel(geocodeShape);
-        }
-
-        if (!cancelled) setDeepLinkLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled || (err as Error)?.name === "AbortError") return;
-        setDeepLinkLoading(false);
-        setLoadError(err.message ?? "Parcel not found");
-      });
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [parcelId, parcel?.parcel_id, setParcel, setSnapshots, setTimelineStatus]);
+  // Auto-select the most recent NAIP snapshot (or most recent overall)
+  // the first time snapshots arrive for this parcel.
+  const autoSelectedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!parcelId) return;
+    if (autoSelectedForRef.current === parcelId) return;
+    if (snapshots.length === 0) return;
+    autoSelectedForRef.current = parcelId;
+    // If a ?snap= deep-link is present, that effect wins.
+    if (searchParams.get("snap")) return;
+    const latest =
+      snapshots.filter((s) => s.source === "naip").at(-1) ??
+      snapshots.at(-1) ??
+      null;
+    if (latest) setSelectedSnapshot(latest);
+  }, [parcelId, snapshots, setSelectedSnapshot, searchParams]);
 
   // Apply ?snap= query param on initial load (deep link support).
-  // Only runs when snapshots first arrive, not on every URL change.
   const snapParamApplied = useRef(false);
   useEffect(() => {
     if (snapParamApplied.current || snapshots.length === 0) return;
     const snapId = searchParams.get("snap");
     if (!snapId) return;
-
     const match = snapshots.find((s) => s.id === snapId);
     if (match) {
       setSelectedSnapshot(match);
@@ -130,20 +118,44 @@ export default function ExplorePage() {
     }
   }, [snapshots]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync URL when snapshot changes (user clicks in timeline)
-  useEffect(() => {
-    if (!selectedSnapshot) return;
-    setSearchParams({ snap: selectedSnapshot.id }, { replace: true });
-  }, [selectedSnapshot]); // eslint-disable-line react-hooks/exhaustive-deps
+  // User-driven snapshot selection: updates store AND URL.
+  // Auto-select and deep-link paths bypass this and only touch store state,
+  // so the URL only reflects explicit user intent.
+  const handleSnapshotSelect = useCallback(
+    (snap: ImagerySnapshot | null) => {
+      setSelectedSnapshot(snap);
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (snap) next.set("snap", snap.id);
+          else next.delete("snap");
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSelectedSnapshot, setSearchParams],
+  );
 
-  // Error state — parcel not found
+  // Reset guards + selection state when parcel changes
+  useEffect(() => {
+    autoSelectedForRef.current = null;
+    triggeredForRef.current = null;
+    snapParamApplied.current = false;
+    useAppStore.getState().setSelectedSnapshot(null);
+    useAppStore.getState().setSelectedEvent(null);
+  }, [parcelId]);
+
+  const parcel = parcelQuery.data ?? null;
+  const loadError = parcelQuery.error;
+
   if (loadError) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen px-4">
         <h2 className="text-2xl font-bold text-white mb-4">Parcel not found</h2>
-        <p className="text-slate-400 mb-6">{loadError}</p>
+        <p className="text-slate-400 mb-6">{loadError.message}</p>
         <button
-          onClick={() => navigate("/")}
+          onClick={() => void navigate("/")}
           className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-navy-950 font-medium transition-colors"
         >
           Search a different address
@@ -152,8 +164,7 @@ export default function ExplorePage() {
     );
   }
 
-  // Deep link loading state
-  if (deepLinkLoading || !parcel) {
+  if (parcelQuery.isLoading || !parcel) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="flex items-center gap-3 text-slate-400">
@@ -176,7 +187,6 @@ export default function ExplorePage() {
       transition={{ duration: 0.4 }}
       className="relative w-full h-screen flex flex-col"
     >
-      {/* Map takes all remaining space above the timeline */}
       <div className="relative flex-1 min-h-0">
         <ErrorBoundary>
           {compareMode ? (
@@ -186,11 +196,10 @@ export default function ExplorePage() {
           )}
         </ErrorBoundary>
 
-        {/* Top-left brand chip */}
         <button
           onClick={() => {
             useAppStore.getState().reset();
-            navigate("/");
+            void navigate("/");
           }}
           className="absolute top-4 left-4 z-10 flex items-center gap-2 px-3 py-2 rounded-xl bg-navy-900/90 backdrop-blur-sm border border-navy-700/60 hover:border-amber-500/40 transition-colors"
           title="Back to search"
@@ -209,17 +218,37 @@ export default function ExplorePage() {
           </span>
         </button>
 
-        {/* Parcel info sidebar (hidden in compare mode) */}
         {!compareMode && (
           <AnimatePresence>
-            <ParcelInfo key={parcel.parcel_id} parcel={parcel} />
+            <ParcelInfo
+              key={parcel.parcel_id}
+              parcel={parcel}
+              timelineRequestId={timelineRequestId}
+              timelineStatus={timelineRequestQuery.data ?? null}
+              snapshots={snapshots}
+              imageryLoading={
+                imageryQuery.isLoading ||
+                (timelineRequestQuery.data?.status === "complete" &&
+                  imageryQuery.isFetching)
+              }
+            />
           </AnimatePresence>
         )}
       </div>
 
-      {/* Timeline strip */}
       <div className="border-t border-navy-700/60">
-        <Timeline />
+        <Timeline
+          parcelId={parcel.parcel_id}
+          snapshots={snapshots}
+          timelineRequestId={timelineRequestId}
+          timelineStatus={timelineRequestQuery.data ?? null}
+          imageryLoading={
+            imageryQuery.isLoading ||
+            (timelineRequestQuery.data?.status === "complete" &&
+              imageryQuery.isFetching)
+          }
+          onSnapshotSelect={handleSnapshotSelect}
+        />
       </div>
     </motion.div>
   );

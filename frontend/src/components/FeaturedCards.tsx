@@ -116,9 +116,7 @@ export function FeaturedCards() {
       </h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {locations.map((card, i) => {
-          const href = card.parcel_id && card.parcel_id.length > 0
-            ? `/explore/${card.parcel_id}`
-            : `/featured/${card.slug}`;
+          const href = `/featured/${card.slug}`;
 
           const previewUrl = card.preview_image_url
             ? card.preview_image_url.startsWith("http")

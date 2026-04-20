@@ -24,16 +24,32 @@ class ApiRequestError extends Error {
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    let detail = `HTTP ${response.status}`;
-    try {
-      const body = (await response.json()) as { detail?: string };
-      if (body.detail) detail = body.detail;
-    } catch {
-      // ignore JSON parse errors — use the status string
-    }
-    throw new ApiRequestError(response.status, detail);
+    throw new ApiRequestError(response.status, await extractErrorDetail(response));
   }
   return response.json() as Promise<T>;
+}
+
+async function extractErrorDetail(response: Response): Promise<string> {
+  try {
+    const body: unknown = await response.json();
+    if (body && typeof body === "object" && "detail" in body) {
+      const detail = (body as { detail: unknown }).detail;
+      if (typeof detail === "string") return detail;
+      if (Array.isArray(detail)) {
+        return detail
+          .map((d) =>
+            d && typeof d === "object" && "msg" in d
+              ? String((d as { msg: unknown }).msg)
+              : JSON.stringify(d),
+          )
+          .join("; ");
+      }
+      return JSON.stringify(detail);
+    }
+  } catch {
+    // fall through
+  }
+  return `HTTP ${response.status}`;
 }
 
 /**

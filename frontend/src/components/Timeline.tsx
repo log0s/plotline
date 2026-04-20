@@ -20,12 +20,14 @@ import {
   SplitSquareHorizontal,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePropertyEventsQuery } from "../hooks/queries";
 import { useAppStore } from "../store";
 import type {
   ImagerySnapshot,
   ImagerySource,
   PropertyEvent,
   PropertyEventType,
+  TimelineRequest,
 } from "../types";
 
 // ── Source badge colours ───────────────────────────────────────────────────────
@@ -78,15 +80,11 @@ function formatDate(isoDate: string): string {
 function progressLabel(
   tasks: { source: string; status: string; items_found: number }[],
 ): string {
-  const done = tasks.filter((t) => t.status === "complete");
-  const processing = tasks.find((t) => t.status === "processing");
-  const parts: string[] = done.map(
-    (t) => `${SOURCE_LABELS[t.source] ?? t.source} (${t.items_found})`,
-  );
-  if (processing) {
-    parts.push(
-      `Loading ${SOURCE_LABELS[processing.source] ?? processing.source}...`,
-    );
+  const parts: string[] = [];
+  for (const t of tasks) {
+    const label = SOURCE_LABELS[t.source] ?? t.source;
+    if (t.status === "complete") parts.push(`${label} (${t.items_found})`);
+    else if (t.status === "processing") parts.push(`Loading ${label}...`);
   }
   return parts.join(" · ");
 }
@@ -122,21 +120,37 @@ const EVENT_FILTER_LABELS: Record<EventFilterKey, string> = {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function Timeline() {
+interface TimelineProps {
+  parcelId: string;
+  snapshots: ImagerySnapshot[];
+  timelineRequestId: string | null;
+  timelineStatus: TimelineRequest | null;
+  imageryLoading: boolean;
+  onSnapshotSelect: (snap: ImagerySnapshot | null) => void;
+}
+
+export function Timeline({
+  parcelId,
+  snapshots,
+  timelineRequestId,
+  timelineStatus,
+  imageryLoading,
+  onSnapshotSelect,
+}: TimelineProps) {
   const {
-    snapshots,
     selectedSnapshot,
-    timelineRequestId,
-    timelineStatus,
-    propertyEvents,
     selectedEvent,
-    setSelectedSnapshot,
     setSelectedEvent,
     compareMode,
     compareSnapshots,
     setCompareMode,
     setCompareSnapshot,
   } = useAppStore();
+
+  const eventsEnabled =
+    timelineStatus?.status === "complete" ||
+    (timelineRequestId == null && snapshots.length > 0);
+  const { data: propertyEvents } = usePropertyEventsQuery(parcelId, eventsEnabled);
 
   const [activeFilters, setActiveFilters] = useState<Set<ImagerySource>>(
     new Set(["naip", "landsat", "sentinel2"]),
@@ -191,15 +205,15 @@ export function Timeline() {
 
       if (e.key === "ArrowRight") {
         const next = visibleSnapshots[Math.min(idx + 1, visibleSnapshots.length - 1)];
-        if (next) setSelectedSnapshot(next);
+        if (next) onSnapshotSelect(next);
         e.preventDefault();
       } else if (e.key === "ArrowLeft") {
         const prev = visibleSnapshots[Math.max(idx - 1, 0)];
-        if (prev) setSelectedSnapshot(prev);
+        if (prev) onSnapshotSelect(prev);
         e.preventDefault();
       }
     },
-    [visibleSnapshots, selectedSnapshot, setSelectedSnapshot],
+    [visibleSnapshots, selectedSnapshot, onSnapshotSelect],
   );
 
   useEffect(() => {
@@ -298,6 +312,7 @@ export function Timeline() {
   };
 
   const isProcessing =
+    imageryLoading ||
     timelineStatus?.status === "queued" ||
     timelineStatus?.status === "processing" ||
     (timelineRequestId != null && timelineStatus == null);
@@ -315,7 +330,7 @@ export function Timeline() {
     (snap: ImagerySnapshot) => {
       if (!compareMode) {
         // Toggle: deselect if already selected
-        setSelectedSnapshot(selectedSnapshot?.id === snap.id ? null : snap);
+        onSnapshotSelect(selectedSnapshot?.id === snap.id ? null : snap);
         return;
       }
       // Compare mode: toggle slot if already assigned, otherwise fill next open slot
@@ -332,7 +347,7 @@ export function Timeline() {
         setCompareSnapshot(1, snap);
       }
     },
-    [compareMode, compareSnapshots, selectedSnapshot, setSelectedSnapshot, setCompareSnapshot],
+    [compareMode, compareSnapshots, selectedSnapshot, onSnapshotSelect, setCompareSnapshot],
   );
 
   return (

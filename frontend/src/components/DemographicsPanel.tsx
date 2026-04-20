@@ -24,6 +24,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { useDemographicsQuery, usePropertyEventsQuery } from "../hooks/queries";
 import { useAppStore } from "../store";
 import type { CensusSnapshot, PricePoint, PropertyEventsResponse } from "../types";
 
@@ -538,8 +539,16 @@ function UnsupportedCountyBanner({ county }: { county: string | null }) {
 
 // ── Main panel ───────────────────────────────────────────────────────────────
 
-export function DemographicsPanel() {
-  const { demographics, demographicsLoading, selectedYear, propertyEvents } = useAppStore();
+interface DemographicsPanelProps {
+  parcelId: string;
+  enabled: boolean;
+}
+
+export function DemographicsPanel({ parcelId, enabled }: DemographicsPanelProps) {
+  const selectedYear = useAppStore((s) => s.selectedYear);
+  const { data: demographics, isLoading: demographicsLoading } =
+    useDemographicsQuery(parcelId, enabled);
+  const { data: propertyEvents } = usePropertyEventsQuery(parcelId, enabled);
 
   // Loading state
   if (demographicsLoading) {

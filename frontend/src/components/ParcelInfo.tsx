@@ -19,9 +19,14 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DemographicsPanel } from "./DemographicsPanel";
 import { useAddressAutocomplete } from "../hooks/useAddressAutocomplete";
-import { useGeocoder } from "../hooks/useGeocoder";
+import { useGeocodeMutation } from "../hooks/queries";
 import { useAppStore } from "../store";
-import type { GeocodeResponse, PropertyEvent } from "../types";
+import type {
+  GeocodeResponse,
+  ImagerySnapshot,
+  PropertyEvent,
+  TimelineRequest,
+} from "../types";
 
 const SOURCE_LABELS: Record<string, string> = {
   naip: "NAIP",
@@ -31,22 +36,54 @@ const SOURCE_LABELS: Record<string, string> = {
   property: "Property",
 };
 
-function progressLabel(
-  tasks: { source: string; status: string; items_found: number }[],
-): string {
-  const done = tasks.filter((t) => t.status === "complete");
-  const processing = tasks.find((t) => t.status === "processing");
-  const parts: string[] = done.map(
-    (t) => `${SOURCE_LABELS[t.source] ?? t.source} (${t.items_found})`,
+function TaskRow({
+  task,
+}: {
+  task: { source: string; status: string; items_found: number };
+}) {
+  const label = SOURCE_LABELS[task.source] ?? task.source;
+  const isDone = task.status === "complete";
+  const isProcessing = task.status === "processing";
+  const isFailed = task.status === "failed";
+  const isSkipped = task.status === "skipped";
+
+  const indicator = isDone ? (
+    <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+  ) : isProcessing ? (
+    <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+  ) : isFailed ? (
+    <span className="inline-block w-2 h-2 rounded-full bg-red-400 shrink-0" />
+  ) : (
+    <span className="inline-block w-2 h-2 rounded-full bg-slate-600 shrink-0" />
   );
-  if (processing) {
-    parts.push(`Loading ${SOURCE_LABELS[processing.source] ?? processing.source}...`);
-  }
-  return parts.join(" · ");
+
+  const statusText = isDone
+    ? `${task.items_found} item${task.items_found !== 1 ? "s" : ""}`
+    : isProcessing
+      ? "loading…"
+      : isFailed
+        ? "failed"
+        : isSkipped
+          ? "skipped"
+          : "queued";
+
+  return (
+    <li className="flex items-center justify-between gap-2 text-xs">
+      <span className="flex items-center gap-2 min-w-0">
+        {indicator}
+        <span className="text-slate-300 truncate">{label}</span>
+      </span>
+      <span className="text-slate-500 font-mono shrink-0">{statusText}</span>
+    </li>
+  );
 }
 
 interface ParcelInfoProps {
   parcel: GeocodeResponse;
+  timelineRequestId: string | null;
+  timelineStatus: TimelineRequest | null;
+  snapshots: ImagerySnapshot[];
+  imageryLoading: boolean;
 }
 
 interface DataRowProps {
@@ -78,30 +115,35 @@ const EVENT_TYPE_CONFIG: Record<string, { label: string; color: string; icon: Re
   assessment: { label: "Assessment", color: "bg-teal-600 text-teal-50", icon: FileText },
 };
 
-export function ParcelInfo({ parcel }: ParcelInfoProps) {
+export function ParcelInfo({
+  parcel,
+  timelineRequestId,
+  timelineStatus,
+  snapshots,
+  imageryLoading,
+}: ParcelInfoProps) {
   const navigate = useNavigate();
-  const { geocode } = useGeocoder();
-  const isLoading = useAppStore((s) => s.isLoading);
-  const error = useAppStore((s) => s.error);
+  const geocodeMutation = useGeocodeMutation();
   const selectedEvent = useAppStore((s) => s.selectedEvent);
   const setSelectedEvent = useAppStore((s) => s.setSelectedEvent);
-  const timelineRequestId = useAppStore((s) => s.timelineRequestId);
-  const timelineStatus = useAppStore((s) => s.timelineStatus);
-  const snapshots = useAppStore((s) => s.snapshots);
 
   const isTimelineProcessing =
+    imageryLoading ||
     timelineStatus?.status === "queued" ||
     timelineStatus?.status === "processing" ||
     (timelineRequestId != null && timelineStatus == null);
 
   const handleReset = () => {
     useAppStore.getState().reset();
-    navigate("/");
+    void navigate("/");
   };
 
   const handleSearch = (address: string, coords?: { lat: number; lon: number }) => {
-    geocode(address, navigate, coords);
+    geocodeMutation.mutate({ address, navigate, ...coords });
   };
+
+  const isLoading = geocodeMutation.isPending;
+  const error = geocodeMutation.error?.message ?? null;
 
   return (
     <motion.aside
@@ -174,14 +216,20 @@ export function ParcelInfo({ parcel }: ParcelInfoProps) {
         <div className="mt-6">
           <p className="data-label uppercase tracking-widest text-xs mb-2">Timeline</p>
           {isTimelineProcessing ? (
-            <div className="flex items-center gap-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
-              <span className="text-xs text-slate-400">
-                {timelineStatus?.tasks?.length
-                  ? progressLabel(timelineStatus.tasks)
-                  : "Searching for historical imagery\u2026"}
-              </span>
-            </div>
+            timelineStatus?.tasks?.length ? (
+              <ul className="flex flex-col gap-1">
+                {timelineStatus.tasks.map((t) => (
+                  <TaskRow key={t.source} task={t} />
+                ))}
+              </ul>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                <span className="text-xs text-slate-400">
+                  Searching for historical imagery&hellip;
+                </span>
+              </div>
+            )
           ) : (
             <p className="text-sm text-white">
               {snapshots.length} item{snapshots.length !== 1 ? "s" : ""}
@@ -191,7 +239,13 @@ export function ParcelInfo({ parcel }: ParcelInfoProps) {
 
         {/* Demographics */}
         <div className="mt-6 -mx-5">
-          <DemographicsPanel />
+          <DemographicsPanel
+            parcelId={parcel.parcel_id}
+            enabled={
+              timelineStatus?.status === "complete" ||
+              (timelineRequestId == null && snapshots.length > 0)
+            }
+          />
         </div>
       </div>
 
@@ -206,7 +260,12 @@ export function ParcelInfo({ parcel }: ParcelInfoProps) {
 
       {/* Search again footer */}
       <div className="px-5 py-4 border-t border-navy-700/60">
-        <SearchInput onSearch={handleSearch} isLoading={isLoading} error={error} />
+        <SearchInput
+          onSearch={handleSearch}
+          isLoading={isLoading}
+          error={error}
+          onClearError={() => geocodeMutation.reset()}
+        />
       </div>
     </motion.aside>
   );
@@ -218,6 +277,7 @@ interface SearchInputProps {
   onSearch: (address: string, coords?: { lat: number; lon: number }) => void;
   isLoading: boolean;
   error: string | null;
+  onClearError: () => void;
 }
 
 function EventDetail({ event, onClose }: { event: PropertyEvent; onClose: () => void }) {
@@ -307,9 +367,8 @@ function EventDetail({ event, onClose }: { event: PropertyEvent; onClose: () => 
   );
 }
 
-function SearchInput({ onSearch, isLoading, error }: SearchInputProps) {
+function SearchInput({ onSearch, isLoading, error, onClearError }: SearchInputProps) {
   const { setQuery, suggestions, clear } = useAddressAutocomplete();
-  const setError = useAppStore((s) => s.setError);
   const [value, setValue] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(-1);
@@ -364,7 +423,7 @@ function SearchInput({ onSearch, isLoading, error }: SearchInputProps) {
             setQuery(e.target.value);
             setShowSuggestions(true);
             setHighlightIndex(-1);
-            if (error) setError(null);
+            if (error) onClearError();
           }}
           onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
           onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}

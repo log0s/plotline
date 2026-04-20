@@ -8,17 +8,18 @@ import { FeaturedCards } from "../components/FeaturedCards";
 import { HowItWorks } from "../components/HowItWorks";
 import { SearchBar } from "../components/SearchBar";
 import { TechFooter } from "../components/TechFooter";
-import { useGeocoder } from "../hooks/useGeocoder";
-import { useAppStore } from "../store";
+import { useGeocodeMutation } from "../hooks/queries";
 
 export default function LandingPage() {
-  const { isLoading, error } = useAppStore();
-  const { geocode } = useGeocoder();
+  const geocodeMutation = useGeocodeMutation();
   const navigate = useNavigate();
 
   const handleSearch = (address: string, coords?: { lat: number; lon: number }) => {
-    geocode(address, navigate, coords);
+    geocodeMutation.mutate({ address, navigate, ...coords });
   };
+
+  const isLoading = geocodeMutation.isPending;
+  const error = geocodeMutation.error?.message ?? null;
 
   return (
     <motion.div

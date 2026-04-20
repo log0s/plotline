@@ -184,46 +184,16 @@ export interface ApiError {
   status: number;
 }
 
-// ── Application state ─────────────────────────────────────────────────────────
+// ── Application state (UI only — server data lives in React Query) ───────────
 
 export interface AppState {
-  parcel: GeocodeResponse | null;
-  isLoading: boolean;
-  error: string | null;
-
-  // Timeline state
-  timelineRequestId: string | null;
-  timelineStatus: TimelineRequest | null;
-  snapshots: ImagerySnapshot[];
   selectedSnapshot: ImagerySnapshot | null;
-
-  // Demographics state
-  demographics: DemographicsResponse | null;
-  demographicsLoading: boolean;
-
-  // Property events state
-  propertyEvents: PropertyEventsResponse | null;
-  propertyEventsLoading: boolean;
   selectedEvent: PropertyEvent | null;
-
-  // The year the user is "focused" on (from clicking an imagery snapshot)
   selectedYear: number | null;
-
-  // Compare mode
   compareMode: boolean;
   compareSnapshots: [ImagerySnapshot | null, ImagerySnapshot | null];
 
-  // Actions
-  setParcel: (parcel: GeocodeResponse) => void;
-  setLoading: (loading: boolean) => void;
-  setError: (error: string | null) => void;
-  setTimelineStatus: (status: TimelineRequest | null) => void;
-  setSnapshots: (snapshots: ImagerySnapshot[]) => void;
   setSelectedSnapshot: (snapshot: ImagerySnapshot | null) => void;
-  setDemographics: (data: DemographicsResponse | null) => void;
-  setDemographicsLoading: (loading: boolean) => void;
-  setPropertyEvents: (data: PropertyEventsResponse | null) => void;
-  setPropertyEventsLoading: (loading: boolean) => void;
   setSelectedEvent: (event: PropertyEvent | null) => void;
   setCompareMode: (mode: boolean) => void;
   setCompareSnapshot: (index: 0 | 1, snapshot: ImagerySnapshot | null) => void;
