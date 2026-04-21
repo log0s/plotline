@@ -15,7 +15,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date
 from typing import Any
 
 from app.services.arcgis import query_feature_service
@@ -720,9 +720,9 @@ def _parse_epoch_ms(value: Any) -> date | None:
     if value is None:
         return None
     try:
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        return datetime.fromtimestamp(int(value) / 1000, tz=timezone.utc).date()
+        return datetime.fromtimestamp(int(value) / 1000, tz=UTC).date()
     except (ValueError, TypeError, OSError):
         return parse_date(str(value))
 

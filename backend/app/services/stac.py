@@ -318,7 +318,10 @@ def select_naip_items(
         candidates = list(year_items)
 
         while candidates and len(selected_for_year) < max_tiles_per_year:
-            def score(item: dict[str, object]) -> tuple[float, float]:
+            def score(
+                item: dict[str, object],
+                _remaining: tuple[float, float, float, float] = remaining,
+            ) -> tuple[float, float]:
                 bbox = item.get("bbox")
                 if not bbox or len(bbox) < 4:  # type: ignore[arg-type]
                     return (0.0, float(abs(_doy(item) - target_doy)))
@@ -326,7 +329,7 @@ def select_naip_items(
                     float(bbox[0]), float(bbox[1]),  # type: ignore[index]
                     float(bbox[2]), float(bbox[3]),  # type: ignore[index]
                 )
-                area = _bbox_intersection_area(ib, remaining)
+                area = _bbox_intersection_area(ib, _remaining)
                 # Maximize area, minimize doy distance
                 return (-area, float(abs(_doy(item) - target_doy)))
 

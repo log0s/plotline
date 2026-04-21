@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
-
 
 # ── Imagery service unit tests ─────────────────────────────────────────────────
 
@@ -54,7 +52,7 @@ def test_upsert_imagery_snapshot_insert(db: Session) -> None:
 def test_upsert_imagery_snapshot_dedup(db: Session) -> None:
     """upsert_imagery_snapshot updates cog_url on conflict and reports
     insert vs update via the return value."""
-    from app.services.imagery import upsert_imagery_snapshot, get_imagery_snapshots
+    from app.services.imagery import get_imagery_snapshots, upsert_imagery_snapshot
 
     parcel_id = uuid.uuid4()
     _insert_parcel(db, parcel_id, "Dupe St")

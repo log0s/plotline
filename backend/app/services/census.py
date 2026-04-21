@@ -169,14 +169,14 @@ class CensusFetcher:
 
         if resp.status_code in (204, 404):
             logger.info(
-                f"Census API: no data for tract",
+                "Census API: no data for tract",
                 extra={"url": url, "status": resp.status_code},
             )
             return None
 
         if resp.status_code != 200:
             logger.error(
-                f"Census API error",
+                "Census API error",
                 extra={"url": url, "status": resp.status_code, "body": resp.text[:500]},
             )
             raise CensusApiError(
@@ -213,7 +213,7 @@ def _parse_response(data: list[list[str]]) -> dict[str, int | float | None]:
 
     return {
         h: _to_number(v)
-        for h, v in zip(headers, values)
+        for h, v in zip(headers, values, strict=False)
         if h not in geo_fields
     }
 

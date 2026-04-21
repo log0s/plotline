@@ -9,9 +9,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
-from unittest.mock import AsyncMock, patch
 
-import pytest
 from sqlalchemy.orm import Session
 
 from app.services.address_normalizer import (
@@ -31,7 +29,6 @@ from app.services.property_events import (
     get_property_events,
     upsert_property_event,
 )
-
 
 # ── Address Normalization ────────────────────────────────────────────────────
 

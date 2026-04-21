@@ -13,9 +13,10 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
-from sqlalchemy import select, text as sa_text
+from sqlalchemy import select
+from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from app.models.parcels import Parcel, TimelineRequest, TimelineRequestTask
@@ -137,9 +138,9 @@ def update_request_task(
     task.status = status
     task.items_found = items_found
     if status == "processing":
-        task.started_at = datetime.now(tz=timezone.utc)
+        task.started_at = datetime.now(tz=UTC)
     elif status in ("complete", "failed", "skipped"):
-        task.completed_at = datetime.now(tz=timezone.utc)
+        task.completed_at = datetime.now(tz=UTC)
     if error_message:
         task.error_message = error_message
     db.commit()
@@ -154,7 +155,7 @@ def update_timeline_request_status(
     """Update the parent timeline request status."""
     request.status = status
     if status in ("complete", "failed"):
-        request.completed_at = datetime.now(tz=timezone.utc)
+        request.completed_at = datetime.now(tz=UTC)
     if error_message:
         request.error_message = error_message
     db.commit()

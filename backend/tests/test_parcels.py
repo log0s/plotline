@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.services.geocoder import GeocodeResult
@@ -66,10 +65,11 @@ def test_get_parcel_not_found(client: TestClient) -> None:
     mock_chain = MagicMock()
     mock_chain.filter.return_value.first.return_value = None
 
-    with patch("app.api.v1.parcels.Parcel") as _:
-        # Override the session.query call inside the dependency
-        with patch("sqlalchemy.orm.Session.query", return_value=mock_chain):
-            response = client.get(f"/api/v1/parcels/{unknown_id}")
+    with (
+        patch("app.api.v1.parcels.Parcel"),
+        patch("sqlalchemy.orm.Session.query", return_value=mock_chain),
+    ):
+        response = client.get(f"/api/v1/parcels/{unknown_id}")
 
     assert response.status_code == 404
     assert str(unknown_id) in response.json()["detail"]
@@ -126,15 +126,17 @@ def test_dedup_creates_new_parcel_when_beyond_radius() -> None:
 
     mock_db.refresh.side_effect = fake_refresh
 
-    with patch("app.services.parcels.find_nearby_parcel", return_value=None):
-        with patch("app.services.parcels.Parcel") as MockParcel:
-            MockParcel.return_value = created_parcel
-            parcel, is_new = get_or_create_parcel(
-                db=mock_db,
-                address="1600 Glenarm Pl, Denver CO",
-                geocode_result=GEOCODE_FAR,
-                settings=settings,
-            )
+    with (
+        patch("app.services.parcels.find_nearby_parcel", return_value=None),
+        patch("app.services.parcels.Parcel") as MockParcel,
+    ):
+        MockParcel.return_value = created_parcel
+        parcel, is_new = get_or_create_parcel(
+            db=mock_db,
+            address="1600 Glenarm Pl, Denver CO",
+            geocode_result=GEOCODE_FAR,
+            settings=settings,
+        )
 
     assert is_new is True
     mock_db.add.assert_called_once()
@@ -149,14 +151,16 @@ def test_dedup_radius_config_is_respected() -> None:
     settings = get_settings()
     mock_db = MagicMock()
 
-    with patch("app.services.parcels.find_nearby_parcel", return_value=None) as mock_find:
-        with patch("app.services.parcels.Parcel"):
-            get_or_create_parcel(
-                db=mock_db,
-                address="1437 Bannock St, Denver CO",
-                geocode_result=GEOCODE_DOWNTOWN_DENVER,
-                settings=settings,
-            )
+    with (
+        patch("app.services.parcels.find_nearby_parcel", return_value=None) as mock_find,
+        patch("app.services.parcels.Parcel"),
+    ):
+        get_or_create_parcel(
+            db=mock_db,
+            address="1437 Bannock St, Denver CO",
+            geocode_result=GEOCODE_DOWNTOWN_DENVER,
+            settings=settings,
+        )
 
     mock_find.assert_called_once()
     call_kwargs = mock_find.call_args

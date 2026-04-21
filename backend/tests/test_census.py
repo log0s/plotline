@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -19,7 +19,6 @@ from app.services.demographics import (
     get_census_snapshots,
     upsert_census_snapshot,
 )
-
 
 # ── FIPS parsing ──────────────────────────────────────────────────────────────
 

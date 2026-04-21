@@ -20,7 +20,7 @@ from app.schemas.property_events import (
     PropertyEventsResponse,
 )
 from app.services import property_events as property_events_service
-from app.services.county_adapters import get_adapter_for_county, get_supported_counties
+from app.services.county_adapters import get_adapter_for_county
 
 router = APIRouter()
 

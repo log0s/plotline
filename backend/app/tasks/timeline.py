@@ -15,12 +15,11 @@ from typing import Any
 
 import httpx
 
-from app.services import stac as stac_service
-from app.services import imagery as imagery_service
 from app.services import demographics as demographics_service
+from app.services import imagery as imagery_service
 from app.services import property_events as property_events_service
+from app.services import stac as stac_service
 from app.services.address_normalizer import extract_search_terms, is_address_match
-from app.services.county_adapters import get_adapter_for_county
 from app.services.census import (
     ACS5_YEARS,
     DECENNIAL_YEARS,
@@ -28,6 +27,7 @@ from app.services.census import (
     CensusFetcher,
     parse_tract_fips,
 )
+from app.services.county_adapters import get_adapter_for_county
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -148,6 +148,7 @@ async def _fetch_source(
     with SessionLocal() as db:
         # Find and update the task row
         from sqlalchemy import select as sa_select
+
         from app.models.parcels import TimelineRequest, TimelineRequestTask
 
         request = db.execute(
@@ -215,8 +216,9 @@ async def _fetch_source(
             extra={"error": str(exc)},
         )
         with SessionLocal() as db:
-            from app.models.parcels import TimelineRequestTask
             from sqlalchemy import select as sa_select
+
+            from app.models.parcels import TimelineRequestTask
 
             task_row = db.execute(
                 sa_select(TimelineRequestTask)
@@ -300,8 +302,9 @@ async def _fetch_source(
                 items_saved += 1
 
         # Update task status
-        from app.models.parcels import TimelineRequestTask
         from sqlalchemy import select as sa_select
+
+        from app.models.parcels import TimelineRequestTask
 
         task_row = db.execute(
             sa_select(TimelineRequestTask)
@@ -331,9 +334,10 @@ async def _fetch_census(
 
     Returns the number of census snapshots saved.
     """
+    from sqlalchemy import select as sa_select
+
     from app.db import SessionLocal
     from app.models.parcels import TimelineRequestTask
-    from sqlalchemy import select as sa_select
 
     try:
         state_fips, county_fips, tract_code = parse_tract_fips(tract_fips)
@@ -427,7 +431,7 @@ async def _fetch_census(
                 db, task_row, "complete", items_found=items_saved
             )
 
-    logger.info(f"Census fetch complete", extra={"items_saved": items_saved, "tract": tract_fips})
+    logger.info("Census fetch complete", extra={"items_saved": items_saved, "tract": tract_fips})
     return items_saved
 
 
@@ -442,9 +446,10 @@ async def _fetch_property(
 
     Returns the number of events saved.
     """
+    from sqlalchemy import select as sa_select
+
     from app.db import SessionLocal
     from app.models.parcels import TimelineRequestTask
-    from sqlalchemy import select as sa_select
 
     adapter = get_adapter_for_county(county)
 
@@ -587,9 +592,10 @@ async def _fetch_property(
 
 async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
     """Orchestrate all imagery sources for a timeline request."""
+    from sqlalchemy import select as sa_select
+
     from app.db import SessionLocal
     from app.models.parcels import TimelineRequest
-    from sqlalchemy import select as sa_select
 
     req_uuid = uuid.UUID(timeline_request_id)
 

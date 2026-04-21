@@ -16,7 +16,8 @@ import uuid
 from datetime import date
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Response as FastAPIResponse
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import Response as FastAPIResponse
 from fastapi.responses import Response
 from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
@@ -171,7 +172,7 @@ async def list_imagery(
         return_exceptions=True,
     )
     signed_map: dict[str, str] = {
-        u: (r if isinstance(r, str) else u) for u, r in zip(url_list, results)
+        u: (r if isinstance(r, str) else u) for u, r in zip(url_list, results, strict=False)
     }
 
     snapshot_responses: list[ImagerySnapshotResponse] = []

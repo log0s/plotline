@@ -174,8 +174,8 @@ def test_geocode_missing_address_field_returns_422(client: TestClient) -> None:
 @pytest.mark.asyncio
 async def test_geocoder_service_parses_census_response() -> None:
     """geocode_address() correctly parses a real Census API response structure."""
-    import respx
     import httpx
+    import respx
 
     from app.config import get_settings
     from app.services.geocoder import geocode_address
@@ -208,8 +208,8 @@ async def test_geocoder_service_parses_census_response() -> None:
 @pytest.mark.asyncio
 async def test_geocoder_service_raises_on_empty_matches() -> None:
     """geocode_address() raises AddressNotFoundError when API returns no matches."""
-    import respx
     import httpx
+    import respx
 
     from app.config import get_settings
     from app.services.geocoder import geocode_address
@@ -229,8 +229,8 @@ async def test_geocoder_service_raises_on_empty_matches() -> None:
 @pytest.mark.asyncio
 async def test_geocoder_service_raises_on_timeout() -> None:
     """geocode_address() raises GeocoderUnavailableError on timeout."""
-    import respx
     import httpx
+    import respx
 
     from app.config import get_settings
     from app.services.geocoder import geocode_address

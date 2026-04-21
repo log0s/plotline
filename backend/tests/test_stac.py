@@ -20,7 +20,6 @@ from app.services.stac import (
     sign_pc_url,
 )
 
-
 # ── Bounding box ───────────────────────────────────────────────────────────────
 
 
