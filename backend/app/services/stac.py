@@ -161,6 +161,16 @@ def _get_sign_client() -> httpx.AsyncClient:
     return _sign_client
 
 
+async def close_clients() -> None:
+    global _search_client, _sign_client
+    if _search_client is not None:
+        await _search_client.aclose()
+        _search_client = None
+    if _sign_client is not None:
+        await _sign_client.aclose()
+        _sign_client = None
+
+
 async def sign_pc_url(url: str) -> str:
     """Sign a Planetary Computer asset URL for authenticated access.
 

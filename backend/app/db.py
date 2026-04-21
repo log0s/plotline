@@ -92,6 +92,13 @@ def get_async_redis() -> _redis_async_lib.Redis:
     return _async_redis_client
 
 
+async def close_async_redis() -> None:
+    global _async_redis_client
+    if _async_redis_client is not None:
+        await _async_redis_client.aclose()
+        _async_redis_client = None
+
+
 def check_redis_connection() -> bool:
     """Probe Redis — used by the health endpoint."""
     try:

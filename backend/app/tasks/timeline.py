@@ -592,6 +592,15 @@ async def _fetch_property(
 
 async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
     """Orchestrate all imagery sources for a timeline request."""
+    try:
+        return await _run_timeline_inner(timeline_request_id)
+    finally:
+        await stac_service.close_clients()
+        from app.db import close_async_redis
+        await close_async_redis()
+
+
+async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
     from sqlalchemy import select as sa_select
 
     from app.db import SessionLocal
