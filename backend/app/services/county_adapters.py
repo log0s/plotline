@@ -11,6 +11,7 @@ Architecture:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -157,23 +158,23 @@ class DenverAdapter(CountyAdapter):
         sn = _escape_sql_literal(street_number)
         sname = _escape_sql_literal(street_name)
         where = f"upper(ADDRESS) LIKE '{sn} %{sname}%'"
-        results: list[PropertyEventData] = []
-        for url, label in [
-            (self.RESIDENTIAL_PERMITS_URL, "residential"),
-            (self.COMMERCIAL_PERMITS_URL, "commercial"),
-        ]:
+
+        async def _query(url: str, label: str) -> list[dict[str, Any]]:
             try:
-                rows = await query_feature_service(
-                    url,
-                    where=where,
+                return await query_feature_service(
+                    url, where=where,
                     order_by="DATE_ISSUED DESC",
                     result_record_count=100,
                 )
             except Exception as exc:
                 logger.warning(f"Denver {label} permits query failed: {exc}")
-                continue
-            results.extend(self._parse_permit(row) for row in rows)
-        return results
+                return []
+
+        chunks = await asyncio.gather(
+            _query(self.RESIDENTIAL_PERMITS_URL, "residential"),
+            _query(self.COMMERCIAL_PERMITS_URL, "commercial"),
+        )
+        return [self._parse_permit(row) for chunk in chunks for row in chunk]
 
     def _parse_permit(self, row: dict[str, Any]) -> PropertyEventData:
         event_date = _parse_epoch_ms(row.get("DATE_ISSUED"))
@@ -384,21 +385,23 @@ class DCAdapter(CountyAdapter):
         sn = _escape_sql_literal(street_number)
         sname = _escape_sql_literal(street_name)
         where = f"upper(FULL_ADDRESS) LIKE '%{sn} %{sname}%'"
-        results: list[PropertyEventData] = []
-        for layer_id, year_label in self.PERMIT_LAYERS:
+
+        async def _query(layer_id: int, year_label: str) -> list[dict[str, Any]]:
             url = f"{self._PERMITS_BASE}/{layer_id}"
             try:
-                rows = await query_feature_service(
-                    url,
-                    where=where,
+                return await query_feature_service(
+                    url, where=where,
                     order_by="ISSUE_DATE DESC",
                     result_record_count=50,
                 )
             except Exception as exc:
                 logger.warning(f"DC permits {year_label} query failed: {exc}")
-                continue
-            results.extend(self._parse_permit(row) for row in rows)
-        return results
+                return []
+
+        chunks = await asyncio.gather(
+            *(_query(lid, label) for lid, label in self.PERMIT_LAYERS)
+        )
+        return [self._parse_permit(row) for chunk in chunks for row in chunk]
 
     def _parse_permit(self, row: dict[str, Any]) -> PropertyEventData:
         event_date = _parse_epoch_ms(row.get("ISSUE_DATE"))
@@ -477,20 +480,23 @@ class SantaClaraAdapter(CountyAdapter):
     ) -> list[PropertyEventData]:
         # CKAN full-text search across gx_location field
         search_term = f"{street_number} {street_name}"
-        results: list[PropertyEventData] = []
-        for resource_id, label in self.PERMIT_RESOURCES:
+
+        async def _query(resource_id: str, label: str) -> list[dict[str, Any]]:
             try:
-                rows = await query_ckan_datastore(
-                    self.DOMAIN,
-                    resource_id,
-                    q=search_term,
-                    limit=100,
+                return await query_ckan_datastore(
+                    self.DOMAIN, resource_id, q=search_term, limit=100,
                 )
             except Exception as exc:
                 logger.warning(f"San Jose {label} permits query failed: {exc}")
-                continue
-            # Filter to rows that actually match the address
-            for row in rows:
+                return []
+
+        chunks = await asyncio.gather(
+            *(_query(rid, label) for rid, label in self.PERMIT_RESOURCES)
+        )
+        # Filter to rows that actually match the address
+        results: list[PropertyEventData] = []
+        for chunk in chunks:
+            for row in chunk:
                 location = (row.get("gx_location") or "").upper()
                 if street_number in location and street_name.upper() in location:
                     results.append(self._parse_permit(row))

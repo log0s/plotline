@@ -323,7 +323,7 @@ async def test_search_stac_returns_items() -> None:
 
     mock_client, _ = _make_httpx_mock_client("post", mock_response)
 
-    with patch("httpx.AsyncClient", return_value=mock_client):
+    with patch("app.services.stac._get_search_client", return_value=mock_client):
         items = await search_stac(
             collection="naip",
             bbox=(-105.0, 39.7, -104.9, 39.8),

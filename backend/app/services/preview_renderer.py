@@ -10,6 +10,7 @@ before the final JPEG is written.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import os
@@ -113,7 +114,9 @@ async def render_preview(
         return Image.open(BytesIO(resp.content)).convert("RGBA")
 
     async with httpx.AsyncClient(timeout=60) as client:
-        tiles = [await _fetch_tile(client, url) for url in cog_urls]
+        tiles = await asyncio.gather(
+            *(_fetch_tile(client, url) for url in cog_urls)
+        )
 
     valid_tiles = [t for t in tiles if t is not None]
     if not valid_tiles:

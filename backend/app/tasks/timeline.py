@@ -650,53 +650,52 @@ async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
         },
     )
 
-    # Fetch each imagery source independently — one failure doesn't block others.
-    # We catch broad Exception per source so a single source failing doesn't
-    # abort the whole run; per-source task rows record the real outcome.
-    total_items = 0
-    for source_cfg in _SOURCES:
-        source_name = source_cfg["source"]
-        try:
-            count = await _fetch_source(
-                source_cfg, search_bbox, viewport_bbox, parcel_id, req_uuid, lat, lng,
-            )
-            total_items += count
-        except Exception as exc:
-            logger.error(
-                "Unexpected error for source",
-                extra={"source": source_name, "error": str(exc)},
-            )
-
-    # Fetch census data if we have a tract FIPS (API key is optional)
+    # Run all sources concurrently. Each coroutine manages its own DB
+    # session, per-source task row, and count return, so there's no
+    # shared mutable state. ``return_exceptions=True`` keeps a single
+    # source raising from cancelling its siblings.
     from app.config import get_settings
     settings = get_settings()
+
+    coros: list[tuple[str, Any]] = []
+    for source_cfg in _SOURCES:
+        coros.append((
+            source_cfg["source"],
+            _fetch_source(
+                source_cfg, search_bbox, viewport_bbox, parcel_id, req_uuid, lat, lng,
+            ),
+        ))
     if tract_fips:
-        try:
-            count = await _fetch_census(
+        coros.append((
+            "census",
+            _fetch_census(
                 parcel_id, req_uuid, tract_fips,
                 api_key=settings.census_api_key,
                 timeout=settings.census_api_timeout,
-            )
-            total_items += count
-        except Exception as exc:
-            logger.error(
-                "Unexpected error fetching census data",
-                extra={"source": "census", "error": str(exc)},
-            )
-
-    # Fetch property history if we know the county
+            ),
+        ))
     if county:
-        try:
-            count = await _fetch_property(
+        coros.append((
+            "property",
+            _fetch_property(
                 parcel_id, req_uuid, county, normalized_address,
                 app_token=settings.socrata_app_token,
-            )
-            total_items += count
-        except Exception as exc:
+            ),
+        ))
+
+    results = await asyncio.gather(
+        *(c for _, c in coros), return_exceptions=True,
+    )
+
+    total_items = 0
+    for (source_name, _coro), result in zip(coros, results, strict=True):
+        if isinstance(result, BaseException):
             logger.error(
-                "Unexpected error fetching property history",
-                extra={"source": "property", "error": str(exc), "county": county},
+                "Unexpected error for source",
+                extra={"source": source_name, "error": str(result)},
             )
+        else:
+            total_items += result
 
     # Mark request "failed" only if every per-source task ended up "failed";
     # otherwise "complete". A single success or a "skipped" task (e.g. county

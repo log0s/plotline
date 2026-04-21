@@ -69,6 +69,25 @@ def point_to_bbox(
 # ── STAC search ───────────────────────────────────────────────────────────────
 
 
+_search_client: httpx.AsyncClient | None = None
+
+
+def _get_search_client() -> httpx.AsyncClient:
+    """Module-level pooled client for STAC searches.
+
+    timeline.py issues 41 sequential year-chunk searches per parcel for
+    Landsat alone; per-call client construction would mean 41 fresh TLS
+    handshakes. Pooling reuses the connection.
+    """
+    global _search_client
+    if _search_client is None:
+        _search_client = httpx.AsyncClient(
+            timeout=30,
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        )
+    return _search_client
+
+
 async def search_stac(
     collection: str,
     bbox: tuple[float, float, float, float],
@@ -100,24 +119,24 @@ async def search_stac(
         payload["query"] = query
 
     items: list[dict[str, object]] = []
+    client = _get_search_client()
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(f"{STAC_API}/search", json=payload)
+    resp = await client.post(f"{STAC_API}/search", json=payload)
+    resp.raise_for_status()
+    data = resp.json()
+    items.extend(data.get("features", []))
+
+    while len(items) < max_items:
+        next_link = next(
+            (lnk for lnk in data.get("links", []) if lnk["rel"] == "next"),
+            None,
+        )
+        if not next_link:
+            break
+        resp = await client.get(next_link["href"])
         resp.raise_for_status()
         data = resp.json()
         items.extend(data.get("features", []))
-
-        while len(items) < max_items:
-            next_link = next(
-                (lnk for lnk in data.get("links", []) if lnk["rel"] == "next"),
-                None,
-            )
-            if not next_link:
-                break
-            resp = await client.get(next_link["href"])
-            resp.raise_for_status()
-            data = resp.json()
-            items.extend(data.get("features", []))
 
     return items[:max_items]
 
