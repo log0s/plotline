@@ -8,7 +8,7 @@ import logging
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
@@ -52,8 +52,8 @@ async def autocomplete(
         cached = get_redis().get(cache_key)
         if cached is not None:
             return [AutocompleteSuggestion(**s) for s in json.loads(cached)]
-    except Exception:
-        pass  # Redis down — proceed without cache
+    except (RedisError, OSError) as exc:
+        logger.debug("Autocomplete cache read failed: %s", exc)
 
     try:
         async with httpx.AsyncClient(
@@ -145,8 +145,8 @@ async def autocomplete(
             json.dumps([s.model_dump() for s in results]),
             ex=_AUTOCOMPLETE_CACHE_TTL,
         )
-    except Exception:
-        pass
+    except (RedisError, OSError) as exc:
+        logger.debug("Autocomplete cache write failed: %s", exc)
 
     return results
 
@@ -227,58 +227,13 @@ async def geocode_address(
         )
         timeline_request_id = timeline_req.id
 
-        # If the existing request is complete but is missing data that we
-        # can now provide (new adapter, backfilled tract FIPS), force a new
-        # request so the relevant tasks run.
-        if not is_new_request and timeline_req.status == "complete":
-            needs_refetch = False
-
-            # Census backfill: tract FIPS available but no census data
-            if parcel.census_tract_id:
-                from app.services import demographics as demographics_service
-
-                existing_census = demographics_service.get_census_snapshots(db, parcel.id)
-                if not existing_census:
-                    needs_refetch = True
-                    logger.info(
-                        "Census data missing — will re-fetch",
-                        extra={"parcel_id": str(parcel.id)},
-                    )
-
-            # Property backfill: county adapter now available but property
-            # task was skipped or produced no results on the previous run.
-            if parcel.county:
-                from app.services.county_adapters import get_adapter_for_county
-
-                adapter = get_adapter_for_county(parcel.county)
-                if adapter:
-                    from app.models.parcels import TimelineRequestTask
-
-                    prop_task = db.execute(
-                        select(TimelineRequestTask)
-                        .where(TimelineRequestTask.timeline_request_id == timeline_req.id)
-                        .where(TimelineRequestTask.source == "property")
-                    ).scalars().first()
-                    if not prop_task or prop_task.status == "skipped":
-                        needs_refetch = True
-                        logger.info(
-                            "Property data missing/skipped — adapter now available, will re-fetch",
-                            extra={"parcel_id": str(parcel.id), "county": parcel.county},
-                        )
-
-            if needs_refetch:
-                from app.models.parcels import TimelineRequest
-
-                new_req = TimelineRequest(parcel_id=parcel.id, status="queued")
-                db.add(new_req)
-                db.commit()
-                db.refresh(new_req)
-                timeline_request_id = new_req.id
+        if not is_new_request:
+            refetch_req = imagery_service.maybe_refetch_for_backfill(
+                db, parcel, timeline_req,
+            )
+            if refetch_req is not None:
+                timeline_request_id = refetch_req.id
                 is_new_request = True
-                logger.info(
-                    "Created new timeline request for data backfill",
-                    extra={"parcel_id": str(parcel.id), "request_id": str(new_req.id)},
-                )
 
         if is_new_request:
             from app.tasks.timeline import fetch_imagery_timeline

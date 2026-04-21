@@ -18,6 +18,7 @@ from datetime import date
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response as FastAPIResponse
 from fastapi.responses import Response
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
@@ -302,7 +303,7 @@ async def _proxy_cog_tile(
 
     try:
         signed_url = await stac_service.sign_pc_url(source_url)
-    except Exception as exc:
+    except (httpx.RequestError, httpx.HTTPStatusError) as exc:
         logger.warning("URL signing failed, falling back to unsigned", exc_info=exc)
         signed_url = source_url
 
@@ -377,6 +378,7 @@ async def proxy_imagery_tile(
 
 @router.get(
     "/imagery/{snapshot_id}/stac",
+    response_class=Response,
     summary="Return a STAC item with signed asset URLs (for Titiler STACReader)",
     description=(
         "Fetches the original STAC item JSON from Planetary Computer and signs "
@@ -411,8 +413,8 @@ async def get_signed_stac_item(
         cached = get_redis().get(cache_key)
         if cached:
             stac_item = json.loads(cached)
-    except Exception:
-        pass  # Redis down — fall through to fetch
+    except (RedisError, OSError) as exc:
+        logger.debug("STAC item cache read failed: %s", exc)
 
     if stac_item is None:
         # Fetch the original STAC item from Planetary Computer
@@ -421,28 +423,34 @@ async def get_signed_stac_item(
                 resp = await client.get(snap.cog_url)
                 resp.raise_for_status()
                 stac_item = resp.json()
-        except Exception as exc:
+        except (httpx.RequestError, httpx.HTTPStatusError) as exc:
             logger.error("Failed to fetch STAC item from %s", snap.cog_url, exc_info=exc)
             raise HTTPException(status_code=502, detail="Failed to fetch STAC item") from exc
 
         # Cache the raw item (before signing) for 1 hour
         try:
             get_redis().setex(cache_key, 3600, json.dumps(stac_item))
-        except Exception:
-            pass
+        except (RedisError, OSError) as exc:
+            logger.debug("STAC item cache write failed: %s", exc)
 
-    # Sign the band assets Titiler will read (concurrently).
-    # SAS tokens are cached separately in sign_pc_url().
+    # Sign the band assets Titiler will read (concurrently). Per-band
+    # isolation: a single band failing to sign falls back to its
+    # unsigned href instead of breaking all three.
     assets = stac_item.get("assets", {})
     bands = [b for b in ("red", "green", "blue") if b in assets and "href" in assets[b]]
-    try:
-        signed_hrefs = await asyncio.gather(
-            *(stac_service.sign_pc_url(assets[b]["href"]) for b in bands)
-        )
-        for band, signed in zip(bands, signed_hrefs):
-            assets[band]["href"] = signed
-    except Exception as exc:
-        logger.warning("Band signing partially failed, some may be unsigned", exc_info=exc)
+    sign_results = await asyncio.gather(
+        *(stac_service.sign_pc_url(assets[b]["href"]) for b in bands),
+        return_exceptions=True,
+    )
+    for band, result in zip(bands, sign_results, strict=True):
+        if isinstance(result, BaseException):
+            logger.warning(
+                "Band signing failed; using unsigned href",
+                extra={"band": band, "snapshot_id": str(snapshot_id)},
+                exc_info=result,
+            )
+        else:
+            assets[band]["href"] = result
 
     return Response(
         content=json.dumps(stac_item),

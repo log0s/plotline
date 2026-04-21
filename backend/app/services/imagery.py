@@ -18,7 +18,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import select, text as sa_text
 from sqlalchemy.orm import Session
 
-from app.models.parcels import TimelineRequest, TimelineRequestTask
+from app.models.parcels import Parcel, TimelineRequest, TimelineRequestTask
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +158,67 @@ def update_timeline_request_status(
     if error_message:
         request.error_message = error_message
     db.commit()
+
+
+def maybe_refetch_for_backfill(
+    db: Session,
+    parcel: Parcel,
+    existing_req: TimelineRequest,
+) -> TimelineRequest | None:
+    """Return a fresh TimelineRequest if the existing one is missing data
+    we can now provide; otherwise None.
+
+    Two backfill triggers:
+      * Census tract FIPS is now available but no census snapshots exist.
+      * The parcel's county now has a property adapter, but the previous
+        run's property task was missing or skipped.
+
+    Caller is responsible for dispatching the Celery task on the returned
+    request.
+    """
+    if existing_req.status != "complete":
+        return None
+
+    needs_refetch = False
+
+    if parcel.census_tract_id:
+        from app.services import demographics as demographics_service
+
+        if not demographics_service.get_census_snapshots(db, parcel.id):
+            needs_refetch = True
+            logger.info(
+                "Census data missing — refetch needed",
+                extra={"parcel_id": str(parcel.id)},
+            )
+
+    if parcel.county:
+        from app.services.county_adapters import get_adapter_for_county
+
+        if get_adapter_for_county(parcel.county):
+            prop_task = db.execute(
+                select(TimelineRequestTask)
+                .where(TimelineRequestTask.timeline_request_id == existing_req.id)
+                .where(TimelineRequestTask.source == "property")
+            ).scalars().first()
+            if not prop_task or prop_task.status == "skipped":
+                needs_refetch = True
+                logger.info(
+                    "Property task missing/skipped — refetch needed",
+                    extra={"parcel_id": str(parcel.id), "county": parcel.county},
+                )
+
+    if not needs_refetch:
+        return None
+
+    new_req = TimelineRequest(parcel_id=parcel.id, status="queued")
+    db.add(new_req)
+    db.commit()
+    db.refresh(new_req)
+    logger.info(
+        "Created new timeline request for backfill",
+        extra={"parcel_id": str(parcel.id), "request_id": str(new_req.id)},
+    )
+    return new_req
 
 
 # ── Imagery snapshot helpers ──────────────────────────────────────────────────

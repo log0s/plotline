@@ -168,6 +168,8 @@ async def sign_pc_url(url: str) -> str:
     roundtrips to the SAS signing endpoint. Tokens last ~30 min so
     the 10-min TTL provides a safe margin.
     """
+    from redis.exceptions import RedisError
+
     from app.db import get_async_redis
 
     cache_key = f"sas:{url}"
@@ -176,8 +178,8 @@ async def sign_pc_url(url: str) -> str:
         cached = await redis.get(cache_key)
         if cached:
             return cached.decode() if isinstance(cached, bytes) else cached
-    except Exception:
-        pass  # Redis down — fall through to signing
+    except (RedisError, OSError) as exc:
+        logger.debug("SAS cache read failed: %s", exc)
 
     resp = await _get_sign_client().get(PC_SIGN_URL, params={"href": url})
     resp.raise_for_status()
@@ -185,8 +187,8 @@ async def sign_pc_url(url: str) -> str:
 
     try:
         await redis.setex(cache_key, _SAS_CACHE_TTL, signed.encode())
-    except Exception:
-        pass  # Redis down — signed URL still works, just not cached
+    except (RedisError, OSError) as exc:
+        logger.debug("SAS cache write failed: %s", exc)
 
     return signed
 

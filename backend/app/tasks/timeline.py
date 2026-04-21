@@ -748,15 +748,17 @@ def fetch_imagery_timeline(self: Any, timeline_request_id: str) -> dict[str, Any
     try:
         return asyncio.run(_run_timeline(timeline_request_id))
     except Exception as exc:
+        # Boundary: anything escaping _run_timeline gets surfaced as a
+        # failed TimelineRequest so the user sees a definitive status.
         logger.error(
             "Timeline task failed",
             extra={"timeline_request_id": timeline_request_id, "error": str(exc)},
         )
-        # Mark the request as failed in the DB
         try:
+            from sqlalchemy import select as sa_select
+
             from app.db import SessionLocal
             from app.models.parcels import TimelineRequest
-            from sqlalchemy import select as sa_select
 
             req_uuid = uuid.UUID(timeline_request_id)
             with SessionLocal() as db:
@@ -768,5 +770,8 @@ def fetch_imagery_timeline(self: Any, timeline_request_id: str) -> dict[str, Any
                         db, request, "failed", error_message=str(exc)
                     )
         except Exception:
+            # Cleanup-of-cleanup: if marking failed itself fails (DB down,
+            # stale request id), swallow so we still re-raise the original
+            # exception below for Celery's retry/visibility.
             pass
         raise

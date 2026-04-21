@@ -42,12 +42,24 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def check_db_connection() -> bool:
-    """Probe the database — used by the health endpoint."""
+    """Probe the database — used by the health endpoint.
+
+    Wraps the probe in a 2-second statement_timeout so a slow but
+    not-quite-dead Postgres can't make the health endpoint hang
+    (which would let a load balancer think the instance is healthy
+    while requests pile up behind a stuck DB).
+
+    SET LOCAL is scoped to the transaction, so the setting won't leak
+    back into pooled connections used by request handlers.
+    """
+    from sqlalchemy.exc import SQLAlchemyError
+
     try:
-        with engine.connect() as conn:
+        with engine.connect() as conn, conn.begin():
+            conn.execute(text("SET LOCAL statement_timeout = '2s'"))
             conn.execute(text("SELECT 1"))
         return True
-    except Exception:
+    except SQLAlchemyError:
         return False
 
 
