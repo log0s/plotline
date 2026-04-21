@@ -27,7 +27,7 @@ These locations are pre-loaded and ready to explore:
 
 **🏘️ Green Valley Ranch, Denver** — Open prairie east of Denver exploded into a planned community in 15 years. NAIP imagery from 2003 shows empty grassland; by 2023 it's a dense subdivision with schools, parks, and tens of thousands of residents.
 
-**🏜️ Southern Highlands, Las Vegas** — Empty Mojave desert became one of America's fastest-growing suburbs. Landsat shows bare sand through the 1980s and 1990s; by the mid-2000s NAIP reveals a grid of rooftops, golf courses, and arterial roads spreading across the valley floor.
+**🏟️ Navy Yard / Capitol Riverfront, DC** — Washington's Navy shipyard and industrial waterfront on the Anacostia became one of DC's fastest-growing neighborhoods after Nationals Park opened in 2008. NAIP imagery from the early 2000s shows rail yards and warehouses; by 2024 the area is dense with residential towers, offices, and mixed-use developments.
 
 **🌊 Rodanthe, Outer Banks** — Decades of coastal erosion reshaped the Outer Banks barrier islands. Satellite imagery reveals the shoreline migrating westward, with houses lost to the surf and NC-12 repeatedly relocated as the island rolls over itself.
 

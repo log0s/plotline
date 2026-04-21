@@ -58,9 +58,9 @@ const PLACEHOLDER_CARDS: FeaturedLocation[] = [
   {
     id: "placeholder-4",
     parcel_id: "",
-    name: "Southern Highlands, Las Vegas",
-    subtitle: "Empty Mojave desert became one of America's fastest-growing suburbs",
-    slug: "southern-highlands",
+    name: "Navy Yard / Capitol Riverfront",
+    subtitle: "A Navy shipyard on the Anacostia became DC's fastest-growing neighborhood",
+    slug: "navy-yard-capitol-riverfront",
     key_stat: null,
     description: null,
     latitude: 0,

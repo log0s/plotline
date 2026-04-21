@@ -24,7 +24,7 @@ const EXAMPLE_ADDRESSES: { address: string; lat: number; lon: number }[] = [
   { address: "1600 Pennsylvania Ave NW, Washington, DC", lat: 38.8977, lon: -77.0365 },
   { address: "1437 Bannock St, Denver, CO 80202", lat: 39.7392, lon: -104.9876 },
   { address: "350 5th Ave, New York, NY 10118", lat: 40.7484, lon: -73.9856 },
-  { address: "1 Infinite Loop, Cupertino, CA 95014", lat: 37.3318, lon: -122.0312 },
+  { address: "200 E Santa Clara St, San Jose, CA 95113", lat: 37.3380, lon: -121.8853 },
 ];
 
 export function SearchBar({

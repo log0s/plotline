@@ -59,16 +59,17 @@ FEATURED_LOCATIONS = [
         "display_order": 3,
     },
     {
-        "address": "9311 S Cimarron Rd, Las Vegas, NV 89178",
-        "name": "Southern Highlands, Las Vegas",
-        "subtitle": "Empty Mojave desert became one of America's fastest-growing suburbs",
-        "slug": "southern-highlands",
-        "key_stat": "Open desert in 1996, 50,000+ residents by 2010",
+        "address": "1300 4th St SE, Washington, DC 20003",
+        "name": "Navy Yard / Capitol Riverfront",
+        "subtitle": "A Navy shipyard on the Anacostia became DC's fastest-growing neighborhood",
+        "slug": "navy-yard-capitol-riverfront",
+        "key_stat": "From Navy shipyard to one of DC's densest neighborhoods since 2008",
         "description": (
-            "The southwest fringe of Las Vegas near Southern Highlands was empty "
-            "Mojave desert through the 1980s and 1990s. Landsat shows bare sand; "
-            "by the mid-2000s NAIP reveals a grid of rooftops, golf courses, and "
-            "arterial roads spreading into the valley."
+            "Washington's Capitol Riverfront south of the US Capitol was a Navy "
+            "shipyard and industrial waterfront for two centuries. After Nationals "
+            "Park opened in 2008, residential towers, offices, and mixed-use "
+            "developments filled in along the Anacostia River, making it one of "
+            "DC's fastest-growing neighborhoods."
         ),
         "display_order": 4,
     },
