@@ -6,6 +6,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { MapPin } from "lucide-react";
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { getFeaturedLocations } from "../api/featured";
 import type { FeaturedLocation } from "../types";
@@ -106,6 +107,19 @@ export function FeaturedCards() {
     staleTime: 10 * 60 * 1000,
   });
 
+  useEffect(() => {
+    if (!apiLocations) return;
+    for (const loc of apiLocations) {
+      if (loc.preview_image_url) {
+        const url = loc.preview_image_url.startsWith("http")
+          ? loc.preview_image_url
+          : `${API_BASE}${loc.preview_image_url}`;
+        const img = new Image();
+        img.src = url;
+      }
+    }
+  }, [apiLocations]);
+
   const locations =
     apiLocations && apiLocations.length > 0 ? apiLocations : PLACEHOLDER_CARDS;
 
@@ -128,8 +142,7 @@ export function FeaturedCards() {
             <motion.div
               key={card.id}
               initial={{ opacity: 0, y: 16 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-30px" }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.1, duration: 0.4 }}
             >
               <Link
@@ -143,7 +156,6 @@ export function FeaturedCards() {
                       src={previewUrl}
                       alt={card.name}
                       className="w-full h-full object-cover"
-                      loading="lazy"
                     />
                   ) : (
                     <MapPin className="w-8 h-8 text-navy-600" />
