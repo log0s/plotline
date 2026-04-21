@@ -13,6 +13,8 @@ import time
 import uuid
 from typing import Any
 
+import httpx
+
 from app.services import stac as stac_service
 from app.services import imagery as imagery_service
 from app.services import demographics as demographics_service
@@ -69,6 +71,52 @@ _SOURCES: list[dict[str, Any]] = [
         "use_viewport_filter": False,
     },
 ]
+
+
+# ── STAC retry helper ─────────────────────────────────────────────────────────
+
+_RETRYABLE_HTTP_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+
+async def _search_stac_with_retry(
+    *,
+    collection: str,
+    bbox: tuple[float, float, float, float],
+    datetime_range: str,
+    max_items: int,
+    query: dict[str, object] | None = None,
+    attempts: int = 3,
+) -> list[dict[str, object]]:
+    """Call ``stac_service.search_stac`` with bounded exponential backoff.
+
+    Retries on transient network errors and retryable HTTP statuses
+    (429 / 500 / 502 / 503 / 504). Non-retryable HTTPStatusError (4xx
+    other than 429) propagates immediately. After ``attempts`` retries
+    the last exception is re-raised so the caller can decide whether
+    to skip-and-continue or fail.
+    """
+    delay = 1.0
+    last_exc: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return await stac_service.search_stac(
+                collection=collection,
+                bbox=bbox,
+                datetime_range=datetime_range,
+                max_items=max_items,
+                query=query,
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code not in _RETRYABLE_HTTP_STATUSES:
+                raise
+            last_exc = exc
+        except httpx.RequestError as exc:
+            last_exc = exc
+        if attempt < attempts - 1:
+            await asyncio.sleep(delay)
+            delay *= 2
+    assert last_exc is not None  # only reached when at least one attempt failed
+    raise last_exc
 
 
 # ── Async implementation ───────────────────────────────────────────────────────
@@ -130,17 +178,31 @@ async def _fetch_source(
             end_year = int(source_cfg["end_year"])
             per_year = int(source_cfg["max_items_per_year"])
             raw_items: list[dict[str, object]] = []
+            # One bad year is a gap, not a wipeout: retries handle transient
+            # 429/5xx/network errors, and a year that still fails after
+            # retries is logged and skipped so the other 40 years still land.
             for year in range(start_year, end_year + 1):
-                chunk = await stac_service.search_stac(
-                    collection=collection,
-                    bbox=search_bbox,
-                    datetime_range=f"{year}-01-01/{year}-12-31",
-                    max_items=per_year,
-                    query=source_cfg.get("query"),
-                )
+                try:
+                    chunk = await _search_stac_with_retry(
+                        collection=collection,
+                        bbox=search_bbox,
+                        datetime_range=f"{year}-01-01/{year}-12-31",
+                        max_items=per_year,
+                        query=source_cfg.get("query"),
+                    )
+                except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+                    logger.warning(
+                        "STAC year chunk failed after retries; skipping",
+                        extra={
+                            "source": source_name,
+                            "year": year,
+                            "error": str(exc),
+                        },
+                    )
+                    continue
                 raw_items.extend(chunk)
         else:
-            raw_items = await stac_service.search_stac(
+            raw_items = await _search_stac_with_retry(
                 collection=collection,
                 bbox=search_bbox,
                 datetime_range=source_cfg["datetime_range"],
@@ -588,9 +650,12 @@ async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
         },
     )
 
-    # Fetch each imagery source independently — one failure doesn't block others
+    # Fetch each imagery source independently — one failure doesn't block others.
+    # We catch broad Exception per source so a single source failing doesn't
+    # abort the whole run; per-source task rows record the real outcome.
     total_items = 0
     for source_cfg in _SOURCES:
+        source_name = source_cfg["source"]
         try:
             count = await _fetch_source(
                 source_cfg, search_bbox, viewport_bbox, parcel_id, req_uuid, lat, lng,
@@ -598,8 +663,8 @@ async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
             total_items += count
         except Exception as exc:
             logger.error(
-                f"Unexpected error for source {source_cfg['source']}",
-                extra={"error": str(exc)},
+                "Unexpected error for source",
+                extra={"source": source_name, "error": str(exc)},
             )
 
     # Fetch census data if we have a tract FIPS (API key is optional)
@@ -616,7 +681,7 @@ async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
         except Exception as exc:
             logger.error(
                 "Unexpected error fetching census data",
-                extra={"error": str(exc)},
+                extra={"source": "census", "error": str(exc)},
             )
 
     # Fetch property history if we know the county
@@ -630,16 +695,32 @@ async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
         except Exception as exc:
             logger.error(
                 "Unexpected error fetching property history",
-                extra={"error": str(exc), "county": county},
+                extra={"source": "property", "error": str(exc), "county": county},
             )
 
-    # Mark request complete
+    # Mark request "failed" only if every per-source task ended up "failed";
+    # otherwise "complete". A single success or a "skipped" task (e.g. county
+    # not yet supported) is enough to keep the parent complete — per-task rows
+    # already expose the per-source breakdown via GET /timeline-requests/{id}.
     with SessionLocal() as db:
+        from app.models.parcels import TimelineRequestTask
+
         request = db.execute(
             sa_select(TimelineRequest).where(TimelineRequest.id == req_uuid)
         ).scalars().first()
         if request:
-            imagery_service.update_timeline_request_status(db, request, "complete")
+            task_rows = db.execute(
+                sa_select(TimelineRequestTask)
+                .where(TimelineRequestTask.timeline_request_id == req_uuid)
+            ).scalars().all()
+            if task_rows and all(t.status == "failed" for t in task_rows):
+                failed_sources = ", ".join(t.source for t in task_rows)
+                imagery_service.update_timeline_request_status(
+                    db, request, "failed",
+                    error_message=f"All sources failed: {failed_sources}",
+                )
+            else:
+                imagery_service.update_timeline_request_status(db, request, "complete")
 
     logger.info(
         "Timeline request complete",

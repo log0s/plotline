@@ -178,12 +178,15 @@ def upsert_imagery_snapshot(
     cloud_cover_pct: float | None = None,
     bbox_wkt: str | None = None,
 ) -> bool:
-    """Insert an imagery snapshot, ignoring duplicates (idempotent).
+    """Insert an imagery snapshot, refreshing URLs on conflict (idempotent).
 
     Uses raw SQL to avoid GeoAlchemy2's GeomFromEWKT on NULL values.
-    ON CONFLICT DO NOTHING makes this safe to call multiple times.
+    ``ON CONFLICT … DO UPDATE`` keeps cog/thumbnail URLs current across
+    re-runs.
 
-    Returns True if inserted, False if the row already existed.
+    Returns True if a new row was inserted, False if an existing row was
+    updated. Detection uses ``RETURNING id`` and compares against the
+    would-be new UUID — works on both PostgreSQL and SQLite (test DB).
     """
     snap_id = uuid.uuid4()
 
@@ -201,6 +204,7 @@ def upsert_imagery_snapshot(
                 SET cog_url = EXCLUDED.cog_url,
                     additional_cog_urls = EXCLUDED.additional_cog_urls,
                     thumbnail_url = EXCLUDED.thumbnail_url
+            RETURNING id
             """
         )
         params: dict[str, object] = {
@@ -230,6 +234,7 @@ def upsert_imagery_snapshot(
                 SET cog_url = EXCLUDED.cog_url,
                     additional_cog_urls = EXCLUDED.additional_cog_urls,
                     thumbnail_url = EXCLUDED.thumbnail_url
+            RETURNING id
             """
         )
         params = {
@@ -246,9 +251,9 @@ def upsert_imagery_snapshot(
             "cloud_cover_pct": cloud_cover_pct,
         }
 
-    db.execute(sql, params)
+    returned_id = db.execute(sql, params).scalar()
     db.commit()
-    return True
+    return str(returned_id) == str(snap_id)
 
 
 def _is_postgres(db: Session) -> bool:

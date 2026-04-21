@@ -52,7 +52,8 @@ def test_upsert_imagery_snapshot_insert(db: Session) -> None:
 
 
 def test_upsert_imagery_snapshot_dedup(db: Session) -> None:
-    """upsert_imagery_snapshot updates cog_url on conflict (idempotent)."""
+    """upsert_imagery_snapshot updates cog_url on conflict and reports
+    insert vs update via the return value."""
     from app.services.imagery import upsert_imagery_snapshot, get_imagery_snapshots
 
     parcel_id = uuid.uuid4()
@@ -69,12 +70,13 @@ def test_upsert_imagery_snapshot_dedup(db: Session) -> None:
     )
 
     first = upsert_imagery_snapshot(db, **kwargs)  # type: ignore[arg-type]
-    assert first is True
+    assert first is True, "First call should report insert"
 
-    # Second call with updated cog_url should succeed (DO UPDATE)
+    # Second call with updated cog_url should refresh the row but report
+    # False so callers can distinguish new snapshots from re-runs.
     kwargs["cog_url"] = "https://example.com/landsat_new.tif"
     second = upsert_imagery_snapshot(db, **kwargs)  # type: ignore[arg-type]
-    assert second is True
+    assert second is False, "Second call should report update, not insert"
 
     # Verify the URL was updated, not duplicated
     snaps = get_imagery_snapshots(db, parcel_id)

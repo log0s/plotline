@@ -27,6 +27,19 @@ logger = logging.getLogger(__name__)
 # ── Shared helpers ────────────────────────────────────────────────────────────
 
 
+def _escape_sql_literal(s: str) -> str:
+    """Escape a user-supplied string for inclusion in a WHERE literal.
+
+    These adapters build WHERE clauses by f-string for ArcGIS Feature
+    Services and Socrata SoQL — both honor the SQL convention of doubling
+    single quotes. We also strip non-printable characters and cap length;
+    addresses never legitimately exceed ~100 chars and longer strings just
+    bloat the upstream query.
+    """
+    cleaned = "".join(c for c in s if c.isprintable())[:100]
+    return cleaned.replace("'", "''")
+
+
 def parse_date(value: str | None) -> date | None:
     """Parse a date string from Socrata (ISO-8601 or date-only)."""
     if not value:
@@ -141,7 +154,9 @@ class DenverAdapter(CountyAdapter):
     ) -> list[PropertyEventData]:
         # Use the full ADDRESS field with LIKE — handles directional prefixes
         # (e.g. "1437 N BANNOCK ST") and case variations reliably.
-        where = f"upper(ADDRESS) LIKE '{street_number} %{street_name}%'"
+        sn = _escape_sql_literal(street_number)
+        sname = _escape_sql_literal(street_name)
+        where = f"upper(ADDRESS) LIKE '{sn} %{sname}%'"
         results: list[PropertyEventData] = []
         for url, label in [
             (self.RESIDENTIAL_PERMITS_URL, "residential"),
@@ -229,7 +244,9 @@ class AdamsCountyAdapter(CountyAdapter):
         *,
         app_token: str | None = None,
     ) -> list[PropertyEventData]:
-        where = f"upper(CombinedAddress) LIKE '{street_number} %{street_name}%'"
+        sn = _escape_sql_literal(street_number)
+        sname = _escape_sql_literal(street_name)
+        where = f"upper(CombinedAddress) LIKE '{sn} %{sname}%'"
         try:
             rows = await query_feature_service(
                 self.PERMITS_URL,
@@ -311,8 +328,10 @@ class DCAdapter(CountyAdapter):
         *,
         app_token: str | None = None,
     ) -> list[PropertyEventData]:
+        sn = _escape_sql_literal(street_number)
+        sname = _escape_sql_literal(street_name)
         where = (
-            f"upper(PROPERTY_ADDRESS) LIKE '%{street_number} %{street_name}%'"
+            f"upper(PROPERTY_ADDRESS) LIKE '%{sn} %{sname}%'"
         )
         try:
             rows = await query_feature_service(
@@ -362,7 +381,9 @@ class DCAdapter(CountyAdapter):
         *,
         app_token: str | None = None,
     ) -> list[PropertyEventData]:
-        where = f"upper(FULL_ADDRESS) LIKE '%{street_number} %{street_name}%'"
+        sn = _escape_sql_literal(street_number)
+        sname = _escape_sql_literal(street_name)
+        where = f"upper(FULL_ADDRESS) LIKE '%{sn} %{sname}%'"
         results: list[PropertyEventData] = []
         for layer_id, year_label in self.PERMIT_LAYERS:
             url = f"{self._PERMITS_BASE}/{layer_id}"
@@ -549,8 +570,10 @@ class NewYorkCountyAdapter(CountyAdapter):
         *,
         app_token: str | None = None,
     ) -> list[PropertyEventData]:
+        sn = _escape_sql_literal(street_number)
+        sname = _escape_sql_literal(street_name)
         where = (
-            f"borough='1' AND upper(address) LIKE '%{street_number} {street_name}%' "
+            f"borough='1' AND upper(address) LIKE '%{sn} {sname}%' "
             f"AND sale_price > '0'"
         )
         try:
@@ -607,9 +630,11 @@ class NewYorkCountyAdapter(CountyAdapter):
         *,
         app_token: str | None = None,
     ) -> list[PropertyEventData]:
+        sn = _escape_sql_literal(street_number)
+        sname = _escape_sql_literal(street_name)
         where = (
-            f"borough='MANHATTAN' AND house__='{street_number}' "
-            f"AND upper(street_name) LIKE '%{street_name}%'"
+            f"borough='MANHATTAN' AND house__='{sn}' "
+            f"AND upper(street_name) LIKE '%{sname}%'"
         )
         try:
             rows = await query_socrata(
