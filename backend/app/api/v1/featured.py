@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models.parcels import FeaturedLocation, ImagerySnapshot, Parcel
+from app.models.parcels import FeaturedLocation
 from app.schemas.featured import FeaturedListResponse, FeaturedLocationResponse
-
-if TYPE_CHECKING:
-    import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -22,33 +19,38 @@ router = APIRouter()
 
 
 def _snapshot_ids_for_parcels(
-    db: Session, parcel_ids: list[uuid.UUID]
-) -> dict[uuid.UUID, tuple[str, str]]:
+    db: Session, parcel_id_strs: list[str]
+) -> dict[str, tuple[str, str]]:
     """Return ``{parcel_id: (earliest_snapshot_id, latest_snapshot_id)}``.
 
-    One query for any number of parcels — the rows are sorted by
-    parcel_id then capture_date so we can bucket on the way through.
+    One raw-SQL query for any number of parcels — sorted by parcel_id
+    then capture_date so we can bucket on the way through. Raw SQL
+    avoids the ORM's UUID coercion which doesn't match the SQLite
+    TEXT-typed test DB.
     """
-    if not parcel_ids:
+    if not parcel_id_strs:
         return {}
+    placeholders = ",".join(f":p{i}" for i in range(len(parcel_id_strs)))
+    params = {f"p{i}": pid for i, pid in enumerate(parcel_id_strs)}
     rows = db.execute(
-        select(
-            ImagerySnapshot.parcel_id,
-            ImagerySnapshot.id,
-            ImagerySnapshot.capture_date,
-        )
-        .where(ImagerySnapshot.parcel_id.in_(parcel_ids))
-        .order_by(
-            ImagerySnapshot.parcel_id, ImagerySnapshot.capture_date.asc()
-        )
+        sa_text(
+            f"""
+            SELECT parcel_id, id, capture_date
+            FROM imagery_snapshots
+            WHERE parcel_id IN ({placeholders})
+            ORDER BY parcel_id, capture_date ASC
+            """
+        ),
+        params,
     ).all()
-    out: dict[uuid.UUID, tuple[str, str]] = {}
+    out: dict[str, tuple[str, str]] = {}
     for pid, sid, _capture_date in rows:
+        pid_str = str(pid)
         sid_str = str(sid)
-        if pid not in out:
-            out[pid] = (sid_str, sid_str)
+        if pid_str not in out:
+            out[pid_str] = (sid_str, sid_str)
         else:
-            out[pid] = (out[pid][0], sid_str)
+            out[pid_str] = (out[pid_str][0], sid_str)
     return out
 
 
@@ -76,6 +78,28 @@ def _build_response(
     )
 
 
+def _parcel_coords(
+    db: Session, parcel_id_strs: list[str]
+) -> dict[str, tuple[float, float]]:
+    """Batch-load (latitude, longitude) per parcel via raw SQL.
+
+    Skips the PostGIS geometry column so this works on both Postgres
+    and the SQLite test DB.
+    """
+    if not parcel_id_strs:
+        return {}
+    placeholders = ",".join(f":p{i}" for i in range(len(parcel_id_strs)))
+    params = {f"p{i}": pid for i, pid in enumerate(parcel_id_strs)}
+    rows = db.execute(
+        sa_text(
+            f"SELECT id, latitude, longitude FROM parcels "
+            f"WHERE id IN ({placeholders})"
+        ),
+        params,
+    ).all()
+    return {str(pid): (float(lat), float(lng)) for pid, lat, lng in rows}
+
+
 @router.get("/featured", response_model=FeaturedListResponse)
 def list_featured(db: Session = Depends(get_db)) -> FeaturedListResponse:
     """List all featured locations for the landing page."""
@@ -85,29 +109,21 @@ def list_featured(db: Session = Depends(get_db)) -> FeaturedListResponse:
     if not locations:
         return FeaturedListResponse(locations=[])
 
-    parcel_ids = [loc.parcel_id for loc in locations]
-
-    # Batch-load just the parcel coordinates (skipping the PostGIS geometry
-    # column so this stays compatible with the SQLite test DB).
-    parcel_rows = db.execute(
-        select(Parcel.id, Parcel.latitude, Parcel.longitude)
-        .where(Parcel.id.in_(parcel_ids))
-    ).all()
-    parcel_coords: dict[uuid.UUID, tuple[float, float]] = {
-        pid: (lat, lng) for pid, lat, lng in parcel_rows
-    }
-    snapshot_ids = _snapshot_ids_for_parcels(db, parcel_ids)
+    parcel_id_strs = [str(loc.parcel_id) for loc in locations]
+    coords_map = _parcel_coords(db, parcel_id_strs)
+    snapshot_ids = _snapshot_ids_for_parcels(db, parcel_id_strs)
 
     results: list[FeaturedLocationResponse] = []
     for loc in locations:
-        coords = parcel_coords.get(loc.parcel_id)
+        pid_str = str(loc.parcel_id)
+        coords = coords_map.get(pid_str)
         if coords is None:
             logger.warning(
                 "Featured location %r (slug=%s) references missing parcel %s — skipping",
                 loc.name, loc.slug, loc.parcel_id,
             )
             continue
-        earliest_id, latest_id = snapshot_ids.get(loc.parcel_id, (None, None))
+        earliest_id, latest_id = snapshot_ids.get(pid_str, (None, None))
         results.append(
             _build_response(
                 loc,
@@ -132,22 +148,19 @@ def get_featured_by_slug(
     if not loc:
         raise HTTPException(status_code=404, detail=f"Featured location '{slug}' not found")
 
-    parcel_row = db.execute(
-        select(Parcel.id, Parcel.latitude, Parcel.longitude)
-        .where(Parcel.id == loc.parcel_id)
-    ).first()
-    if not parcel_row:
+    pid_str = str(loc.parcel_id)
+    coords = _parcel_coords(db, [pid_str]).get(pid_str)
+    if coords is None:
         raise HTTPException(status_code=404, detail="Parcel for featured location not found")
-    _, lat, lng = parcel_row
 
-    earliest_id, latest_id = _snapshot_ids_for_parcels(
-        db, [loc.parcel_id]
-    ).get(loc.parcel_id, (None, None))
+    earliest_id, latest_id = _snapshot_ids_for_parcels(db, [pid_str]).get(
+        pid_str, (None, None)
+    )
 
     return _build_response(
         loc,
-        latitude=lat,
-        longitude=lng,
+        latitude=coords[0],
+        longitude=coords[1],
         earliest_snapshot_id=earliest_id,
         latest_snapshot_id=latest_id,
     )
