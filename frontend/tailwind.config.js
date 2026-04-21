@@ -20,6 +20,9 @@ export default {
           600: "#d97706",
         },
       },
+      spacing: {
+        "safe-b": "env(safe-area-inset-bottom)",
+      },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "Fira Code", "Fira Mono", "monospace"],

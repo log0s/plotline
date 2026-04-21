@@ -5,7 +5,7 @@
  * (see src/hooks/queries.ts). A parcel that lands here with no existing
  * imagery triggers a fresh timeline job.
  */
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useMotionValue } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   useLocation,
@@ -16,8 +16,10 @@ import {
 import { CompareView } from "../components/CompareView";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { MapView } from "../components/MapView";
+import { MobileBottomSheet } from "../components/MobileBottomSheet";
 import { ParcelInfo } from "../components/ParcelInfo";
 import { Timeline } from "../components/Timeline";
+import { useIsMobile } from "../hooks/useMediaQuery";
 import {
   useImageryQuery,
   useParcelQuery,
@@ -33,7 +35,9 @@ export default function ExplorePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const { setSelectedSnapshot, compareMode } = useAppStore();
+  const { setSelectedSnapshot, compareMode, selectedEvent } = useAppStore();
+  const isMobile = useIsMobile();
+  const sheetY = useMotionValue(9999);
 
   // Timeline request ID is ephemeral (per parcel load). It comes from either:
   //   (a) a fresh geocode navigation: location.state.timelineRequestId
@@ -187,12 +191,12 @@ export default function ExplorePage() {
       transition={{ duration: 0.4 }}
       className="relative w-full h-screen flex flex-col"
     >
-      <div className="relative flex-1 min-h-0">
+      <div className="relative flex-1 min-h-0 overflow-hidden md:overflow-visible">
         <ErrorBoundary>
           {compareMode ? (
             <CompareView parcel={parcel} />
           ) : (
-            <MapView parcel={parcel} />
+            <MapView parcel={parcel} sheetY={isMobile ? sheetY : undefined} />
           )}
         </ErrorBoundary>
 
@@ -218,7 +222,7 @@ export default function ExplorePage() {
           </span>
         </button>
 
-        {!compareMode && (
+        {!compareMode && !isMobile && (
           <AnimatePresence>
             <ParcelInfo
               key={parcel.parcel_id}
@@ -233,6 +237,23 @@ export default function ExplorePage() {
               }
             />
           </AnimatePresence>
+        )}
+
+        {!compareMode && isMobile && (
+          <MobileBottomSheet expandTrigger={selectedEvent} y={sheetY} resetKey={parcel.parcel_id}>
+            <ParcelInfo
+              key={parcel.parcel_id}
+              parcel={parcel}
+              timelineRequestId={timelineRequestId}
+              timelineStatus={timelineRequestQuery.data ?? null}
+              snapshots={snapshots}
+              imageryLoading={
+                imageryQuery.isLoading ||
+                (timelineRequestQuery.data?.status === "complete" &&
+                  imageryQuery.isFetching)
+              }
+            />
+          </MobileBottomSheet>
         )}
       </div>
 

@@ -5,6 +5,7 @@
  * as a raster layer with a crossfade transition via the shared
  * applyImageryLayer utility.
  */
+import { motion, useMotionValue, useTransform, type MotionValue } from "framer-motion";
 import { LocateFixed } from "lucide-react";
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
@@ -14,6 +15,7 @@ import type { GeocodeResponse, ImagerySnapshot } from "../types";
 
 interface MapViewProps {
   parcel: GeocodeResponse;
+  sheetY?: MotionValue<number>;
 }
 
 // OpenFreeMap — free, no API key needed
@@ -34,7 +36,7 @@ function isWebGLSupported(): boolean {
   }
 }
 
-export function MapView({ parcel }: MapViewProps) {
+export function MapView({ parcel, sheetY }: MapViewProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
@@ -43,6 +45,21 @@ export function MapView({ parcel }: MapViewProps) {
   const { selectedSnapshot } = useAppStore();
   const [infoChip, setInfoChip] = useState<ImagerySnapshot | null>(null);
   const [webglSupported] = useState(isWebGLSupported);
+  const [containerH, setContainerH] = useState(0);
+  const fallbackY = useMotionValue(9999);
+  const sheetH = Math.min(containerH * 0.85, Math.max(0, containerH - 60));
+  const chipBottom = useTransform(
+    sheetY ?? fallbackY,
+    (v: number) => sheetH - v + 12,
+  );
+
+  useEffect(() => {
+    const el = mapContainerRef.current?.parentElement;
+    if (!el) return;
+    const obs = new ResizeObserver(([e]) => setContainerH(e.contentRect.height));
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   if (!webglSupported) {
     return (
@@ -183,13 +200,32 @@ export function MapView({ parcel }: MapViewProps) {
         onClick={handleRecenter}
         title="Recenter on searched address"
         aria-label="Recenter on searched address"
-        className="absolute top-4 right-[21rem] z-10 p-2 rounded-xl bg-navy-900/90 backdrop-blur-sm border border-navy-700/60 text-slate-200 hover:border-amber-500/40 hover:text-amber-400 transition-colors"
+        className="absolute top-4 right-4 md:right-[21rem] z-10 p-2 rounded-xl bg-navy-900/90 backdrop-blur-sm border border-navy-700/60 text-slate-200 hover:border-amber-500/40 hover:text-amber-400 transition-colors"
       >
         <LocateFixed className="w-4 h-4" aria-hidden="true" />
       </button>
 
       {/* Imagery info chip */}
-      {infoChip && (
+      {infoChip && (sheetY ? (
+        <motion.div
+          className="absolute left-1/2 -translate-x-1/2 z-10 pointer-events-none"
+          style={{ bottom: chipBottom }}
+        >
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-navy-900/90 backdrop-blur-sm border border-navy-700/60 text-xs font-mono text-slate-300">
+            <span className="text-amber-400 font-semibold">
+              {SOURCE_LABELS[infoChip.source] ?? infoChip.source}
+            </span>
+            <span>·</span>
+            <span>{infoChip.capture_date}</span>
+            {infoChip.resolution_m != null && (
+              <>
+                <span>·</span>
+                <span>{infoChip.resolution_m}m res</span>
+              </>
+            )}
+          </div>
+        </motion.div>
+      ) : (
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-navy-900/90 backdrop-blur-sm border border-navy-700/60 text-xs font-mono text-slate-300">
             <span className="text-amber-400 font-semibold">
@@ -205,7 +241,7 @@ export function MapView({ parcel }: MapViewProps) {
             )}
           </div>
         </div>
-      )}
+      ))}
     </div>
   );
 }

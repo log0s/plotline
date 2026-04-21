@@ -240,10 +240,12 @@ function IncomeValueChart({
   snapshots,
   selectedYear,
   subtitle,
+  compact,
 }: {
   snapshots: CensusSnapshot[];
   selectedYear: number | null;
   subtitle?: string;
+  compact?: boolean;
 }) {
   const data = snapshots
     .filter(
@@ -291,7 +293,8 @@ function IncomeValueChart({
             tickFormatter={fmtDollar}
             tickLine={false}
             axisLine={false}
-            width={48}
+            width={compact ? 0 : 48}
+            hide={compact}
           />
           <Tooltip content={<ChartTooltip formatter={fmtDollar} />} />
           {selectedYear && (
@@ -542,9 +545,10 @@ function UnsupportedCountyBanner({ county }: { county: string | null }) {
 interface DemographicsPanelProps {
   parcelId: string;
   enabled: boolean;
+  compact?: boolean;
 }
 
-export function DemographicsPanel({ parcelId, enabled }: DemographicsPanelProps) {
+export function DemographicsPanel({ parcelId, enabled, compact }: DemographicsPanelProps) {
   const selectedYear = useAppStore((s) => s.selectedYear);
   const { data: demographics, isLoading: demographicsLoading } =
     useDemographicsQuery(parcelId, enabled);
@@ -638,6 +642,7 @@ export function DemographicsPanel({ parcelId, enabled }: DemographicsPanelProps)
             snapshots={snapshots}
             selectedYear={selectedYear}
             subtitle={valueSubtitle}
+            compact={compact}
           />
 
           <SnapshotCard snapshots={snapshots} />

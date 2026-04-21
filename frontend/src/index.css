@@ -7,6 +7,10 @@
     color-scheme: dark;
   }
 
+  html {
+    touch-action: manipulation;
+  }
+
   html,
   body,
   #root {
@@ -35,6 +39,13 @@
 /* Push MapLibre nav controls below the brand chip (outside @layer for full specificity) */
 .maplibregl-ctrl-top-left {
   top: 58px !important;
+}
+
+@media (max-width: 767px) {
+  .maplibregl-ctrl button {
+    width: 40px !important;
+    height: 40px !important;
+  }
 }
 
 @layer utilities {

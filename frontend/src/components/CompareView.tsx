@@ -217,8 +217,8 @@ export function CompareView({ parcel }: CompareViewProps) {
           left: `${dividerPos}%`,
           top: "50%",
           transform: "translate(-50%, -50%)",
-          width: "40px",
-          height: "40px",
+          width: "48px",
+          height: "48px",
         }}
         onMouseDown={handleDragStart}
         onTouchStart={handleDragStart}
@@ -232,12 +232,12 @@ export function CompareView({ parcel }: CompareViewProps) {
 
       {/* Labels */}
       {snapA && (
-        <div className="absolute top-14 left-3 z-30">
+        <div className="absolute top-20 md:top-14 left-3 z-30">
           <SnapshotLabel snapshot={snapA} side="A" />
         </div>
       )}
       {snapB && (
-        <div className="absolute top-14 right-3 z-30">
+        <div className="absolute top-20 md:top-14 right-3 z-30">
           <SnapshotLabel snapshot={snapB} side="B" />
         </div>
       )}
@@ -256,7 +256,7 @@ export function CompareView({ parcel }: CompareViewProps) {
       {/* Exit button */}
       <button
         onClick={() => setCompareMode(false)}
-        className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-xl bg-navy-900/90 backdrop-blur-sm border border-navy-700/60 text-sm text-white hover:border-amber-500/40 transition-colors"
+        className="absolute bottom-28 md:bottom-4 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-xl bg-navy-900/90 backdrop-blur-sm border border-navy-700/60 text-sm text-white hover:border-amber-500/40 transition-colors"
       >
         Exit Compare
       </button>

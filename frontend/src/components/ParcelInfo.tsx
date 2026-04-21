@@ -20,6 +20,7 @@ import { useNavigate } from "react-router-dom";
 import { DemographicsPanel } from "./DemographicsPanel";
 import { useAddressAutocomplete } from "../hooks/useAddressAutocomplete";
 import { useGeocodeMutation } from "../hooks/queries";
+import { useIsMobile } from "../hooks/useMediaQuery";
 import { useAppStore } from "../store";
 import type {
   GeocodeResponse,
@@ -144,21 +145,19 @@ export function ParcelInfo({
 
   const isLoading = geocodeMutation.isPending;
   const error = geocodeMutation.error?.message ?? null;
+  const isMobile = useIsMobile();
 
   return (
     <motion.aside
-      initial={{ x: "100%", opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      exit={{ x: "100%", opacity: 0 }}
-      transition={{ type: "spring", stiffness: 300, damping: 35 }}
-      className={`
-        absolute top-0 right-0 h-full w-80
-        bg-navy-900/95 backdrop-blur-md
-        border-l border-navy-700/60
-        shadow-2xl shadow-black/50
-        flex flex-col z-10
-        overflow-hidden
-      `}
+      initial={isMobile ? { opacity: 0 } : { x: "100%", opacity: 0 }}
+      animate={isMobile ? { opacity: 1 } : { x: 0, opacity: 1 }}
+      exit={isMobile ? { opacity: 0 } : { x: "100%", opacity: 0 }}
+      transition={isMobile ? { duration: 0.2 } : { type: "spring", stiffness: 300, damping: 35 }}
+      className={
+        isMobile
+          ? "w-full"
+          : `absolute top-0 right-0 h-full w-80 bg-navy-900/95 backdrop-blur-md border-l border-navy-700/60 shadow-2xl shadow-black/50 flex flex-col z-10 overflow-hidden`
+      }
     >
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-navy-700/60">
@@ -178,8 +177,19 @@ export function ParcelInfo({
         </button>
       </div>
 
+      {/* Selected event detail — top on mobile for visibility */}
+      {isMobile && (
+        <AnimatePresence>
+          {selectedEvent && (
+            <div className="px-5 border-b border-navy-700/60">
+              <EventDetail event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+            </div>
+          )}
+        </AnimatePresence>
+      )}
+
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-5 py-4">
+      <div className={isMobile ? "px-5 py-4" : "flex-1 overflow-y-auto px-5 py-4"}>
         {/* Address */}
         <div className="mb-6">
           <p className="data-label uppercase tracking-widest mb-2">Address</p>
@@ -245,18 +255,21 @@ export function ParcelInfo({
               timelineStatus?.status === "complete" ||
               (timelineRequestId == null && snapshots.length > 0)
             }
+            compact={isMobile}
           />
         </div>
       </div>
 
-      {/* Selected event detail */}
-      <AnimatePresence>
-        {selectedEvent && (
-          <div className="px-5 border-t border-navy-700/60">
-            <EventDetail event={selectedEvent} onClose={() => setSelectedEvent(null)} />
-          </div>
-        )}
-      </AnimatePresence>
+      {/* Selected event detail — bottom on desktop */}
+      {!isMobile && (
+        <AnimatePresence>
+          {selectedEvent && (
+            <div className="px-5 border-t border-navy-700/60">
+              <EventDetail event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+            </div>
+          )}
+        </AnimatePresence>
+      )}
 
       {/* Search again footer */}
       <div className="px-5 py-4 border-t border-navy-700/60">

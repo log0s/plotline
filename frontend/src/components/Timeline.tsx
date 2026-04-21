@@ -273,7 +273,10 @@ export function Timeline({
     container.addEventListener("mousedown", onMouseDown);
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
-    container.addEventListener("wheel", onWheel, { passive: false });
+    const hasFinePointer = window.matchMedia("(pointer: fine)").matches;
+    if (hasFinePointer) {
+      container.addEventListener("wheel", onWheel, { passive: false });
+    }
     // Prevent default middle-click auto-scroll behavior
     container.addEventListener("auxclick", (e) => {
       if (e.button === 1) e.preventDefault();
@@ -283,7 +286,9 @@ export function Timeline({
       container.removeEventListener("mousedown", onMouseDown);
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
-      container.removeEventListener("wheel", onWheel);
+      if (hasFinePointer) {
+        container.removeEventListener("wheel", onWheel);
+      }
     };
   }, []);
 
@@ -369,7 +374,7 @@ export function Timeline({
         </div>
 
         {/* Filter toggles */}
-        <div className="flex items-center gap-1.5 shrink-0 ml-3">
+        <div className="flex items-center gap-1.5 shrink-0 ml-3 overflow-x-auto md:overflow-visible">
           {/* Imagery source toggles */}
           {snapshots.length > 0 &&
             (["naip", "landsat", "sentinel2"] as ImagerySource[]).map((src) => {
@@ -426,7 +431,7 @@ export function Timeline({
               title={compareMode ? "Exit compare mode" : "Compare two snapshots"}
             >
               <SplitSquareHorizontal size={14} />
-              Compare
+              <span className="hidden md:inline">Compare</span>
             </button>
           )}
         </div>
@@ -588,13 +593,13 @@ function SnapshotCard({ snapshot, isSelected, onSelect, compareSlot, compareAwai
 
       {/* Source badge */}
       <span
-        className={`px-1.5 py-0.5 rounded text-[9px] font-medium leading-none ${SOURCE_COLORS[source]}`}
+        className={`px-1.5 py-0.5 rounded text-[10px] md:text-[9px] font-medium leading-none ${SOURCE_COLORS[source]}`}
       >
         {SOURCE_LABELS[source]}
       </span>
 
       {/* Date label */}
-      <span className="text-[9px] font-mono text-slate-500 leading-none">
+      <span className="text-[10px] md:text-[9px] font-mono text-slate-500 leading-none">
         {formatDate(snapshot.capture_date)}
       </span>
     </motion.button>
@@ -647,13 +652,13 @@ function EventCard({ event, isSelected, onSelect }: EventCardProps) {
 
       {/* Event type badge */}
       <span
-        className={`px-1.5 py-0.5 rounded text-[9px] font-medium leading-none ${config.color}`}
+        className={`px-1.5 py-0.5 rounded text-[10px] md:text-[9px] font-medium leading-none ${config.color}`}
       >
         {config.label}
       </span>
 
       {/* Date label */}
-      <span className="text-[9px] font-mono text-slate-500 leading-none">
+      <span className="text-[10px] md:text-[9px] font-mono text-slate-500 leading-none">
         {event.event_date ? formatDate(event.event_date) : "No date"}
       </span>
     </motion.button>

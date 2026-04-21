@@ -143,7 +143,7 @@ export function SearchBar({
             }}
             onMouseEnter={() => setHighlightIndex(i)}
             className={`
-              w-full text-left px-4 py-2.5 flex items-start gap-3
+              w-full text-left px-4 py-3 md:py-2.5 flex items-start gap-3
               transition-colors duration-75
               ${i === highlightIndex ? "bg-navy-700" : "hover:bg-navy-700/50"}
               ${i > 0 ? "border-t border-navy-700/40" : ""}
