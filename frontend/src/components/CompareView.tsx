@@ -45,6 +45,7 @@ export function CompareView({ parcel }: CompareViewProps) {
 
   const [dividerPos, setDividerPos] = useState(50); // percentage
   const isDraggingRef = useRef(false);
+  const [mapError, setMapError] = useState(false);
 
   // Exit on Escape
   useEffect(() => {
@@ -101,6 +102,10 @@ export function CompareView({ parcel }: CompareViewProps) {
     rightMap.on("load", () => {
       rightReadyRef.current = true;
     });
+
+    const onError = () => setMapError(true);
+    leftMap.on("error", onError);
+    rightMap.on("error", onError);
 
     // Sync cameras
     leftMap.on("move", () => syncMaps(leftMap, rightMap));
@@ -252,6 +257,12 @@ export function CompareView({ parcel }: CompareViewProps) {
       >
         <LocateFixed className="w-4 h-4" aria-hidden="true" />
       </button>
+
+      {mapError && (
+        <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-navy-900/90 border border-amber-500/30 text-[10px] text-amber-400">
+          Some tiles failed to load
+        </div>
+      )}
 
       {/* Exit button */}
       <button

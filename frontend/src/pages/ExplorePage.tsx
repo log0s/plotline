@@ -48,6 +48,7 @@ export default function ExplorePage() {
   const [triggeredRequestId, setTriggeredRequestId] = useState<string | null>(
     null,
   );
+  const [triggerError, setTriggerError] = useState<string | null>(null);
   const timelineRequestId = navTimelineRequestId ?? triggeredRequestId;
 
   const parcelQuery = useParcelQuery(parcelId);
@@ -72,6 +73,7 @@ export default function ExplorePage() {
     triggeredForRef.current = parcelId;
     triggerTimelineMutation.mutate(parcelId, {
       onSuccess: (data) => setTriggeredRequestId(data.timeline_request_id),
+      onError: (err) => setTriggerError(err.message),
     });
   }, [
     parcelId,
@@ -146,6 +148,7 @@ export default function ExplorePage() {
     autoSelectedForRef.current = null;
     triggeredForRef.current = null;
     snapParamApplied.current = false;
+    setTriggerError(null);
     useAppStore.getState().setSelectedSnapshot(null);
     useAppStore.getState().setSelectedEvent(null);
   }, [parcelId]);
@@ -192,7 +195,14 @@ export default function ExplorePage() {
       className="relative w-full h-screen flex flex-col"
     >
       <div className="relative flex-1 min-h-0 overflow-hidden md:overflow-visible">
-        <ErrorBoundary>
+        <ErrorBoundary fallback={
+          <div className="flex flex-col items-center justify-center min-h-[300px] px-4">
+            <h2 className="text-xl font-bold text-white mb-2">Map failed to load</h2>
+            <p className="text-sm text-slate-400 text-center max-w-md">
+              The map encountered an error. Try refreshing the page.
+            </p>
+          </div>
+        }>
           {compareMode ? (
             <CompareView parcel={parcel} />
           ) : (
@@ -258,6 +268,18 @@ export default function ExplorePage() {
       </div>
 
       <div className="border-t border-navy-700/60">
+        {imageryQuery.isError && (
+          <div className="flex items-center gap-2 px-4 py-2 text-xs text-red-400 bg-red-500/5 border-b border-red-500/10">
+            <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
+            <span>Could not load imagery: {imageryQuery.error?.message ?? "unknown error"}</span>
+          </div>
+        )}
+        {triggerError && (
+          <div className="flex items-center gap-2 px-4 py-2 text-xs text-red-400 bg-red-500/5 border-b border-red-500/10">
+            <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
+            <span>Could not start timeline: {triggerError}</span>
+          </div>
+        )}
         <Timeline
           parcelId={parcel.parcel_id}
           snapshots={snapshots}

@@ -45,6 +45,7 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
   const { selectedSnapshot } = useAppStore();
   const [infoChip, setInfoChip] = useState<ImagerySnapshot | null>(null);
   const [webglSupported] = useState(isWebGLSupported);
+  const [mapError, setMapError] = useState(false);
   const [containerH, setContainerH] = useState(0);
   const fallbackY = useMotionValue(9999);
   const sheetH = Math.min(containerH * 0.85, Math.max(0, containerH - 60));
@@ -95,7 +96,10 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
 
     map.on("load", () => {
       mapReadyRef.current = true;
+      setMapError(false);
     });
+
+    map.on("error", () => setMapError(true));
 
     mapRef.current = map;
 
@@ -242,6 +246,12 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
           </div>
         </div>
       ))}
+
+      {mapError && (
+        <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-navy-900/90 border border-amber-500/30 text-[10px] text-amber-400">
+          Some tiles failed to load
+        </div>
+      )}
     </div>
   );
 }
