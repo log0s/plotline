@@ -222,12 +222,43 @@ async def list_imagery(
 
 # ── Tile proxy helpers ────────────────────────────────────────────────────────
 
-# Band/rescale params for single-file COG sources (NAIP and Sentinel-2).
-# Landsat uses a separate code path via Titiler's /stac/tiles/ endpoint.
 _COG_PARAMS: dict[str, dict[str, object]] = {
     "naip": {"bidx": [1, 2, 3], "rescale": "0,255"},        # 4-band uint8 RGBI
     "sentinel2": {"bidx": [1, 2, 3], "rescale": "0,255"},   # 3-band uint8 TCI
 }
+
+_titiler_client: httpx.AsyncClient | None = None
+_stac_fetch_client: httpx.AsyncClient | None = None
+
+
+def _get_titiler_client() -> httpx.AsyncClient:
+    global _titiler_client
+    if _titiler_client is None:
+        _titiler_client = httpx.AsyncClient(
+            timeout=30,
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=30),
+        )
+    return _titiler_client
+
+
+def _get_stac_fetch_client() -> httpx.AsyncClient:
+    global _stac_fetch_client
+    if _stac_fetch_client is None:
+        _stac_fetch_client = httpx.AsyncClient(
+            timeout=15,
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        )
+    return _stac_fetch_client
+
+
+async def close_clients() -> None:
+    global _titiler_client, _stac_fetch_client
+    if _titiler_client is not None:
+        await _titiler_client.aclose()
+        _titiler_client = None
+    if _stac_fetch_client is not None:
+        await _stac_fetch_client.aclose()
+        _stac_fetch_client = None
 
 
 # 1x1 transparent PNG (68 bytes) — returned for out-of-bounds tile requests
@@ -247,8 +278,7 @@ async def _fetch_titiler(
 ) -> Response:
     """Forward a tile request to Titiler and return the response."""
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            upstream = await client.get(titiler_url, params=params)
+        upstream = await _get_titiler_client().get(titiler_url, params=params)
     except httpx.RequestError as exc:
         logger.error("Titiler request failed", exc_info=exc)
         raise HTTPException(status_code=502, detail="Titiler upstream unreachable") from exc
@@ -420,10 +450,9 @@ async def get_signed_stac_item(
     if stac_item is None:
         # Fetch the original STAC item from Planetary Computer
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.get(snap.cog_url)
-                resp.raise_for_status()
-                stac_item = resp.json()
+            resp = await _get_stac_fetch_client().get(snap.cog_url)
+            resp.raise_for_status()
+            stac_item = resp.json()
         except (httpx.RequestError, httpx.HTTPStatusError) as exc:
             logger.error("Failed to fetch STAC item from %s", snap.cog_url, exc_info=exc)
             raise HTTPException(status_code=502, detail="Failed to fetch STAC item") from exc

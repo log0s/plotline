@@ -7,8 +7,8 @@ app = "log0s-plotline-api"
    [env]
      APP_ENV = "production"
      ENABLE_TITILER = "true"
-     TITILER_URL = "https://plotline-titiler.fly.dev"
-     API_INTERNAL_URL = "https://log0s-plotline-api.fly.dev"
+     TITILER_URL = "http://plotline-titiler.internal:80"
+     API_INTERNAL_URL = "http://log0s-plotline-api.internal:8000"
 
    [http_service]
      internal_port = 8000

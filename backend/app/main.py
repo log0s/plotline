@@ -58,6 +58,14 @@ def create_app() -> FastAPI:
             extra={"env": settings.app_env, "log_level": settings.log_level},
         )
 
+    @app.on_event("shutdown")
+    async def on_shutdown() -> None:
+        from app.api.v1 import imagery
+        from app.services import stac as stac_service
+
+        await imagery.close_clients()
+        await stac_service.close_clients()
+
     return app
 
 
