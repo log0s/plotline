@@ -250,6 +250,14 @@ async def _fetch_source(
     else:
         selected_groups = source_cfg["selector"](raw_items)
 
+    # Validate Landsat band accessibility — older scenes (1984–1990s) can
+    # have broken assets that cause tile-serving 502s.  Drop bad items and
+    # swap in the next-best same-year candidate when possible.
+    if collection == "landsat-c2-l2":
+        selected_groups = await stac_service.validate_landsat_selection(
+            selected_groups, raw_items,
+        )
+
     elapsed = time.perf_counter() - t0
     logger.info(
         f"STAC search complete: {source_name}",

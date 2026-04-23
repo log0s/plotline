@@ -6,6 +6,7 @@ bounding boxes from geocoded points.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import defaultdict
 from datetime import date
@@ -542,6 +543,108 @@ def extract_thumbnail_url(item: dict[str, object]) -> str | None:
 def extract_capture_date(item: dict[str, object]) -> date:
     """Extract the capture date from a STAC item's datetime property."""
     return _capture_date(item)
+
+
+async def validate_landsat_item(item: dict[str, object]) -> bool:
+    """Sign and HEAD the red band asset to verify the item is accessible.
+
+    Older Landsat scenes (1984–1990s) sometimes have broken or expired
+    assets on Planetary Computer.  A single-band canary check is enough
+    because all bands share the same storage container.
+    """
+    assets: dict[str, dict[str, object]] = item.get("assets", {})  # type: ignore[assignment]
+    red = assets.get("red")
+    if not red or not red.get("href"):
+        logger.info("Landsat item missing red band", extra={"item_id": item.get("id")})
+        return False
+
+    href = str(red["href"])
+    try:
+        signed = await sign_pc_url(href)
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        logger.info(
+            "Landsat red band signing failed",
+            extra={"item_id": item.get("id"), "error": str(exc)},
+        )
+        return False
+
+    try:
+        resp = await _get_search_client().head(signed, follow_redirects=True)
+        if resp.status_code >= 400:
+            logger.info(
+                "Landsat red band inaccessible",
+                extra={"item_id": item.get("id"), "status": resp.status_code},
+            )
+            return False
+    except httpx.RequestError as exc:
+        logger.info(
+            "Landsat red band HEAD failed",
+            extra={"item_id": item.get("id"), "error": str(exc)},
+        )
+        return False
+
+    return True
+
+
+async def validate_landsat_selection(
+    selected_groups: list[list[dict[str, object]]],
+    raw_items: list[dict[str, object]],
+) -> list[list[dict[str, object]]]:
+    """Validate selected Landsat items and swap in fallbacks for broken ones.
+
+    For each selected item, HEAD-checks the red band asset.  If it fails,
+    iterates through same-year candidates from *raw_items* (ranked by cloud
+    cover) until a valid one is found.  Years with no valid candidate are
+    dropped entirely — better a gap than a 502.
+    """
+    by_year: dict[int, list[dict[str, object]]] = defaultdict(list)
+    for item in raw_items:
+        by_year[_capture_date(item).year].append(item)
+    for year_items in by_year.values():
+        year_items.sort(
+            key=lambda i: float(i["properties"].get("eo:cloud_cover", 100)),  # type: ignore[attr-defined]
+        )
+
+    # Validate all selected items in parallel
+    valid_flags = await asyncio.gather(
+        *(validate_landsat_item(g[0]) for g in selected_groups if g),
+    )
+
+    validated: list[list[dict[str, object]]] = []
+    for group, is_valid in zip(selected_groups, valid_flags, strict=True):
+        item = group[0]
+        if is_valid:
+            validated.append(group)
+            continue
+
+        year = _capture_date(item).year
+        selected_id = item.get("id")
+        logger.warning(
+            "Landsat item failed validation; trying fallbacks",
+            extra={"year": year, "item_id": selected_id},
+        )
+
+        found = False
+        for candidate in by_year.get(year, []):
+            if candidate.get("id") == selected_id:
+                continue
+            if await validate_landsat_item(candidate):
+                logger.info(
+                    "Landsat fallback found",
+                    extra={
+                        "year": year,
+                        "original_id": selected_id,
+                        "fallback_id": candidate.get("id"),
+                    },
+                )
+                validated.append([candidate])
+                found = True
+                break
+
+        if not found:
+            logger.warning("No valid Landsat item for year %d; skipping", year)
+
+    return validated
 
 
 def extract_bbox_wkt(item: dict[str, object]) -> str | None:
