@@ -221,14 +221,24 @@ export function Timeline({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
-  // Scroll selected card into view
+  // Scroll selected card to center of the timeline strip.
+  // Uses offsetLeft (immune to Framer Motion layout transforms) and
+  // re-fires when items change (snapshots arrive, events load, filters toggle).
+  const itemCount = items.length;
   useEffect(() => {
     if (!selectedSnapshot || !scrollContainerRef.current) return;
-    const el = scrollContainerRef.current.querySelector(
-      `[data-snapshot-id="${selectedSnapshot.id}"]`,
-    );
-    el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-  }, [selectedSnapshot]);
+    const container = scrollContainerRef.current;
+    const timer = setTimeout(() => {
+      const el = container.querySelector(
+        `[data-snapshot-id="${selectedSnapshot.id}"]`,
+      ) as HTMLElement | null;
+      if (!el) return;
+      const scrollTarget =
+        el.offsetLeft - container.clientWidth / 2 + el.offsetWidth / 2;
+      container.scrollTo({ left: scrollTarget, behavior: "smooth" });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [selectedSnapshot, itemCount]);
 
   // Middle-mouse-button drag to scroll the timeline horizontally
   useEffect(() => {
