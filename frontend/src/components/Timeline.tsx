@@ -464,11 +464,14 @@ export function Timeline({
         {isProcessing && snapshots.length === 0 && (
           <div className="flex items-center gap-3 py-2">
             {[1, 2, 3, 4, 5].map((i) => (
-              <div
-                key={i}
-                className="w-16 h-16 rounded-md bg-navy-800 animate-pulse shrink-0"
-                style={{ animationDelay: `${i * 100}ms` }}
-              />
+              <div key={i} className="flex flex-col items-center gap-1 shrink-0">
+                <div
+                  className="w-16 h-16 rounded-md bg-navy-800 animate-pulse"
+                  style={{ animationDelay: `${i * 100}ms` }}
+                />
+                <div className="h-[15px] w-10 rounded bg-navy-800/50 animate-pulse" style={{ animationDelay: `${i * 100}ms` }} />
+                <div className="h-[13px] w-12 rounded bg-navy-800/30 animate-pulse" style={{ animationDelay: `${i * 100}ms` }} />
+              </div>
             ))}
           </div>
         )}
