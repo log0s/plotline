@@ -28,7 +28,7 @@ export default function LandingPage() {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, scale: 0.98 }}
       transition={{ duration: 0.35 }}
-      className="flex flex-col items-center min-h-screen"
+      className="flex flex-col items-center min-h-dvh"
     >
       {/* Hero section */}
       <div className="flex flex-col items-center justify-center flex-1 w-full px-4 py-20">
@@ -49,19 +49,14 @@ export default function LandingPage() {
         </motion.div>
 
         {/* Search */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2, duration: 0.5 }}
-          className="w-full"
-        >
+        <div className="w-full">
           <SearchBar
             onSearch={handleSearch}
             isLoading={isLoading}
             error={error}
             variant="hero"
           />
-        </motion.div>
+        </div>
       </div>
 
       {/* Featured locations */}

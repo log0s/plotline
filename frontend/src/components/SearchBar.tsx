@@ -233,7 +233,7 @@ export function SearchBar({
   return (
     <div className="w-full max-w-2xl mx-auto">
       <form onSubmit={handleSubmit} className="relative group">
-        <motion.div
+        <div
           className={`
             flex items-center gap-3 px-5 py-4 rounded-2xl
             bg-navy-800 border
@@ -272,7 +272,7 @@ export function SearchBar({
             autoFocus
             autoComplete="off"
             className={`
-              flex-1 bg-transparent text-white placeholder-slate-500
+              flex-1 min-w-0 bg-transparent text-white placeholder-slate-500
               text-lg outline-none
               disabled:opacity-60
             `}
@@ -323,7 +323,7 @@ export function SearchBar({
               Search
             </button>
           )}
-        </motion.div>
+        </div>
 
         {/* Autocomplete dropdown */}
         {suggestionDropdown}
