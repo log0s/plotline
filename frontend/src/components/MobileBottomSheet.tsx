@@ -35,6 +35,7 @@ export function MobileBottomSheet({
   const measuredRef = useRef(false);
   const prevTrigger = useRef(expandTrigger);
   const openedByTrigger = useRef(false);
+  const preTriggerSnap = useRef<SnapPoint>("closed");
   const prevResetKey = useRef(resetKey);
 
   useEffect(() => {
@@ -81,11 +82,12 @@ export function MobileBottomSheet({
 
   useEffect(() => {
     if (expandTrigger != null && expandTrigger !== prevTrigger.current && snap !== "full") {
+      preTriggerSnap.current = snap;
       openedByTrigger.current = true;
       setSnap("full");
     } else if (expandTrigger == null && prevTrigger.current != null && openedByTrigger.current) {
       openedByTrigger.current = false;
-      setSnap("closed");
+      setSnap(preTriggerSnap.current);
     }
     prevTrigger.current = expandTrigger;
   }, [expandTrigger, snap]);
@@ -94,6 +96,7 @@ export function MobileBottomSheet({
     if (resetKey !== prevResetKey.current) {
       prevResetKey.current = resetKey;
       openedByTrigger.current = false;
+      preTriggerSnap.current = "closed";
       setSnap("closed");
     }
   }, [resetKey]);

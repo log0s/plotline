@@ -370,7 +370,7 @@ export function Timeline({
       {/* Header bar */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-navy-800/60">
         {/* Status / progress text */}
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="hidden md:flex items-center gap-2 min-w-0">
           {isProcessing && (
             <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
           )}
@@ -384,7 +384,7 @@ export function Timeline({
         </div>
 
         {/* Filter toggles */}
-        <div className="flex items-center gap-1.5 shrink-0 ml-3 overflow-x-auto md:overflow-visible">
+        <div className="flex items-center gap-1.5 shrink-0 overflow-x-auto md:ml-3 md:overflow-visible">
           {/* Imagery source toggles */}
           {snapshots.length > 0 &&
             (["naip", "landsat", "sentinel2"] as ImagerySource[]).map((src) => {
@@ -431,18 +431,21 @@ export function Timeline({
 
           {/* Compare toggle */}
           {snapshots.length >= 2 && (
-            <button
-              onClick={() => setCompareMode(!compareMode)}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all ml-auto ${
-                compareMode
-                  ? "bg-amber-500 text-navy-950 font-semibold"
-                  : "border border-amber-500/40 text-amber-400/70 hover:border-amber-500 hover:text-amber-400"
-              }`}
-              title={compareMode ? "Exit compare mode" : "Compare two snapshots"}
-            >
-              <SplitSquareHorizontal size={14} />
-              <span className="hidden md:inline">Compare</span>
-            </button>
+            <>
+              <span className="w-px h-4 bg-navy-700/60 mx-0.5" />
+              <button
+                onClick={() => setCompareMode(!compareMode)}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
+                  compareMode
+                    ? "bg-amber-500 text-navy-950 font-semibold"
+                    : "border border-amber-500/40 text-amber-400/70 hover:border-amber-500 hover:text-amber-400"
+                }`}
+                title={compareMode ? "Exit compare mode" : "Compare two snapshots"}
+              >
+                <SplitSquareHorizontal size={12} />
+                <span className="hidden md:inline">Compare</span>
+              </button>
+            </>
           )}
         </div>
       </div>
