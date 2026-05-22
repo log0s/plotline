@@ -148,7 +148,7 @@ class TimelineRequestTask(Base):
 
     __tablename__ = "timeline_request_tasks"
 
-    VALID_SOURCES = ("naip", "landsat", "sentinel2", "census", "property")
+    VALID_SOURCES = ("naip", "landsat", "sentinel2", "census", "property", "usgs_topo")
     VALID_STATUSES = ("queued", "processing", "complete", "failed", "skipped")
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -187,7 +187,7 @@ class TimelineRequestTask(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "source IN ('naip', 'landsat', 'sentinel2', 'census', 'property')",
+            "source IN ('naip', 'landsat', 'sentinel2', 'census', 'property', 'usgs_topo')",
             name="ck_trt_source",
         ),
         CheckConstraint(
@@ -205,7 +205,7 @@ class ImagerySnapshot(Base):
 
     __tablename__ = "imagery_snapshots"
 
-    VALID_SOURCES = ("naip", "landsat", "sentinel2")
+    VALID_SOURCES = ("naip", "landsat", "sentinel2", "usgs_topo")
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -247,7 +247,7 @@ class ImagerySnapshot(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "source IN ('naip', 'landsat', 'sentinel2')",
+            "source IN ('naip', 'landsat', 'sentinel2', 'usgs_topo')",
             name="ck_imagery_snapshots_source",
         ),
         UniqueConstraint(

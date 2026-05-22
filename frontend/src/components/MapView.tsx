@@ -6,7 +6,7 @@
  * applyImageryLayer utility.
  */
 import { motion, useMotionValue, useTransform, type MotionValue } from "framer-motion";
-import { LocateFixed } from "lucide-react";
+import { Info, LocateFixed } from "lucide-react";
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
 import { applyImageryLayer } from "../utils/applyImageryLayer";
@@ -25,6 +25,7 @@ const SOURCE_LABELS: Record<string, string> = {
   naip: "NAIP",
   landsat: "Landsat",
   sentinel2: "Sentinel-2",
+  usgs_topo: "USGS Topo",
 };
 
 function isWebGLSupported(): boolean {
@@ -44,6 +45,7 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
 
   const { selectedSnapshot } = useAppStore();
   const [infoChip, setInfoChip] = useState<ImagerySnapshot | null>(null);
+  const [topoTooltip, setTopoTooltip] = useState(false);
   const [webglSupported] = useState(isWebGLSupported);
   const [mapError, setMapError] = useState(false);
   const [containerH, setContainerH] = useState(0);
@@ -168,6 +170,7 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
         lng: parcel.longitude,
       });
       setInfoChip(snap);
+      setTopoTooltip(false);
 
       // Landsat/Sentinel look bad when zoomed in too close
       const isLowRes =
@@ -212,44 +215,72 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
       {/* Imagery info chip */}
       {infoChip && (sheetY ? (
         <motion.div
-          className="absolute left-1/2 -translate-x-1/2 z-10 pointer-events-none"
+          className="absolute left-1/2 -translate-x-1/2 md:left-[calc(50%-10rem)] z-10"
           style={{ bottom: chipBottom }}
         >
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-navy-900/90 backdrop-blur-sm border border-navy-700/60 text-xs font-mono text-slate-300">
-            <span className="text-amber-400 font-semibold">
-              {SOURCE_LABELS[infoChip.source] ?? infoChip.source}
-            </span>
-            <span>·</span>
-            <span>{infoChip.capture_date}</span>
-            {infoChip.resolution_m != null && (
-              <>
-                <span>·</span>
-                <span>{infoChip.resolution_m}m res</span>
-              </>
-            )}
-          </div>
+          <InfoChip chip={infoChip} topoTooltip={topoTooltip} setTopoTooltip={setTopoTooltip} />
         </motion.div>
       ) : (
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-navy-900/90 backdrop-blur-sm border border-navy-700/60 text-xs font-mono text-slate-300">
-            <span className="text-amber-400 font-semibold">
-              {SOURCE_LABELS[infoChip.source] ?? infoChip.source}
-            </span>
-            <span>·</span>
-            <span>{infoChip.capture_date}</span>
-            {infoChip.resolution_m != null && (
-              <>
-                <span>·</span>
-                <span>{infoChip.resolution_m}m res</span>
-              </>
-            )}
-          </div>
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 md:left-[calc(50%-10rem)] z-10">
+          <InfoChip chip={infoChip} topoTooltip={topoTooltip} setTopoTooltip={setTopoTooltip} />
         </div>
       ))}
 
       {mapError && (
         <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-navy-900/90 border border-amber-500/30 text-[10px] text-amber-400">
           Some tiles failed to load
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InfoChip({
+  chip,
+  topoTooltip,
+  setTopoTooltip,
+}: {
+  chip: ImagerySnapshot;
+  topoTooltip: boolean;
+  setTopoTooltip: (v: boolean) => void;
+}) {
+  const isTopo = chip.source === "usgs_topo";
+  const year = chip.capture_date.slice(0, 4);
+
+  return (
+    <div className="relative pointer-events-auto">
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-navy-900/90 backdrop-blur-sm border border-navy-700/60 text-xs font-mono text-slate-300">
+        <span className="text-amber-400 font-semibold">
+          {isTopo ? "USGS Topographic Map" : (SOURCE_LABELS[chip.source] ?? chip.source)}
+        </span>
+        <span>·</span>
+        <span>{isTopo ? year : chip.capture_date}</span>
+        {isTopo && (
+          <>
+            <span>·</span>
+            <span className="text-slate-400">Not a photograph</span>
+            <button
+              onClick={() => setTopoTooltip(!topoTooltip)}
+              className="text-slate-400 hover:text-slate-200 transition-colors"
+              aria-label="About this map"
+            >
+              <Info size={12} />
+            </button>
+          </>
+        )}
+        {!isTopo && chip.resolution_m != null && (
+          <>
+            <span>·</span>
+            <span>{chip.resolution_m}m res</span>
+          </>
+        )}
+      </div>
+      {isTopo && topoTooltip && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 px-3 py-2 rounded-lg bg-navy-900/95 backdrop-blur-sm border border-navy-700/60 text-xs text-slate-300 leading-relaxed">
+          This is a scanned USGS topographic map, not a photograph. It shows
+          terrain, roads, and land use as surveyed by cartographers at the time.
+          Features include contour lines (brown), vegetation (green), water
+          (blue), and man-made structures (black).
         </div>
       )}
     </div>

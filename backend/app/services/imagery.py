@@ -169,10 +169,11 @@ def maybe_refetch_for_backfill(
     """Return a fresh TimelineRequest if the existing one is missing data
     we can now provide; otherwise None.
 
-    Two backfill triggers:
+    Backfill triggers:
       * Census tract FIPS is now available but no census snapshots exist.
       * The parcel's county now has a property adapter, but the previous
         run's property task was missing or skipped.
+      * No usgs_topo snapshots exist (source added after initial fetch).
 
     Caller is responsible for dispatching the Celery task on the returned
     request.
@@ -207,6 +208,18 @@ def maybe_refetch_for_backfill(
                     "Property task missing/skipped — refetch needed",
                     extra={"parcel_id": str(parcel.id), "county": parcel.county},
                 )
+
+    topo_task = db.execute(
+        select(TimelineRequestTask)
+        .where(TimelineRequestTask.timeline_request_id == existing_req.id)
+        .where(TimelineRequestTask.source == "usgs_topo")
+    ).scalars().first()
+    if not topo_task:
+        needs_refetch = True
+        logger.info(
+            "USGS topo task missing — refetch needed",
+            extra={"parcel_id": str(parcel.id)},
+        )
 
     if not needs_refetch:
         return None

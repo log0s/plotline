@@ -129,7 +129,7 @@ def get_timeline_request(
 async def list_imagery(
     parcel_id: uuid.UUID,
     response: FastAPIResponse,
-    source: str | None = Query(default=None, description="Filter by source: naip, landsat, sentinel2"),
+    source: str | None = Query(default=None, description="Filter by source: naip, landsat, sentinel2, usgs_topo"),
     start_date: date | None = Query(default=None, description="Filter by start date (inclusive)"),
     end_date: date | None = Query(default=None, description="Filter by end date (inclusive)"),
     db: Session = Depends(get_db),
@@ -157,9 +157,11 @@ async def list_imagery(
     # Collect every URL that needs signing, then run them in parallel —
     # a parcel can have 80+ URLs (e.g. Rodanthe with full Sentinel-2 stack)
     # and serial awaits compound to tens of seconds even with Redis cache.
+    # usgs_topo COG URLs are public S3 — no Planetary Computer signing needed.
+    _NO_SIGN_SOURCES = {"landsat", "usgs_topo"}
     urls_to_sign: set[str] = set()
     for snap in snapshots:
-        if snap.source != "landsat":
+        if snap.source not in _NO_SIGN_SOURCES:
             urls_to_sign.add(snap.cog_url)
             if snap.additional_cog_urls:
                 urls_to_sign.update(snap.additional_cog_urls)
@@ -177,7 +179,7 @@ async def list_imagery(
 
     snapshot_responses: list[ImagerySnapshotResponse] = []
     for snap in snapshots:
-        if snap.source == "landsat":
+        if snap.source in _NO_SIGN_SOURCES:
             signed_cog = snap.cog_url
             signed_extras: list[str] | None = snap.additional_cog_urls
         else:
@@ -225,6 +227,7 @@ async def list_imagery(
 _COG_PARAMS: dict[str, dict[str, object]] = {
     "naip": {"bidx": [1, 2, 3], "rescale": "0,255"},        # 4-band uint8 RGBI
     "sentinel2": {"bidx": [1, 2, 3], "rescale": "0,255"},   # 3-band uint8 TCI
+    "usgs_topo": {"bidx": [1, 2, 3], "rescale": "0,255"},   # scanned RGB map
 }
 
 _titiler_client: httpx.AsyncClient | None = None
@@ -318,11 +321,13 @@ async def _proxy_cog_tile(
     settings: Settings,
     *,
     cog_index: int = 0,
+    sign: bool = True,
 ) -> Response:
-    """Proxy a tile for single-file COG sources (NAIP, Sentinel-2).
+    """Proxy a tile for single-file COG sources (NAIP, Sentinel-2, USGS Topo).
 
     ``cog_index`` selects which COG to render: 0 = primary (``cog_url``),
     1+ = ``additional_cog_urls[cog_index - 1]`` (mosaic components).
+    ``sign`` controls Planetary Computer SAS signing (False for public URLs).
     """
     if cog_index == 0:
         source_url = snap.cog_url
@@ -332,10 +337,13 @@ async def _proxy_cog_tile(
             raise HTTPException(status_code=404, detail="cog index out of range")
         source_url = extras[cog_index - 1]
 
-    try:
-        signed_url = await stac_service.sign_pc_url(source_url)
-    except (httpx.RequestError, httpx.HTTPStatusError) as exc:
-        logger.warning("URL signing failed, falling back to unsigned", exc_info=exc)
+    if sign:
+        try:
+            signed_url = await stac_service.sign_pc_url(source_url)
+        except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+            logger.warning("URL signing failed, falling back to unsigned", exc_info=exc)
+            signed_url = source_url
+    else:
         signed_url = source_url
 
     band_params = _COG_PARAMS.get(snap.source, {"bidx": [1, 2, 3], "rescale": "0,255"})
@@ -402,8 +410,9 @@ async def proxy_imagery_tile(
     db.close()
 
     if snap.source == "landsat":
-        # Landsat mosaic components not yet supported — always render primary
         return await _proxy_landsat_tile(snap, z, x, y, settings)
+    if snap.source == "usgs_topo":
+        return await _proxy_cog_tile(snap, z, x, y, settings, cog_index=cog, sign=False)
     return await _proxy_cog_tile(snap, z, x, y, settings, cog_index=cog)
 
 

@@ -12,6 +12,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   DollarSign,
   Hammer,
+  Map,
   Trash2,
   Wrench,
   Zap,
@@ -36,12 +37,14 @@ const SOURCE_COLORS: Record<ImagerySource, string> = {
   naip: "bg-emerald-600 text-emerald-100",
   landsat: "bg-blue-700 text-blue-100",
   sentinel2: "bg-violet-700 text-violet-100",
+  usgs_topo: "bg-amber-700 text-amber-100",
 };
 
 const SOURCE_LABELS: Record<string, string> = {
   naip: "NAIP",
   landsat: "Landsat",
   sentinel2: "Sentinel-2",
+  usgs_topo: "USGS Topo",
   census: "Census",
   property: "Property",
 };
@@ -153,7 +156,7 @@ export function Timeline({
   const { data: propertyEvents } = usePropertyEventsQuery(parcelId, eventsEnabled);
 
   const [activeFilters, setActiveFilters] = useState<Set<ImagerySource>>(
-    new Set(["naip", "landsat", "sentinel2"]),
+    new Set(["naip", "landsat", "sentinel2", "usgs_topo"]),
   );
 
   const [activeEventFilters, setActiveEventFilters] = useState<Set<EventFilterKey>>(
@@ -387,7 +390,7 @@ export function Timeline({
         <div className="flex items-center gap-1.5 shrink-0 overflow-x-auto md:ml-3 md:overflow-visible">
           {/* Imagery source toggles */}
           {snapshots.length > 0 &&
-            (["naip", "landsat", "sentinel2"] as ImagerySource[]).map((src) => {
+            (["usgs_topo", "naip", "landsat", "sentinel2"] as ImagerySource[]).map((src) => {
               const hasItems = snapshots.some((s) => s.source === src);
               if (!hasItems) return null;
               const active = activeFilters.has(src);
@@ -548,6 +551,7 @@ interface SnapshotCardProps {
 function SnapshotCard({ snapshot, isSelected, onSelect, compareSlot, compareAwaiting }: SnapshotCardProps) {
   const [imgError, setImgError] = useState(false);
   const source = snapshot.source as ImagerySource;
+  const isTopo = source === "usgs_topo";
 
   return (
     <motion.button
@@ -574,7 +578,9 @@ function SnapshotCard({ snapshot, isSelected, onSelect, compareSlot, compareAwai
               ? "ring-2 ring-amber-500/40 group-hover:ring-amber-400/70"
               : isSelected
                 ? "ring-2 ring-amber-400 ring-offset-1 ring-offset-navy-950"
-                : "ring-1 ring-navy-700 group-hover:ring-navy-500"
+                : isTopo
+                  ? "ring-1 ring-amber-800/60 group-hover:ring-amber-700/80"
+                  : "ring-1 ring-navy-700 group-hover:ring-navy-500"
         }`}
       >
         {snapshot.thumbnail_url && !imgError ? (
@@ -587,8 +593,9 @@ function SnapshotCard({ snapshot, isSelected, onSelect, compareSlot, compareAwai
             onError={() => setImgError(true)}
           />
         ) : (
-          <div className="w-full h-full bg-navy-800 flex items-center justify-center">
-            <span className="text-[9px] text-slate-500 font-mono leading-tight text-center px-1">
+          <div className={`w-full h-full flex flex-col items-center justify-center gap-0.5 ${isTopo ? "bg-amber-950/40" : "bg-navy-800"}`}>
+            {isTopo && <Map size={14} className="text-amber-600/70" />}
+            <span className={`text-[9px] font-mono leading-tight text-center px-1 ${isTopo ? "text-amber-600/70" : "text-slate-500"}`}>
               {snapshot.capture_date.slice(0, 4)}
             </span>
           </div>

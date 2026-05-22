@@ -52,7 +52,7 @@ export interface HealthResponse {
 
 // ── Imagery / Timeline types ───────────────────────────────────────────────────
 
-export type ImagerySource = "naip" | "landsat" | "sentinel2";
+export type ImagerySource = "naip" | "landsat" | "sentinel2" | "usgs_topo";
 
 export interface ImagerySnapshot {
   id: string;

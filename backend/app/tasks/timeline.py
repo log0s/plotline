@@ -19,6 +19,7 @@ from app.services import demographics as demographics_service
 from app.services import imagery as imagery_service
 from app.services import property_events as property_events_service
 from app.services import stac as stac_service
+from app.services import usgs_topo as topo_service
 from app.services.address_normalizer import extract_search_terms, is_address_match
 from app.services.census import (
     ACS5_YEARS,
@@ -331,6 +332,91 @@ async def _fetch_source(
     return items_saved
 
 
+async def _fetch_usgs_topo(
+    search_bbox: tuple[float, float, float, float],
+    parcel_id: uuid.UUID,
+    timeline_request_id: uuid.UUID,
+) -> int:
+    """Fetch USGS Historical Topographic Maps and persist snapshots.
+
+    Uses the TNM API (not STAC). GeoTIFF URLs are public S3 — no signing.
+    """
+    from sqlalchemy import select as sa_select
+
+    from app.db import SessionLocal
+    from app.models.parcels import TimelineRequestTask
+
+    source_name = "usgs_topo"
+
+    with SessionLocal() as db:
+        task_row = db.execute(
+            sa_select(TimelineRequestTask)
+            .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+            .where(TimelineRequestTask.source == source_name)
+        ).scalars().first()
+        if task_row:
+            imagery_service.update_request_task(db, task_row, "processing")
+
+    try:
+        raw_items = await topo_service.search_usgs_topo(search_bbox)
+    except Exception as exc:
+        logger.error(f"USGS topo search failed: {exc}")
+        with SessionLocal() as db:
+            task_row = db.execute(
+                sa_select(TimelineRequestTask)
+                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                .where(TimelineRequestTask.source == source_name)
+            ).scalars().first()
+            if task_row:
+                imagery_service.update_request_task(
+                    db, task_row, "failed", error_message=str(exc)
+                )
+        return 0
+
+    selected = topo_service.select_topo_items(raw_items)
+
+    logger.info(
+        "USGS topo search complete",
+        extra={"raw_count": len(raw_items), "selected_count": len(selected)},
+    )
+
+    items_saved = 0
+    with SessionLocal() as db:
+        for item in selected:
+            cog_url = topo_service.extract_geotiff_url(item)
+            if not cog_url:
+                continue
+
+            was_inserted = imagery_service.upsert_imagery_snapshot(
+                db,
+                parcel_id=parcel_id,
+                source=source_name,
+                capture_date=topo_service.extract_publication_date(item),
+                stac_item_id=topo_service.extract_source_id(item),
+                stac_collection="usgs-historical-topo",
+                cog_url=cog_url,
+                thumbnail_url=None,
+                resolution_m=None,
+                cloud_cover_pct=None,
+                bbox_wkt=topo_service.extract_bbox_wkt(item),
+            )
+            if was_inserted:
+                items_saved += 1
+
+        task_row = db.execute(
+            sa_select(TimelineRequestTask)
+            .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+            .where(TimelineRequestTask.source == source_name)
+        ).scalars().first()
+        if task_row:
+            imagery_service.update_request_task(
+                db, task_row, "complete", items_found=items_saved
+            )
+
+    logger.info("USGS topo done", extra={"items_saved": items_saved})
+    return items_saved
+
+
 async def _fetch_census(
     parcel_id: uuid.UUID,
     timeline_request_id: uuid.UUID,
@@ -604,6 +690,7 @@ async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
         return await _run_timeline_inner(timeline_request_id)
     finally:
         await stac_service.close_clients()
+        await topo_service.close_client()
         from app.db import close_async_redis
         await close_async_redis()
 
@@ -646,6 +733,7 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
 
         # Create per-source task rows
         sources = [s["source"] for s in _SOURCES]
+        sources.append("usgs_topo")
         if tract_fips:
             sources.append("census")
         if county:
@@ -688,6 +776,10 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
                 source_cfg, search_bbox, viewport_bbox, parcel_id, req_uuid, lat, lng,
             ),
         ))
+    coros.append((
+        "usgs_topo",
+        _fetch_usgs_topo(search_bbox, parcel_id, req_uuid),
+    ))
     if tract_fips:
         coros.append((
             "census",

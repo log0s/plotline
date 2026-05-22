@@ -23,6 +23,7 @@ const SOURCE_LABELS: Record<string, string> = {
   naip: "NAIP",
   landsat: "Landsat",
   sentinel2: "Sentinel-2",
+  usgs_topo: "USGS Topo",
 };
 
 function formatDate(iso: string): string {
