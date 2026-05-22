@@ -151,6 +151,7 @@ export default function ExplorePage() {
     autoSelectedForRef.current = null;
     triggeredForRef.current = null;
     snapParamApplied.current = false;
+    setTriggeredRequestId(null);
     setTriggerError(null);
     useAppStore.getState().setSelectedSnapshot(null);
     useAppStore.getState().setSelectedEvent(null);
