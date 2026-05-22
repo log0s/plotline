@@ -61,15 +61,18 @@ export default function ExplorePage() {
     timelineRequestQuery.data?.status !== "failed";
   const imageryQuery = useImageryQuery(parcelId, timelineActive);
 
-  // Deep-link recovery: if parcel exists but has no imagery and no active
-  // timeline request, trigger one. Runs at most once per parcelId.
+  // Deep-link / backfill recovery: if parcel was reached without a fresh
+  // geocode (no timelineRequestId from nav state), call trigger_timeline
+  // so the backend can run maybe_refetch_for_backfill and dispatch a new
+  // Celery task if any sources are missing (e.g. usgs_topo on older parcels).
+  // The endpoint is idempotent — returns the existing request when nothing
+  // needs refetching.
   const triggeredForRef = useRef<string | null>(null);
   useEffect(() => {
     if (!parcelId) return;
     if (triggeredForRef.current === parcelId) return;
     if (timelineRequestId) return;
     if (imageryQuery.isLoading || !imageryQuery.data) return;
-    if (imageryQuery.data.length > 0) return;
     triggeredForRef.current = parcelId;
     triggerTimelineMutation.mutate(parcelId, {
       onSuccess: (data) => setTriggeredRequestId(data.timeline_request_id),

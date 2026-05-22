@@ -57,8 +57,9 @@ def trigger_timeline(
     db: Session = Depends(get_db),
 ) -> TriggerTimelineResponse:
     """Trigger a new imagery timeline fetch for an existing parcel."""
-    # Verify the parcel exists (raw SQL to avoid GeoAlchemy2 AsEWKB on SQLite)
     from sqlalchemy import text as sa_text
+
+    from app.models.parcels import Parcel
 
     row = db.execute(
         sa_text("SELECT id FROM parcels WHERE id = :id"),
@@ -67,8 +68,17 @@ def trigger_timeline(
     if not row:
         raise HTTPException(status_code=404, detail=f"Parcel {parcel_id} not found")
 
-    # Create timeline request (or return existing complete one)
     request, is_new = imagery_service.get_or_create_timeline_request(db, parcel_id)
+
+    if not is_new:
+        parcel = db.get(Parcel, parcel_id)
+        if parcel:
+            refetch_req = imagery_service.maybe_refetch_for_backfill(
+                db, parcel, request,
+            )
+            if refetch_req is not None:
+                request = refetch_req
+                is_new = True
 
     if is_new:
         from app.tasks.timeline import fetch_imagery_timeline
