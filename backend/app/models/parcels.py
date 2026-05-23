@@ -81,9 +81,7 @@ class Parcel(Base):
 
     __table_args__ = (
         CheckConstraint("latitude >= -90 AND latitude <= 90", name="ck_parcels_latitude"),
-        CheckConstraint(
-            "longitude >= -180 AND longitude <= 180", name="ck_parcels_longitude"
-        ),
+        CheckConstraint("longitude >= -180 AND longitude <= 180", name="ck_parcels_longitude"),
         Index("idx_parcels_point", "point", postgresql_using="gist"),
     )
 
@@ -454,9 +452,7 @@ class FeaturedLocation(Base):
     # Relationships
     parcel: Mapped[Parcel] = relationship("Parcel")
 
-    __table_args__ = (
-        Index("idx_featured_locations_slug", "slug", unique=True),
-    )
+    __table_args__ = (Index("idx_featured_locations_slug", "slug", unique=True),)
 
     def __repr__(self) -> str:
         return f"<FeaturedLocation name={self.name!r} slug={self.slug!r}>"

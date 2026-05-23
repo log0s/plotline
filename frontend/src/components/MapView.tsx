@@ -5,7 +5,12 @@
  * as a raster layer with a crossfade transition via the shared
  * applyImageryLayer utility.
  */
-import { motion, useMotionValue, useTransform, type MotionValue } from "framer-motion";
+import {
+  motion,
+  useMotionValue,
+  useTransform,
+  type MotionValue,
+} from "framer-motion";
 import { Info, LocateFixed } from "lucide-react";
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
@@ -53,29 +58,15 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
   useEffect(() => {
     const el = mapContainerRef.current?.parentElement;
     if (!el) return;
-    const obs = new ResizeObserver(([e]) => setContainerH(e.contentRect.height));
+    const obs = new ResizeObserver(([e]) =>
+      setContainerH(e.contentRect.height),
+    );
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
 
-  if (!webglSupported) {
-    return (
-      <div className="relative w-full h-full flex items-center justify-center bg-navy-900">
-        <div className="text-center px-6 max-w-md">
-          <h3 className="text-lg font-bold text-white mb-2">WebGL not supported</h3>
-          <p className="text-sm text-slate-400">
-            Your browser doesn't support WebGL, which is required to display
-            the interactive map. Please try a modern browser like Chrome, Firefox,
-            or Edge.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Initialise map on mount
   useEffect(() => {
-    if (!mapContainerRef.current) return;
+    if (!webglSupported || !mapContainerRef.current) return;
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
@@ -85,10 +76,16 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
       attributionControl: false,
     });
 
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-left");
+    map.addControl(
+      new maplibregl.AttributionControl({ compact: true }),
+      "bottom-left",
+    );
 
     map.addControl(new maplibregl.NavigationControl(), "top-left");
-    map.addControl(new maplibregl.ScaleControl({ unit: "imperial" }), "bottom-left");
+    map.addControl(
+      new maplibregl.ScaleControl({ unit: "imperial" }),
+      "bottom-left",
+    );
 
     map.on("load", () => {
       mapReadyRef.current = true;
@@ -106,10 +103,10 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- map init runs once; deps would remount the GL context
-  }, []);
+  }, [webglSupported]);
 
-  // Update marker whenever parcel changes
   useEffect(() => {
+    if (!webglSupported) return;
     const map = mapRef.current;
     if (!map) return;
 
@@ -142,10 +139,10 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
       duration: 1400,
       essential: true,
     });
-  }, [parcel.latitude, parcel.longitude]);
+  }, [webglSupported, parcel.latitude, parcel.longitude]);
 
-  // Apply selected imagery snapshot as a raster layer
   useEffect(() => {
+    if (!webglSupported) return;
     const map = mapRef.current;
     if (!map) return;
 
@@ -166,7 +163,6 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
       setInfoChip(snap);
       setTopoTooltip(false);
 
-      // Landsat/Sentinel look bad when zoomed in too close
       const isLowRes =
         snap?.source === "landsat" || snap?.source === "sentinel2";
       if (isLowRes && map.getZoom() >= 14) {
@@ -175,7 +171,24 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
     };
 
     apply(selectedSnapshot);
-  }, [selectedSnapshot, parcel.latitude, parcel.longitude]);
+  }, [webglSupported, selectedSnapshot, parcel.latitude, parcel.longitude]);
+
+  if (!webglSupported) {
+    return (
+      <div className="relative w-full h-full flex items-center justify-center bg-navy-900">
+        <div className="text-center px-6 max-w-md">
+          <h3 className="text-lg font-bold text-white mb-2">
+            WebGL not supported
+          </h3>
+          <p className="text-sm text-slate-400">
+            Your browser doesn't support WebGL, which is required to display the
+            interactive map. Please try a modern browser like Chrome, Firefox,
+            or Edge.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const handleRecenter = () => {
     mapRef.current?.flyTo({
@@ -207,18 +220,27 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
       </button>
 
       {/* Imagery info chip */}
-      {infoChip && (sheetY ? (
-        <motion.div
-          className="absolute left-1/2 -translate-x-1/2 md:left-[calc(50%-10rem)] z-10"
-          style={{ bottom: chipBottom }}
-        >
-          <InfoChip chip={infoChip} topoTooltip={topoTooltip} setTopoTooltip={setTopoTooltip} />
-        </motion.div>
-      ) : (
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 md:left-[calc(50%-10rem)] z-10">
-          <InfoChip chip={infoChip} topoTooltip={topoTooltip} setTopoTooltip={setTopoTooltip} />
-        </div>
-      ))}
+      {infoChip &&
+        (sheetY ? (
+          <motion.div
+            className="absolute left-1/2 -translate-x-1/2 md:left-[calc(50%-10rem)] z-10"
+            style={{ bottom: chipBottom }}
+          >
+            <InfoChip
+              chip={infoChip}
+              topoTooltip={topoTooltip}
+              setTopoTooltip={setTopoTooltip}
+            />
+          </motion.div>
+        ) : (
+          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 md:left-[calc(50%-10rem)] z-10">
+            <InfoChip
+              chip={infoChip}
+              topoTooltip={topoTooltip}
+              setTopoTooltip={setTopoTooltip}
+            />
+          </div>
+        ))}
 
       {mapError && (
         <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-navy-900/90 border border-amber-500/30 text-[10px] text-amber-400">
@@ -245,7 +267,9 @@ function InfoChip({
     <div className="relative pointer-events-auto">
       <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-navy-900/90 backdrop-blur-sm border border-navy-700/60 text-xs font-mono text-slate-300">
         <span className="text-amber-400 font-semibold">
-          {isTopo ? "USGS Topographic Map" : (SOURCE_LABELS[chip.source] ?? chip.source)}
+          {isTopo
+            ? "USGS Topographic Map"
+            : (SOURCE_LABELS[chip.source] ?? chip.source)}
         </span>
         <span>·</span>
         <span>{isTopo ? year : chip.capture_date}</span>

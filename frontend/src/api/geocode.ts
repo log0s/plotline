@@ -21,7 +21,9 @@ export async function getParcel(
   parcelId: string,
   signal?: AbortSignal,
 ): Promise<ParcelResponse> {
-  const response = await apiFetch(`${BASE_URL}/parcels/${parcelId}`, { signal });
+  const response = await apiFetch(`${BASE_URL}/parcels/${parcelId}`, {
+    signal,
+  });
   return handleResponse<ParcelResponse>(response);
 }
 

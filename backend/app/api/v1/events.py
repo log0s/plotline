@@ -40,10 +40,14 @@ def get_property_events(
     from sqlalchemy import text as sa_text
 
     # Look up parcel (raw SQL to avoid GeoAlchemy2 issues in tests)
-    row = db.execute(
-        sa_text("SELECT id, county FROM parcels WHERE id = :id"),
-        {"id": str(parcel_id)},
-    ).mappings().first()
+    row = (
+        db.execute(
+            sa_text("SELECT id, county FROM parcels WHERE id = :id"),
+            {"id": str(parcel_id)},
+        )
+        .mappings()
+        .first()
+    )
     if not row:
         raise HTTPException(status_code=404, detail="Parcel not found")
 
@@ -88,8 +92,7 @@ def get_property_events(
             total_sales=summary_data["total_sales"],
             total_permits=summary_data["total_permits"],
             price_history=[
-                PricePoint(date=p["date"], price=p["price"])
-                for p in summary_data["price_history"]
+                PricePoint(date=p["date"], price=p["price"]) for p in summary_data["price_history"]
             ],
             appreciation=summary_data["appreciation"],
         ),

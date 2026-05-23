@@ -179,9 +179,24 @@ export default function ExplorePage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="flex items-center gap-3 text-slate-400">
-          <svg className="animate-spin w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+          <svg
+            className="animate-spin w-5 h-5 text-amber-400"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8v8z"
+            />
           </svg>
           <span>Loading parcel...</span>
         </div>
@@ -199,14 +214,18 @@ export default function ExplorePage() {
       className="relative w-full h-screen flex flex-col"
     >
       <div className="relative flex-1 min-h-0 overflow-hidden md:overflow-visible">
-        <ErrorBoundary fallback={
-          <div className="flex flex-col items-center justify-center min-h-[300px] px-4">
-            <h2 className="text-xl font-bold text-white mb-2">Map failed to load</h2>
-            <p className="text-sm text-slate-400 text-center max-w-md">
-              The map encountered an error. Try refreshing the page.
-            </p>
-          </div>
-        }>
+        <ErrorBoundary
+          fallback={
+            <div className="flex flex-col items-center justify-center min-h-[300px] px-4">
+              <h2 className="text-xl font-bold text-white mb-2">
+                Map failed to load
+              </h2>
+              <p className="text-sm text-slate-400 text-center max-w-md">
+                The map encountered an error. Try refreshing the page.
+              </p>
+            </div>
+          }
+        >
           {compareMode ? (
             <CompareView parcel={parcel} />
           ) : (
@@ -229,7 +248,11 @@ export default function ExplorePage() {
             stroke="currentColor"
             strokeWidth={2}
           >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M15 19l-7-7 7-7"
+            />
           </svg>
           <span className="text-sm font-semibold text-white">
             Plot<span className="text-amber-400">line</span>
@@ -254,7 +277,11 @@ export default function ExplorePage() {
         )}
 
         {!compareMode && isMobile && (
-          <MobileBottomSheet expandTrigger={selectedEvent} y={sheetY} resetKey={parcel.parcel_id}>
+          <MobileBottomSheet
+            expandTrigger={selectedEvent}
+            y={sheetY}
+            resetKey={parcel.parcel_id}
+          >
             <ParcelInfo
               key={parcel.parcel_id}
               parcel={parcel}
@@ -275,7 +302,10 @@ export default function ExplorePage() {
         {imageryQuery.isError && (
           <div className="flex items-center gap-2 px-4 py-2 text-xs text-red-400 bg-red-500/5 border-b border-red-500/10">
             <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
-            <span>Could not load imagery: {imageryQuery.error?.message ?? "unknown error"}</span>
+            <span>
+              Could not load imagery:{" "}
+              {imageryQuery.error?.message ?? "unknown error"}
+            </span>
           </div>
         )}
         {triggerError && (

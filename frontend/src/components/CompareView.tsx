@@ -158,10 +158,13 @@ export function CompareView({ parcel }: CompareViewProps) {
   }, [parcel.latitude, parcel.longitude]);
 
   // Draggable divider handlers
-  const handleDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    e.preventDefault();
-    isDraggingRef.current = true;
-  }, []);
+  const handleDragStart = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => {
+      e.preventDefault();
+      isDraggingRef.current = true;
+    },
+    [],
+  );
 
   useEffect(() => {
     const handleDrag = (e: MouseEvent | TouchEvent) => {
@@ -190,7 +193,10 @@ export function CompareView({ parcel }: CompareViewProps) {
   }, []);
 
   return (
-    <div ref={containerRef} className="relative w-full h-full select-none overflow-hidden">
+    <div
+      ref={containerRef}
+      className="relative w-full h-full select-none overflow-hidden"
+    >
       {/* Map A (left / underneath) — full size */}
       <div ref={leftContainerRef} className="absolute inset-0" />
 
@@ -205,7 +211,11 @@ export function CompareView({ parcel }: CompareViewProps) {
       {/* Divider line (visual only, no pointer events) */}
       <div
         className="absolute top-0 bottom-0 z-[5] pointer-events-none"
-        style={{ left: `${dividerPos}%`, transform: "translateX(-50%)", width: "4px" }}
+        style={{
+          left: `${dividerPos}%`,
+          transform: "translateX(-50%)",
+          width: "4px",
+        }}
       >
         <div className="w-1 h-full bg-amber-400/80 mx-auto" />
       </div>
@@ -224,8 +234,18 @@ export function CompareView({ parcel }: CompareViewProps) {
         onTouchStart={handleDragStart}
       >
         <div className="w-8 h-8 mx-auto mt-1 rounded-full bg-navy-900/90 border-2 border-amber-400 flex items-center justify-center shadow-lg">
-          <svg className="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l-3 3 3 3M16 9l3 3-3 3" />
+          <svg
+            className="w-4 h-4 text-amber-400"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M8 9l-3 3 3 3M16 9l3 3-3 3"
+            />
           </svg>
         </div>
       </div>
@@ -286,7 +306,9 @@ function SnapshotLabel({
         {SOURCE_LABELS[snapshot.source] ?? snapshot.source}
       </span>
       <span className="text-slate-500">·</span>
-      <span className="text-slate-300">{formatDate(snapshot.capture_date)}</span>
+      <span className="text-slate-300">
+        {formatDate(snapshot.capture_date)}
+      </span>
     </div>
   );
 }

@@ -221,14 +221,14 @@ async def geocode_address(
     # 3. Kick off imagery timeline fetch (idempotent — returns existing if done)
     timeline_request_id = None
     try:
-        timeline_req, is_new_request = imagery_service.get_or_create_timeline_request(
-            db, parcel.id
-        )
+        timeline_req, is_new_request = imagery_service.get_or_create_timeline_request(db, parcel.id)
         timeline_request_id = timeline_req.id
 
         if not is_new_request:
             refetch_req = imagery_service.maybe_refetch_for_backfill(
-                db, parcel, timeline_req,
+                db,
+                parcel,
+                timeline_req,
             )
             if refetch_req is not None:
                 timeline_request_id = refetch_req.id

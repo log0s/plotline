@@ -18,7 +18,8 @@ const PLACEHOLDER_CARDS: FeaturedLocation[] = [
     id: "placeholder-1",
     parcel_id: "",
     name: "Stapleton / Central Park",
-    subtitle: "Denver's closed airport became the largest urban redevelopment in US history",
+    subtitle:
+      "Denver's closed airport became the largest urban redevelopment in US history",
     slug: "stapleton-central-park",
     key_stat: null,
     description: null,
@@ -32,7 +33,8 @@ const PLACEHOLDER_CARDS: FeaturedLocation[] = [
     id: "placeholder-2",
     parcel_id: "",
     name: "RiNo Art District",
-    subtitle: "An industrial corridor transformed into Denver's trendiest neighborhood",
+    subtitle:
+      "An industrial corridor transformed into Denver's trendiest neighborhood",
     slug: "rino-art-district",
     key_stat: null,
     description: null,
@@ -46,7 +48,8 @@ const PLACEHOLDER_CARDS: FeaturedLocation[] = [
     id: "placeholder-3",
     parcel_id: "",
     name: "Green Valley Ranch",
-    subtitle: "Open prairie east of Denver exploded into a planned community in 15 years",
+    subtitle:
+      "Open prairie east of Denver exploded into a planned community in 15 years",
     slug: "green-valley-ranch",
     key_stat: null,
     description: null,
@@ -60,7 +63,8 @@ const PLACEHOLDER_CARDS: FeaturedLocation[] = [
     id: "placeholder-4",
     parcel_id: "",
     name: "Navy Yard / Capitol Riverfront",
-    subtitle: "A Navy shipyard on the Anacostia became DC's fastest-growing neighborhood",
+    subtitle:
+      "A Navy shipyard on the Anacostia became DC's fastest-growing neighborhood",
     slug: "navy-yard-capitol-riverfront",
     key_stat: null,
     description: null,
@@ -74,7 +78,8 @@ const PLACEHOLDER_CARDS: FeaturedLocation[] = [
     id: "placeholder-5",
     parcel_id: "",
     name: "Rodanthe, Outer Banks",
-    subtitle: "Decades of coastal erosion reshaped the Outer Banks barrier islands",
+    subtitle:
+      "Decades of coastal erosion reshaped the Outer Banks barrier islands",
     slug: "rodanthe-outer-banks",
     key_stat: null,
     description: null,
@@ -88,7 +93,8 @@ const PLACEHOLDER_CARDS: FeaturedLocation[] = [
     id: "placeholder-6",
     parcel_id: "",
     name: "Hudson Yards",
-    subtitle: "Open rail yards on Manhattan's West Side became a supertower megaproject",
+    subtitle:
+      "Open rail yards on Manhattan's West Side became a supertower megaproject",
     slug: "hudson-yards",
     key_stat: null,
     description: null,

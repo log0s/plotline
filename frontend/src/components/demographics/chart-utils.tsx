@@ -7,7 +7,12 @@ interface TooltipProps {
   formatter?: (val: number) => string;
 }
 
-export function ChartTooltip({ active, payload, label, formatter = fmtK }: TooltipProps) {
+export function ChartTooltip({
+  active,
+  payload,
+  label,
+  formatter = fmtK,
+}: TooltipProps) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-lg bg-navy-900/95 border border-navy-700/60 px-3 py-2 text-xs shadow-lg">
@@ -19,14 +24,22 @@ export function ChartTooltip({ active, payload, label, formatter = fmtK }: Toolt
             style={{ backgroundColor: entry.color }}
           />
           <span className="text-slate-300">{entry.name}:</span>
-          <span className="text-white font-medium">{formatter(entry.value)}</span>
+          <span className="text-white font-medium">
+            {formatter(entry.value)}
+          </span>
         </p>
       ))}
     </div>
   );
 }
 
-export function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+export function SectionHeader({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: string;
+}) {
   return (
     <div className="mb-2">
       <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">

@@ -104,14 +104,32 @@ class TestCensusFetcher:
         mock_response.status_code = 200
         mock_response.json.return_value = [
             [
-                "B01003_001E", "B19013_001E", "B25077_001E", "B25035_001E",
-                "B25003_001E", "B25003_002E", "B25003_003E", "B01002_001E",
-                "B25064_001E", "state", "county", "tract",
+                "B01003_001E",
+                "B19013_001E",
+                "B25077_001E",
+                "B25035_001E",
+                "B25003_001E",
+                "B25003_002E",
+                "B25003_003E",
+                "B01002_001E",
+                "B25064_001E",
+                "state",
+                "county",
+                "tract",
             ],
             [
-                "4523", "52340", "215000", "1978",
-                "1764", "1102", "662", "34.2",
-                "1150", "08", "031", "006202",
+                "4523",
+                "52340",
+                "215000",
+                "1978",
+                "1764",
+                "1102",
+                "662",
+                "34.2",
+                "1150",
+                "08",
+                "031",
+                "006202",
             ],
         ]
 
@@ -238,14 +256,32 @@ class TestCensusFetcher:
         mock_response.status_code = 200
         mock_response.json.return_value = [
             [
-                "B01003_001E", "B19013_001E", "B25077_001E", "B25035_001E",
-                "B25003_001E", "B25003_002E", "B25003_003E", "B01002_001E",
-                "B25064_001E", "state", "county", "tract",
+                "B01003_001E",
+                "B19013_001E",
+                "B25077_001E",
+                "B25035_001E",
+                "B25003_001E",
+                "B25003_002E",
+                "B25003_003E",
+                "B01002_001E",
+                "B25064_001E",
+                "state",
+                "county",
+                "tract",
             ],
             [
-                "4523", "-666666666", "-666666666", "1978",
-                "1764", "1102", "662", "34.2",
-                "-666666666", "08", "031", "006202",
+                "4523",
+                "-666666666",
+                "-666666666",
+                "1978",
+                "1764",
+                "1102",
+                "662",
+                "34.2",
+                "-666666666",
+                "08",
+                "031",
+                "006202",
             ],
         ]
 
@@ -319,15 +355,30 @@ class TestDemographicsService:
                 "INSERT INTO parcels (id, address, latitude, longitude, point) "
                 "VALUES (:id, :addr, :lat, :lng, :pt)"
             ),
-            {"id": parcel_id, "addr": "456 Oak Ave", "lat": 39.7, "lng": -104.9, "pt": "POINT(-104.9 39.7)"},
+            {
+                "id": parcel_id,
+                "addr": "456 Oak Ave",
+                "lat": 39.7,
+                "lng": -104.9,
+                "pt": "POINT(-104.9 39.7)",
+            },
         )
         db.commit()
 
         pid = uuid.UUID(parcel_id)
         data = {"total_population": 3000, "total_housing_units": 1200}
 
-        upsert_census_snapshot(db, parcel_id=pid, tract_fips="08031006202", dataset="decennial", year=2020, data=data)
-        upsert_census_snapshot(db, parcel_id=pid, tract_fips="08031006202", dataset="decennial", year=2020, data={"total_population": 3100, "total_housing_units": 1250})
+        upsert_census_snapshot(
+            db, parcel_id=pid, tract_fips="08031006202", dataset="decennial", year=2020, data=data
+        )
+        upsert_census_snapshot(
+            db,
+            parcel_id=pid,
+            tract_fips="08031006202",
+            dataset="decennial",
+            year=2020,
+            data={"total_population": 3100, "total_housing_units": 1250},
+        )
 
         rows = get_census_snapshots(db, pid)
         assert len(rows) == 1
@@ -341,14 +392,24 @@ class TestComputeSubtitles:
     def test_population_growth(self) -> None:
         snapshots = [
             CensusSnapshotRow(
-                id=uuid.uuid4(), parcel_id=uuid.uuid4(), tract_fips="08031006202",
-                dataset="decennial", year=1990, total_population=2000,
+                id=uuid.uuid4(),
+                parcel_id=uuid.uuid4(),
+                tract_fips="08031006202",
+                dataset="decennial",
+                year=1990,
+                total_population=2000,
             ),
             CensusSnapshotRow(
-                id=uuid.uuid4(), parcel_id=uuid.uuid4(), tract_fips="08031006202",
-                dataset="acs5", year=2023, total_population=8000,
-                median_household_income=65000, median_home_value=350000,
-                occupied_housing_units=3000, owner_occupied_units=1800,
+                id=uuid.uuid4(),
+                parcel_id=uuid.uuid4(),
+                tract_fips="08031006202",
+                dataset="acs5",
+                year=2023,
+                total_population=8000,
+                median_household_income=65000,
+                median_home_value=350000,
+                occupied_housing_units=3000,
+                owner_occupied_units=1800,
             ),
         ]
         subtitles = compute_subtitles(snapshots)
@@ -361,12 +422,20 @@ class TestComputeSubtitles:
     def test_home_value_subtitle(self) -> None:
         snapshots = [
             CensusSnapshotRow(
-                id=uuid.uuid4(), parcel_id=uuid.uuid4(), tract_fips="08031006202",
-                dataset="acs5", year=2009, median_home_value=200000,
+                id=uuid.uuid4(),
+                parcel_id=uuid.uuid4(),
+                tract_fips="08031006202",
+                dataset="acs5",
+                year=2009,
+                median_home_value=200000,
             ),
             CensusSnapshotRow(
-                id=uuid.uuid4(), parcel_id=uuid.uuid4(), tract_fips="08031006202",
-                dataset="acs5", year=2023, median_home_value=450000,
+                id=uuid.uuid4(),
+                parcel_id=uuid.uuid4(),
+                tract_fips="08031006202",
+                dataset="acs5",
+                year=2023,
+                median_home_value=450000,
             ),
         ]
         subtitles = compute_subtitles(snapshots)
@@ -440,14 +509,29 @@ class TestDemographicsEndpoint:
                 "INSERT INTO census_snapshots (id, parcel_id, tract_fips, dataset, year, total_population) "
                 "VALUES (:id, :pid, :tract, :ds, :yr, :pop)"
             ),
-            {"id": snap1, "pid": parcel_id, "tract": "08031006202", "ds": "decennial", "yr": 2020, "pop": 5000},
+            {
+                "id": snap1,
+                "pid": parcel_id,
+                "tract": "08031006202",
+                "ds": "decennial",
+                "yr": 2020,
+                "pop": 5000,
+            },
         )
         db.execute(
             text(
                 "INSERT INTO census_snapshots (id, parcel_id, tract_fips, dataset, year, total_population, median_household_income) "
                 "VALUES (:id, :pid, :tract, :ds, :yr, :pop, :inc)"
             ),
-            {"id": snap2, "pid": parcel_id, "tract": "08031006202", "ds": "acs5", "yr": 2023, "pop": 5500, "inc": 72000},
+            {
+                "id": snap2,
+                "pid": parcel_id,
+                "tract": "08031006202",
+                "ds": "acs5",
+                "yr": 2023,
+                "pop": 5500,
+                "inc": 72000,
+            },
         )
         db.commit()
 

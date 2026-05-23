@@ -20,7 +20,10 @@ interface PriceHistoryChartProps {
   selectedYear: number | null;
 }
 
-export function PriceHistoryChart({ propertyEvents, selectedYear }: PriceHistoryChartProps) {
+export function PriceHistoryChart({
+  propertyEvents,
+  selectedYear,
+}: PriceHistoryChartProps) {
   const { summary } = propertyEvents;
   if (summary.price_history.length === 0) return null;
 
@@ -66,11 +69,7 @@ export function PriceHistoryChart({ propertyEvents, selectedYear }: PriceHistory
               width={48}
             />
             <Tooltip content={<ChartTooltip formatter={fmtDollar} />} />
-            <Scatter
-              dataKey="price"
-              fill={COLORS.income}
-              name="Sale Price"
-            />
+            <Scatter dataKey="price" fill={COLORS.income} name="Sale Price" />
           </ScatterChart>
         ) : (
           <LineChart data={data} margin={CHART_MARGIN}>

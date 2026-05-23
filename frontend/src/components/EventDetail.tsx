@@ -9,7 +9,8 @@ interface EventDetailProps {
 }
 
 export function EventDetail({ event, onClose }: EventDetailProps) {
-  const config = EVENT_TYPE_CONFIG[event.event_type] ?? EVENT_TYPE_CONFIG.permit_other;
+  const config =
+    EVENT_TYPE_CONFIG[event.event_type] ?? EVENT_TYPE_CONFIG.permit_other;
   const Icon = config.icon;
 
   return (
@@ -41,25 +42,34 @@ export function EventDetail({ event, onClose }: EventDetailProps) {
         <div className="space-y-0">
           {(event.description ?? null) && (
             <div className="py-2 border-b border-navy-700/50">
-              <p className="data-label uppercase tracking-widest text-xs mb-0.5">Description</p>
+              <p className="data-label uppercase tracking-widest text-xs mb-0.5">
+                Description
+              </p>
               <p className="text-sm text-white">{event.description}</p>
             </div>
           )}
           <div className="py-2 border-b border-navy-700/50">
-            <p className="data-label uppercase tracking-widest text-xs mb-0.5">Date</p>
+            <p className="data-label uppercase tracking-widest text-xs mb-0.5">
+              Date
+            </p>
             <p className="text-sm text-white font-mono">
               {event.event_date
-                ? new Date(event.event_date + "T00:00:00").toLocaleDateString("en-US", {
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                  })
+                ? new Date(event.event_date + "T00:00:00").toLocaleDateString(
+                    "en-US",
+                    {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    },
+                  )
                 : "Unknown"}
             </p>
           </div>
           {event.sale_price != null && event.sale_price > 0 && (
             <div className="py-2 border-b border-navy-700/50">
-              <p className="data-label uppercase tracking-widest text-xs mb-0.5">Sale Price</p>
+              <p className="data-label uppercase tracking-widest text-xs mb-0.5">
+                Sale Price
+              </p>
               <p className="text-sm text-amber-400 font-mono font-medium">
                 ${event.sale_price.toLocaleString()}
               </p>
@@ -67,13 +77,17 @@ export function EventDetail({ event, onClose }: EventDetailProps) {
           )}
           {event.permit_type && (
             <div className="py-2 border-b border-navy-700/50">
-              <p className="data-label uppercase tracking-widest text-xs mb-0.5">Permit Type</p>
+              <p className="data-label uppercase tracking-widest text-xs mb-0.5">
+                Permit Type
+              </p>
               <p className="text-sm text-white">{event.permit_type}</p>
             </div>
           )}
           {event.permit_valuation != null && event.permit_valuation > 0 && (
             <div className="py-2 border-b border-navy-700/50">
-              <p className="data-label uppercase tracking-widest text-xs mb-0.5">Valuation</p>
+              <p className="data-label uppercase tracking-widest text-xs mb-0.5">
+                Valuation
+              </p>
               <p className="text-sm text-white font-mono">
                 ${event.permit_valuation.toLocaleString()}
               </p>
@@ -81,13 +95,21 @@ export function EventDetail({ event, onClose }: EventDetailProps) {
           )}
           {event.permit_description && (
             <div className="py-2 border-b border-navy-700/50">
-              <p className="data-label uppercase tracking-widest text-xs mb-0.5">Details</p>
-              <p className="text-sm text-slate-300">{event.permit_description}</p>
+              <p className="data-label uppercase tracking-widest text-xs mb-0.5">
+                Details
+              </p>
+              <p className="text-sm text-slate-300">
+                {event.permit_description}
+              </p>
             </div>
           )}
           <div className="py-2">
-            <p className="data-label uppercase tracking-widest text-xs mb-0.5">Source</p>
-            <p className="text-sm text-slate-300">{event.source.replace("_", " ")}</p>
+            <p className="data-label uppercase tracking-widest text-xs mb-0.5">
+              Source
+            </p>
+            <p className="text-sm text-slate-300">
+              {event.source.replace("_", " ")}
+            </p>
           </div>
         </div>
       </div>

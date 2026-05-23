@@ -21,7 +21,13 @@ def _insert_parcel(db: Session, parcel_id: uuid.UUID, addr: str = "Test St") -> 
             "INSERT INTO parcels (id, address, latitude, longitude, point) "
             "VALUES (:id, :addr, :lat, :lng, :pt)"
         ),
-        {"id": str(parcel_id), "addr": addr, "lat": 39.7, "lng": -105.0, "pt": "POINT(-105.0 39.7)"},
+        {
+            "id": str(parcel_id),
+            "addr": addr,
+            "lat": 39.7,
+            "lng": -105.0,
+            "pt": "POINT(-105.0 39.7)",
+        },
     )
     db.commit()
 
@@ -114,13 +120,21 @@ def test_get_imagery_snapshots_source_filter(db: Session) -> None:
     _insert_parcel(db, parcel_id, "Filter St")
 
     upsert_imagery_snapshot(
-        db, parcel_id=parcel_id, source="naip", capture_date=date(2020, 6, 1),
-        stac_item_id="naip_1", stac_collection="naip",
+        db,
+        parcel_id=parcel_id,
+        source="naip",
+        capture_date=date(2020, 6, 1),
+        stac_item_id="naip_1",
+        stac_collection="naip",
         cog_url="https://example.com/1.tif",
     )
     upsert_imagery_snapshot(
-        db, parcel_id=parcel_id, source="landsat", capture_date=date(1990, 6, 1),
-        stac_item_id="ls_1", stac_collection="landsat-c2-l2",
+        db,
+        parcel_id=parcel_id,
+        source="landsat",
+        capture_date=date(1990, 6, 1),
+        stac_item_id="ls_1",
+        stac_collection="landsat-c2-l2",
         cog_url="https://example.com/2.tif",
     )
 
@@ -161,7 +175,13 @@ def test_list_imagery_empty_returns_empty_list(client: TestClient, db: Session) 
             "INSERT INTO parcels (id, address, latitude, longitude, point) "
             "VALUES (:id, :addr, :lat, :lng, :pt)"
         ),
-        {"id": str(parcel_id), "addr": "Empty Ave", "lat": 39.0, "lng": -104.0, "pt": "POINT(-104.0 39.0)"},
+        {
+            "id": str(parcel_id),
+            "addr": "Empty Ave",
+            "lat": 39.0,
+            "lng": -104.0,
+            "pt": "POINT(-104.0 39.0)",
+        },
     )
     db.commit()
 

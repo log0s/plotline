@@ -14,12 +14,23 @@ interface DemographicsPanelProps {
   compact?: boolean;
 }
 
-export function DemographicsPanel({ parcelId, enabled, compact }: DemographicsPanelProps) {
+export function DemographicsPanel({
+  parcelId,
+  enabled,
+  compact,
+}: DemographicsPanelProps) {
   const selectedYear = useAppStore((s) => s.selectedYear);
-  const { data: demographics, isLoading: demographicsLoading, isError: demoFailed, error: demoError } =
-    useDemographicsQuery(parcelId, enabled);
-  const { data: propertyEvents, isError: eventsFailed, error: eventsError } =
-    usePropertyEventsQuery(parcelId, enabled);
+  const {
+    data: demographics,
+    isLoading: demographicsLoading,
+    isError: demoFailed,
+    error: demoError,
+  } = useDemographicsQuery(parcelId, enabled);
+  const {
+    data: propertyEvents,
+    isError: eventsFailed,
+    error: eventsError,
+  } = usePropertyEventsQuery(parcelId, enabled);
 
   if (demographicsLoading) {
     return (
@@ -44,7 +55,13 @@ export function DemographicsPanel({ parcelId, enabled, compact }: DemographicsPa
     );
   }
 
-  if (!hasDemo && !hasPropertyData && !showUnsupported && !demoFailed && !eventsFailed) {
+  if (
+    !hasDemo &&
+    !hasPropertyData &&
+    !showUnsupported &&
+    !demoFailed &&
+    !eventsFailed
+  ) {
     return (
       <div className="flex items-center justify-center p-6 text-center">
         <p className="text-xs text-slate-500">
@@ -60,22 +77,33 @@ export function DemographicsPanel({ parcelId, enabled, compact }: DemographicsPa
   const subtitles = demographics?.subtitles ?? [];
   const notes = demographics?.notes;
 
-  const popSubtitle = subtitles.find((s) => s.toLowerCase().includes("population"));
-  const valueSubtitle = subtitles.find((s) => s.toLowerCase().includes("home value"));
-  const ownerSubtitle = subtitles.find((s) => s.toLowerCase().includes("owner"));
+  const popSubtitle = subtitles.find((s) =>
+    s.toLowerCase().includes("population"),
+  );
+  const valueSubtitle = subtitles.find((s) =>
+    s.toLowerCase().includes("home value"),
+  );
+  const ownerSubtitle = subtitles.find((s) =>
+    s.toLowerCase().includes("owner"),
+  );
 
   return (
     <div className="flex flex-col gap-4 p-4 overflow-y-auto scrollbar-thin scrollbar-thumb-navy-700 scrollbar-track-transparent">
       {demoFailed && !eventsFailed && (
         <div className="flex items-center gap-2 text-xs text-red-400">
           <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
-          <span>Could not load demographics: {demoError?.message ?? "unknown error"}</span>
+          <span>
+            Could not load demographics: {demoError?.message ?? "unknown error"}
+          </span>
         </div>
       )}
       {eventsFailed && !demoFailed && (
         <div className="flex items-center gap-2 text-xs text-red-400">
           <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
-          <span>Could not load property data: {eventsError?.message ?? "unknown error"}</span>
+          <span>
+            Could not load property data:{" "}
+            {eventsError?.message ?? "unknown error"}
+          </span>
         </div>
       )}
       {subtitles.length > 0 && (
@@ -132,7 +160,9 @@ export function DemographicsPanel({ parcelId, enabled, compact }: DemographicsPa
       )}
 
       {notes && (
-        <p className="text-[9px] text-slate-600 leading-relaxed mt-1">{notes}</p>
+        <p className="text-[9px] text-slate-600 leading-relaxed mt-1">
+          {notes}
+        </p>
       )}
     </div>
   );

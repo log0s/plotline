@@ -35,10 +35,14 @@ def get_demographics(
     from sqlalchemy import text as sa_text
 
     # Use raw SQL to avoid GeoAlchemy2 AsEWKB incompatibility with SQLite tests
-    row = db.execute(
-        sa_text("SELECT id, census_tract_id FROM parcels WHERE id = :id"),
-        {"id": str(parcel_id)},
-    ).mappings().first()
+    row = (
+        db.execute(
+            sa_text("SELECT id, census_tract_id FROM parcels WHERE id = :id"),
+            {"id": str(parcel_id)},
+        )
+        .mappings()
+        .first()
+    )
     if not row:
         raise HTTPException(status_code=404, detail="Parcel not found")
     tract_fips = row["census_tract_id"]

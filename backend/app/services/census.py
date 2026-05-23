@@ -179,9 +179,7 @@ class CensusFetcher:
                 "Census API error",
                 extra={"url": url, "status": resp.status_code, "body": resp.text[:500]},
             )
-            raise CensusApiError(
-                f"Census API returned {resp.status_code}: {resp.text[:200]}"
-            )
+            raise CensusApiError(f"Census API returned {resp.status_code}: {resp.text[:200]}")
 
         return cast(list[list[str]], resp.json())
 
@@ -193,9 +191,7 @@ def parse_tract_fips(tract_fips: str) -> tuple[str, str, str]:
     Example: "08031006202" → ("08", "031", "006202")
     """
     if len(tract_fips) != 11:
-        raise ValueError(
-            f"Expected 11-character tract FIPS, got {len(tract_fips)}: {tract_fips!r}"
-        )
+        raise ValueError(f"Expected 11-character tract FIPS, got {len(tract_fips)}: {tract_fips!r}")
     return tract_fips[:2], tract_fips[2:5], tract_fips[5:]
 
 
@@ -211,11 +207,7 @@ def _parse_response(data: list[list[str]]) -> dict[str, int | float | None]:
     values = data[1]
     geo_fields = {"state", "county", "tract"}
 
-    return {
-        h: _to_number(v)
-        for h, v in zip(headers, values, strict=False)
-        if h not in geo_fields
-    }
+    return {h: _to_number(v) for h, v in zip(headers, values, strict=False) if h not in geo_fields}
 
 
 def _normalize(
@@ -223,11 +215,7 @@ def _normalize(
     var_map: dict[str, str],
 ) -> dict[str, int | float | None]:
     """Map Census API variable names to our normalized field names."""
-    return {
-        var_map[k]: v
-        for k, v in raw.items()
-        if k in var_map
-    }
+    return {var_map[k]: v for k, v in raw.items() if k in var_map}
 
 
 def _to_number(val: str | None) -> int | float | None:

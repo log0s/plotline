@@ -153,18 +153,24 @@ async def _fetch_source(
 
         from app.models.parcels import TimelineRequest, TimelineRequestTask
 
-        request = db.execute(
-            sa_select(TimelineRequest).where(TimelineRequest.id == timeline_request_id)
-        ).scalars().first()
+        request = (
+            db.execute(sa_select(TimelineRequest).where(TimelineRequest.id == timeline_request_id))
+            .scalars()
+            .first()
+        )
         if not request:
             logger.error("Timeline request not found", extra={"id": str(timeline_request_id)})
             return 0
 
-        task_row = db.execute(
-            sa_select(TimelineRequestTask)
-            .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-            .where(TimelineRequestTask.source == source_name)
-        ).scalars().first()
+        task_row = (
+            db.execute(
+                sa_select(TimelineRequestTask)
+                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                .where(TimelineRequestTask.source == source_name)
+            )
+            .scalars()
+            .first()
+        )
         if not task_row:
             logger.warning(f"No task row found for {source_name}")
             return 0
@@ -222,24 +228,24 @@ async def _fetch_source(
 
             from app.models.parcels import TimelineRequestTask
 
-            task_row = db.execute(
-                sa_select(TimelineRequestTask)
-                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                .where(TimelineRequestTask.source == source_name)
-            ).scalars().first()
-            if task_row:
-                imagery_service.update_request_task(
-                    db, task_row, "failed", error_message=str(exc)
+            task_row = (
+                db.execute(
+                    sa_select(TimelineRequestTask)
+                    .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                    .where(TimelineRequestTask.source == source_name)
                 )
+                .scalars()
+                .first()
+            )
+            if task_row:
+                imagery_service.update_request_task(db, task_row, "failed", error_message=str(exc))
         return 0
 
     # Spatial filter. NAIP uses the looser "intersects viewport" filter so
     # adjacent tiles can contribute to a mosaic; Landsat/S2 use strict
     # point-containment since their scenes already cover a huge area.
     if source_cfg.get("use_viewport_filter"):
-        raw_items = stac_service.filter_items_intersecting_bbox(
-            raw_items, viewport_bbox
-        )
+        raw_items = stac_service.filter_items_intersecting_bbox(raw_items, viewport_bbox)
     elif lat and lng:
         raw_items = stac_service.filter_items_containing_point(raw_items, lat, lng)
 
@@ -257,7 +263,8 @@ async def _fetch_source(
     # swap in the next-best same-year candidate when possible.
     if collection == "landsat-c2-l2":
         selected_groups = await stac_service.validate_landsat_selection(
-            selected_groups, raw_items,
+            selected_groups,
+            raw_items,
         )
 
     elapsed = time.perf_counter() - t0
@@ -292,7 +299,11 @@ async def _fetch_source(
             thumbnail_url = stac_service.extract_thumbnail_url(primary)
             capture_date = stac_service.extract_capture_date(primary)
             props = primary.get("properties")
-            cloud_cover = cast(dict[str, Any], props).get("eo:cloud_cover") if isinstance(props, dict) else None
+            cloud_cover = (
+                cast(dict[str, Any], props).get("eo:cloud_cover")
+                if isinstance(props, dict)
+                else None
+            )
             bbox_wkt = stac_service.extract_bbox_wkt(primary)
 
             was_inserted = imagery_service.upsert_imagery_snapshot(
@@ -317,15 +328,17 @@ async def _fetch_source(
 
         from app.models.parcels import TimelineRequestTask
 
-        task_row = db.execute(
-            sa_select(TimelineRequestTask)
-            .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-            .where(TimelineRequestTask.source == source_name)
-        ).scalars().first()
-        if task_row:
-            imagery_service.update_request_task(
-                db, task_row, "complete", items_found=items_saved
+        task_row = (
+            db.execute(
+                sa_select(TimelineRequestTask)
+                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                .where(TimelineRequestTask.source == source_name)
             )
+            .scalars()
+            .first()
+        )
+        if task_row:
+            imagery_service.update_request_task(db, task_row, "complete", items_found=items_saved)
 
     logger.info(
         f"Imagery source done: {source_name}",
@@ -351,11 +364,15 @@ async def _fetch_usgs_topo(
     source_name = "usgs_topo"
 
     with SessionLocal() as db:
-        task_row = db.execute(
-            sa_select(TimelineRequestTask)
-            .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-            .where(TimelineRequestTask.source == source_name)
-        ).scalars().first()
+        task_row = (
+            db.execute(
+                sa_select(TimelineRequestTask)
+                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                .where(TimelineRequestTask.source == source_name)
+            )
+            .scalars()
+            .first()
+        )
         if task_row:
             imagery_service.update_request_task(db, task_row, "processing")
 
@@ -364,15 +381,17 @@ async def _fetch_usgs_topo(
     except Exception as exc:
         logger.error(f"USGS topo search failed: {exc}")
         with SessionLocal() as db:
-            task_row = db.execute(
-                sa_select(TimelineRequestTask)
-                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                .where(TimelineRequestTask.source == source_name)
-            ).scalars().first()
-            if task_row:
-                imagery_service.update_request_task(
-                    db, task_row, "failed", error_message=str(exc)
+            task_row = (
+                db.execute(
+                    sa_select(TimelineRequestTask)
+                    .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                    .where(TimelineRequestTask.source == source_name)
                 )
+                .scalars()
+                .first()
+            )
+            if task_row:
+                imagery_service.update_request_task(db, task_row, "failed", error_message=str(exc))
         return 0
 
     selected = topo_service.select_topo_items(raw_items)
@@ -405,15 +424,17 @@ async def _fetch_usgs_topo(
             if was_inserted:
                 items_saved += 1
 
-        task_row = db.execute(
-            sa_select(TimelineRequestTask)
-            .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-            .where(TimelineRequestTask.source == source_name)
-        ).scalars().first()
-        if task_row:
-            imagery_service.update_request_task(
-                db, task_row, "complete", items_found=items_saved
+        task_row = (
+            db.execute(
+                sa_select(TimelineRequestTask)
+                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                .where(TimelineRequestTask.source == source_name)
             )
+            .scalars()
+            .first()
+        )
+        if task_row:
+            imagery_service.update_request_task(db, task_row, "complete", items_found=items_saved)
 
     logger.info("USGS topo done", extra={"items_saved": items_saved})
     return items_saved
@@ -440,24 +461,30 @@ async def _fetch_census(
     except ValueError as exc:
         logger.warning(f"Invalid tract FIPS: {exc}")
         with SessionLocal() as db:
-            task_row = db.execute(
-                sa_select(TimelineRequestTask)
-                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                .where(TimelineRequestTask.source == "census")
-            ).scalars().first()
-            if task_row:
-                imagery_service.update_request_task(
-                    db, task_row, "skipped", error_message=str(exc)
+            task_row = (
+                db.execute(
+                    sa_select(TimelineRequestTask)
+                    .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                    .where(TimelineRequestTask.source == "census")
                 )
+                .scalars()
+                .first()
+            )
+            if task_row:
+                imagery_service.update_request_task(db, task_row, "skipped", error_message=str(exc))
         return 0
 
     # Mark task as processing
     with SessionLocal() as db:
-        task_row = db.execute(
-            sa_select(TimelineRequestTask)
-            .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-            .where(TimelineRequestTask.source == "census")
-        ).scalars().first()
+        task_row = (
+            db.execute(
+                sa_select(TimelineRequestTask)
+                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                .where(TimelineRequestTask.source == "census")
+            )
+            .scalars()
+            .first()
+        )
         if task_row:
             imagery_service.update_request_task(db, task_row, "processing")
 
@@ -468,9 +495,7 @@ async def _fetch_census(
         # Fetch decennial data
         for year in DECENNIAL_YEARS:
             try:
-                data = await fetcher.fetch_decennial(
-                    year, state_fips, county_fips, tract_code
-                )
+                data = await fetcher.fetch_decennial(year, state_fips, county_fips, tract_code)
                 if data:
                     with SessionLocal() as db:
                         demographics_service.upsert_census_snapshot(
@@ -492,9 +517,7 @@ async def _fetch_census(
         # Fetch ACS 5-year data
         for year in ACS5_YEARS:
             try:
-                data = await fetcher.fetch_acs5(
-                    year, state_fips, county_fips, tract_code
-                )
+                data = await fetcher.fetch_acs5(year, state_fips, county_fips, tract_code)
                 if data:
                     with SessionLocal() as db:
                         demographics_service.upsert_census_snapshot(
@@ -517,15 +540,17 @@ async def _fetch_census(
 
     # Update task status
     with SessionLocal() as db:
-        task_row = db.execute(
-            sa_select(TimelineRequestTask)
-            .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-            .where(TimelineRequestTask.source == "census")
-        ).scalars().first()
-        if task_row:
-            imagery_service.update_request_task(
-                db, task_row, "complete", items_found=items_saved
+        task_row = (
+            db.execute(
+                sa_select(TimelineRequestTask)
+                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                .where(TimelineRequestTask.source == "census")
             )
+            .scalars()
+            .first()
+        )
+        if task_row:
+            imagery_service.update_request_task(db, task_row, "complete", items_found=items_saved)
 
     logger.info("Census fetch complete", extra={"items_saved": items_saved, "tract": tract_fips})
     return items_saved
@@ -551,11 +576,15 @@ async def _fetch_property(
 
     # Mark task processing / skipped
     with SessionLocal() as db:
-        task_row = db.execute(
-            sa_select(TimelineRequestTask)
-            .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-            .where(TimelineRequestTask.source == "property")
-        ).scalars().first()
+        task_row = (
+            db.execute(
+                sa_select(TimelineRequestTask)
+                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                .where(TimelineRequestTask.source == "property")
+            )
+            .scalars()
+            .first()
+        )
 
         if not adapter:
             logger.info(
@@ -564,7 +593,9 @@ async def _fetch_property(
             )
             if task_row:
                 imagery_service.update_request_task(
-                    db, task_row, "skipped",
+                    db,
+                    task_row,
+                    "skipped",
                     error_message=f"Property data not yet available for {county} County",
                 )
             return 0
@@ -575,18 +606,27 @@ async def _fetch_property(
     # Extract search terms from the normalized address
     street_number, street_name = extract_search_terms(normalized_address)
     if not street_number:
-        logger.warning("Could not extract search terms from address", extra={
-            "address": normalized_address,
-        })
+        logger.warning(
+            "Could not extract search terms from address",
+            extra={
+                "address": normalized_address,
+            },
+        )
         with SessionLocal() as db:
-            task_row = db.execute(
-                sa_select(TimelineRequestTask)
-                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                .where(TimelineRequestTask.source == "property")
-            ).scalars().first()
+            task_row = (
+                db.execute(
+                    sa_select(TimelineRequestTask)
+                    .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                    .where(TimelineRequestTask.source == "property")
+                )
+                .scalars()
+                .first()
+            )
             if task_row:
                 imagery_service.update_request_task(
-                    db, task_row, "failed",
+                    db,
+                    task_row,
+                    "failed",
                     error_message="Could not extract search terms from address",
                 )
         return 0
@@ -612,14 +652,21 @@ async def _fetch_property(
     except Exception as exc:
         logger.error(f"Property fetch failed for {county}: {exc}")
         with SessionLocal() as db:
-            task_row = db.execute(
-                sa_select(TimelineRequestTask)
-                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                .where(TimelineRequestTask.source == "property")
-            ).scalars().first()
+            task_row = (
+                db.execute(
+                    sa_select(TimelineRequestTask)
+                    .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                    .where(TimelineRequestTask.source == "property")
+                )
+                .scalars()
+                .first()
+            )
             if task_row:
                 imagery_service.update_request_task(
-                    db, task_row, "failed", error_message=str(exc),
+                    db,
+                    task_row,
+                    "failed",
+                    error_message=str(exc),
                 )
         return 0
 
@@ -627,11 +674,7 @@ async def _fetch_property(
     matched_events = []
     for event in all_events:
         # Check if raw_data has an address field to compare
-        raw_addr = (
-            event.raw_data.get("address")
-            or event.raw_data.get("situs_address")
-            or ""
-        )
+        raw_addr = event.raw_data.get("address") or event.raw_data.get("situs_address") or ""
         if raw_addr and not is_address_match(normalized_address, raw_addr):
             continue
         matched_events.append(event)
@@ -669,14 +712,21 @@ async def _fetch_property(
                 items_saved += 1
 
         # Update task status
-        task_row = db.execute(
-            sa_select(TimelineRequestTask)
-            .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-            .where(TimelineRequestTask.source == "property")
-        ).scalars().first()
+        task_row = (
+            db.execute(
+                sa_select(TimelineRequestTask)
+                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                .where(TimelineRequestTask.source == "property")
+            )
+            .scalars()
+            .first()
+        )
         if task_row:
             imagery_service.update_request_task(
-                db, task_row, "complete", items_found=items_saved,
+                db,
+                task_row,
+                "complete",
+                items_found=items_saved,
             )
 
     logger.info(
@@ -694,6 +744,7 @@ async def _run_timeline(timeline_request_id: str) -> dict[str, Any]:
         await stac_service.close_clients()
         await topo_service.close_client()
         from app.db import close_async_redis
+
         await close_async_redis()
 
 
@@ -707,11 +758,13 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
 
     # Load the request and its parcel
     with SessionLocal() as db:
-        request = db.execute(
-            sa_select(TimelineRequest)
-            .where(TimelineRequest.id == req_uuid)
-            .with_for_update()
-        ).scalars().first()
+        request = (
+            db.execute(
+                sa_select(TimelineRequest).where(TimelineRequest.id == req_uuid).with_for_update()
+            )
+            .scalars()
+            .first()
+        )
         if not request:
             raise ValueError(f"TimelineRequest {timeline_request_id!r} not found")
 
@@ -721,9 +774,7 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
 
         from app.models.parcels import Parcel
 
-        parcel = db.execute(
-            sa_select(Parcel).where(Parcel.id == parcel_id)
-        ).scalars().first()
+        parcel = db.execute(sa_select(Parcel).where(Parcel.id == parcel_id)).scalars().first()
         if not parcel:
             raise ValueError(f"Parcel {parcel_id} not found")
 
@@ -770,40 +821,61 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
     # shared mutable state. ``return_exceptions=True`` keeps a single
     # source raising from cancelling its siblings.
     from app.config import get_settings
+
     settings = get_settings()
 
     coros: list[tuple[str, Any]] = []
     for source_cfg in _SOURCES:
-        coros.append((
-            source_cfg["source"],
-            _fetch_source(
-                source_cfg, search_bbox, viewport_bbox, parcel_id, req_uuid, lat, lng,
-            ),
-        ))
-    coros.append((
-        "usgs_topo",
-        _fetch_usgs_topo(search_bbox, parcel_id, req_uuid),
-    ))
+        coros.append(
+            (
+                source_cfg["source"],
+                _fetch_source(
+                    source_cfg,
+                    search_bbox,
+                    viewport_bbox,
+                    parcel_id,
+                    req_uuid,
+                    lat,
+                    lng,
+                ),
+            )
+        )
+    coros.append(
+        (
+            "usgs_topo",
+            _fetch_usgs_topo(search_bbox, parcel_id, req_uuid),
+        )
+    )
     if tract_fips:
-        coros.append((
-            "census",
-            _fetch_census(
-                parcel_id, req_uuid, tract_fips,
-                api_key=settings.census_api_key,
-                timeout=settings.census_api_timeout,
-            ),
-        ))
+        coros.append(
+            (
+                "census",
+                _fetch_census(
+                    parcel_id,
+                    req_uuid,
+                    tract_fips,
+                    api_key=settings.census_api_key,
+                    timeout=settings.census_api_timeout,
+                ),
+            )
+        )
     if county:
-        coros.append((
-            "property",
-            _fetch_property(
-                parcel_id, req_uuid, county, normalized_address,
-                app_token=settings.socrata_app_token,
-            ),
-        ))
+        coros.append(
+            (
+                "property",
+                _fetch_property(
+                    parcel_id,
+                    req_uuid,
+                    county,
+                    normalized_address,
+                    app_token=settings.socrata_app_token,
+                ),
+            )
+        )
 
     results = await asyncio.gather(
-        *(c for _, c in coros), return_exceptions=True,
+        *(c for _, c in coros),
+        return_exceptions=True,
     )
 
     total_items = 0
@@ -823,18 +895,27 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
     with SessionLocal() as db:
         from app.models.parcels import TimelineRequestTask
 
-        request = db.execute(
-            sa_select(TimelineRequest).where(TimelineRequest.id == req_uuid)
-        ).scalars().first()
+        request = (
+            db.execute(sa_select(TimelineRequest).where(TimelineRequest.id == req_uuid))
+            .scalars()
+            .first()
+        )
         if request:
-            task_rows = db.execute(
-                sa_select(TimelineRequestTask)
-                .where(TimelineRequestTask.timeline_request_id == req_uuid)
-            ).scalars().all()
+            task_rows = (
+                db.execute(
+                    sa_select(TimelineRequestTask).where(
+                        TimelineRequestTask.timeline_request_id == req_uuid
+                    )
+                )
+                .scalars()
+                .all()
+            )
             if task_rows and all(t.status == "failed" for t in task_rows):
                 failed_sources = ", ".join(t.source for t in task_rows)
                 imagery_service.update_timeline_request_status(
-                    db, request, "failed",
+                    db,
+                    request,
+                    "failed",
                     error_message=f"All sources failed: {failed_sources}",
                 )
             else:
@@ -844,13 +925,23 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
         "Timeline request complete",
         extra={"request_id": timeline_request_id, "total_items": total_items},
     )
-    return {"status": "complete", "timeline_request_id": timeline_request_id, "total_items": total_items}
+    return {
+        "status": "complete",
+        "timeline_request_id": timeline_request_id,
+        "total_items": total_items,
+    }
 
 
 # ── Celery task ────────────────────────────────────────────────────────────────
 
 
-@celery_app.task(bind=True, name="tasks.fetch_imagery_timeline", max_retries=3, soft_time_limit=1800, time_limit=2100)  # type: ignore[untyped-decorator]  # Celery task decorator lacks complete type stubs
+@celery_app.task(
+    bind=True,
+    name="tasks.fetch_imagery_timeline",
+    max_retries=3,
+    soft_time_limit=1800,
+    time_limit=2100,
+)  # type: ignore[untyped-decorator]  # Celery task decorator lacks complete type stubs
 def fetch_imagery_timeline(self: Any, timeline_request_id: str) -> dict[str, Any]:
     """Fetch NAIP, Landsat, and Sentinel-2 imagery for a timeline request.
 
@@ -879,9 +970,11 @@ def fetch_imagery_timeline(self: Any, timeline_request_id: str) -> dict[str, Any
 
             req_uuid = uuid.UUID(timeline_request_id)
             with SessionLocal() as db:
-                request = db.execute(
-                    sa_select(TimelineRequest).where(TimelineRequest.id == req_uuid)
-                ).scalars().first()
+                request = (
+                    db.execute(sa_select(TimelineRequest).where(TimelineRequest.id == req_uuid))
+                    .scalars()
+                    .first()
+                )
                 if request:
                     imagery_service.update_timeline_request_status(
                         db, request, "failed", error_message="Task timed out"
@@ -904,9 +997,11 @@ def fetch_imagery_timeline(self: Any, timeline_request_id: str) -> dict[str, Any
 
             req_uuid = uuid.UUID(timeline_request_id)
             with SessionLocal() as db:
-                request = db.execute(
-                    sa_select(TimelineRequest).where(TimelineRequest.id == req_uuid)
-                ).scalars().first()
+                request = (
+                    db.execute(sa_select(TimelineRequest).where(TimelineRequest.id == req_uuid))
+                    .scalars()
+                    .first()
+                )
                 if request:
                     imagery_service.update_timeline_request_status(
                         db, request, "failed", error_message=str(exc)

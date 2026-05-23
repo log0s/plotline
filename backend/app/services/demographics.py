@@ -146,6 +146,7 @@ def get_census_snapshots(
         raw = row["raw_data"]
         if isinstance(raw, str):
             import json
+
             raw = json.loads(raw)
         results.append(
             CensusSnapshotRow(
@@ -223,9 +224,7 @@ def compute_subtitles(snapshots: list[CensusSnapshotRow]) -> list[str]:
         first_pct = round(first_own / first_occ * 100)
         last_pct = round(last_own / last_occ * 100)
         if abs(first_pct - last_pct) >= 3:
-            subtitles.append(
-                f"Owner-occupied shifted from {first_pct}% to {last_pct}%"
-            )
+            subtitles.append(f"Owner-occupied shifted from {first_pct}% to {last_pct}%")
 
     # Median age (latest)
     latest_age = next(
@@ -241,8 +240,6 @@ def compute_subtitles(snapshots: list[CensusSnapshotRow]) -> list[str]:
         None,
     )
     if latest_built:
-        subtitles.append(
-            f"Typical home built in {latest_built}"
-        )
+        subtitles.append(f"Typical home built in {latest_built}")
 
     return subtitles

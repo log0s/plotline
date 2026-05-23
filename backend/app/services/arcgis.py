@@ -71,17 +71,14 @@ async def query_feature_service(
 
         if resp.status_code != 200:
             raise ArcGISError(
-                f"ArcGIS returned {resp.status_code} for {service_url}: "
-                f"{resp.text[:200]}"
+                f"ArcGIS returned {resp.status_code} for {service_url}: {resp.text[:200]}"
             )
 
         data = resp.json()
 
         if "error" in data:
             err = data["error"]
-            raise ArcGISError(
-                f"ArcGIS query error: {err.get('message', err)}"
-            )
+            raise ArcGISError(f"ArcGIS query error: {err.get('message', err)}")
 
         features = data.get("features", [])
         rows = [f["attributes"] for f in features if "attributes" in f]

@@ -19,7 +19,11 @@ interface PopulationChartProps {
   subtitle?: string;
 }
 
-export function PopulationChart({ snapshots, selectedYear, subtitle }: PopulationChartProps) {
+export function PopulationChart({
+  snapshots,
+  selectedYear,
+  subtitle,
+}: PopulationChartProps) {
   const data = snapshots
     .filter((s) => s.total_population != null)
     .map((s) => ({ year: s.year, population: s.total_population }));

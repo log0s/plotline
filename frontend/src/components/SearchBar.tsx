@@ -21,10 +21,22 @@ interface SearchBarProps {
 }
 
 const EXAMPLE_ADDRESSES: { address: string; lat: number; lon: number }[] = [
-  { address: "1600 Pennsylvania Ave NW, Washington, DC", lat: 38.8977, lon: -77.0365 },
-  { address: "1437 Bannock St, Denver, CO 80202", lat: 39.7392, lon: -104.9876 },
+  {
+    address: "1600 Pennsylvania Ave NW, Washington, DC",
+    lat: 38.8977,
+    lon: -77.0365,
+  },
+  {
+    address: "1437 Bannock St, Denver, CO 80202",
+    lat: 39.7392,
+    lon: -104.9876,
+  },
   { address: "350 5th Ave, New York, NY 10118", lat: 40.7484, lon: -73.9856 },
-  { address: "200 E Santa Clara St, San Jose, CA 95113", lat: 37.3380, lon: -121.8853 },
+  {
+    address: "200 E Santa Clara St, San Jose, CA 95113",
+    lat: 37.338,
+    lon: -121.8853,
+  },
 ];
 
 export function SearchBar({
@@ -40,7 +52,11 @@ export function SearchBar({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const isCompact = variant === "compact";
 
-  const { suggestions, setQuery, clear: clearSuggestions } = useAddressAutocomplete();
+  const {
+    suggestions,
+    setQuery,
+    clear: clearSuggestions,
+  } = useAddressAutocomplete();
 
   // Sync autocomplete query with input value
   const handleChange = (text: string) => {
@@ -221,9 +237,24 @@ export function SearchBar({
           {suggestionDropdown}
         </div>
         {isLoading && (
-          <svg className="animate-spin w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+          <svg
+            className="animate-spin w-4 h-4 text-amber-400"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8v8z"
+            />
           </svg>
         )}
       </form>
@@ -246,7 +277,9 @@ export function SearchBar({
           {/* Search icon */}
           <svg
             className={`w-5 h-5 flex-shrink-0 transition-colors ${
-              error ? "text-red-400" : "text-slate-500 group-focus-within:text-amber-400"
+              error
+                ? "text-red-400"
+                : "text-slate-500 group-focus-within:text-amber-400"
             }`}
             fill="none"
             viewBox="0 0 24 24"

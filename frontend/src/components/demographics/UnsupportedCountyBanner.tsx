@@ -4,7 +4,9 @@ interface UnsupportedCountyBannerProps {
   county: string | null;
 }
 
-export function UnsupportedCountyBanner({ county }: UnsupportedCountyBannerProps) {
+export function UnsupportedCountyBanner({
+  county,
+}: UnsupportedCountyBannerProps) {
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -13,8 +15,10 @@ export function UnsupportedCountyBanner({ county }: UnsupportedCountyBannerProps
     >
       <p className="text-[11px] text-slate-400 leading-relaxed">
         Property records not yet available for{" "}
-        <span className="text-slate-300 font-medium">{county ?? "this"} County</span>.
-        Currently supported: Denver, Adams counties.
+        <span className="text-slate-300 font-medium">
+          {county ?? "this"} County
+        </span>
+        . Currently supported: Denver, Adams counties.
       </p>
     </motion.div>
   );

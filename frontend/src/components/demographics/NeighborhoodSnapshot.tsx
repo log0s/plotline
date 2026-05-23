@@ -7,9 +7,7 @@ interface NeighborhoodSnapshotProps {
 }
 
 export function NeighborhoodSnapshot({ snapshots }: NeighborhoodSnapshotProps) {
-  const latest = [...snapshots]
-    .filter((s) => s.dataset === "acs5")
-    .pop();
+  const latest = [...snapshots].filter((s) => s.dataset === "acs5").pop();
 
   if (!latest) return null;
 

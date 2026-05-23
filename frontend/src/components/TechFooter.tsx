@@ -12,7 +12,10 @@ const techStack: { name: string; url: string }[] = [
 const dataSources: { name: string; url: string }[] = [
   { name: "USGS / Landsat", url: "https://www.usgs.gov/landsat-missions" },
   { name: "NAIP", url: "https://naip-usdaonline.hub.arcgis.com/" },
-  { name: "Sentinel-2", url: "https://dataspace.copernicus.eu/explore-data/data-collections/sentinel-data/sentinel-2" },
+  {
+    name: "Sentinel-2",
+    url: "https://dataspace.copernicus.eu/explore-data/data-collections/sentinel-data/sentinel-2",
+  },
   { name: "Census Bureau", url: "https://www.census.gov/data.html" },
   { name: "County Records", url: "https://data.gov" },
 ];
@@ -26,7 +29,14 @@ export function TechFooter() {
             <span className="text-slate-600 mr-1">Built with</span>
             {techStack.map((tech, i) => (
               <span key={tech.name}>
-                <a href={tech.url} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-amber-400 transition-colors">{tech.name}</a>
+                <a
+                  href={tech.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-slate-400 hover:text-amber-400 transition-colors"
+                >
+                  {tech.name}
+                </a>
                 {i < techStack.length - 1 && (
                   <span className="text-navy-700 mx-1">·</span>
                 )}
@@ -37,7 +47,14 @@ export function TechFooter() {
             <span className="text-slate-600 mr-1">Data from</span>
             {dataSources.map((src, i) => (
               <span key={src.name}>
-                <a href={src.url} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-amber-400 transition-colors">{src.name}</a>
+                <a
+                  href={src.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-slate-400 hover:text-amber-400 transition-colors"
+                >
+                  {src.name}
+                </a>
                 {i < dataSources.length - 1 && (
                   <span className="text-navy-700 mx-1">·</span>
                 )}

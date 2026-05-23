@@ -162,7 +162,8 @@ class DenverAdapter(CountyAdapter):
         async def _query(url: str, label: str) -> list[dict[str, Any]]:
             try:
                 return await query_feature_service(
-                    url, where=where,
+                    url,
+                    where=where,
                     order_by="DATE_ISSUED DESC",
                     result_record_count=100,
                 )
@@ -279,7 +280,10 @@ class AdamsCountyAdapter(CountyAdapter):
         )
 
     def _format_permit_description(
-        self, row: dict[str, Any], ptype: str, description: str,
+        self,
+        row: dict[str, Any],
+        ptype: str,
+        description: str,
     ) -> str:
         parts: list[str] = [ptype]
         if description:
@@ -304,9 +308,7 @@ class DCAdapter(CountyAdapter):
     )
     SALES_URL = f"{_PROPERTY_BASE}/56"  # ITSPE FACTS — address + last sale
 
-    _PERMITS_BASE = (
-        "https://maps2.dcgis.dc.gov/dcgis/rest/services/FEEDS/DCRA/MapServer"
-    )
+    _PERMITS_BASE = "https://maps2.dcgis.dc.gov/dcgis/rest/services/FEEDS/DCRA/MapServer"
     # Year-specific permit layers (query recent years for reasonable coverage)
     PERMIT_LAYERS: list[tuple[int, str]] = [
         (18, "2026"),
@@ -331,9 +333,7 @@ class DCAdapter(CountyAdapter):
     ) -> list[PropertyEventData]:
         sn = _escape_sql_literal(street_number)
         sname = _escape_sql_literal(street_name)
-        where = (
-            f"upper(PROPERTY_ADDRESS) LIKE '%{sn} %{sname}%'"
-        )
+        where = f"upper(PROPERTY_ADDRESS) LIKE '%{sn} %{sname}%'"
         try:
             rows = await query_feature_service(
                 self.SALES_URL,
@@ -390,7 +390,8 @@ class DCAdapter(CountyAdapter):
             url = f"{self._PERMITS_BASE}/{layer_id}"
             try:
                 return await query_feature_service(
-                    url, where=where,
+                    url,
+                    where=where,
                     order_by="ISSUE_DATE DESC",
                     result_record_count=50,
                 )
@@ -398,9 +399,7 @@ class DCAdapter(CountyAdapter):
                 logger.warning(f"DC permits {year_label} query failed: {exc}")
                 return []
 
-        chunks = await asyncio.gather(
-            *(_query(lid, label) for lid, label in self.PERMIT_LAYERS)
-        )
+        chunks = await asyncio.gather(*(_query(lid, label) for lid, label in self.PERMIT_LAYERS))
         return [self._parse_permit(row) for chunk in chunks for row in chunk]
 
     def _parse_permit(self, row: dict[str, Any]) -> PropertyEventData:
@@ -484,15 +483,16 @@ class SantaClaraAdapter(CountyAdapter):
         async def _query(resource_id: str, label: str) -> list[dict[str, Any]]:
             try:
                 return await query_ckan_datastore(
-                    self.DOMAIN, resource_id, q=search_term, limit=100,
+                    self.DOMAIN,
+                    resource_id,
+                    q=search_term,
+                    limit=100,
                 )
             except Exception as exc:
                 logger.warning(f"San Jose {label} permits query failed: {exc}")
                 return []
 
-        chunks = await asyncio.gather(
-            *(_query(rid, label) for rid, label in self.PERMIT_RESOURCES)
-        )
+        chunks = await asyncio.gather(*(_query(rid, label) for rid, label in self.PERMIT_RESOURCES))
         # Filter to rows that actually match the address
         results: list[PropertyEventData] = []
         for chunk in chunks:
@@ -578,10 +578,7 @@ class NewYorkCountyAdapter(CountyAdapter):
     ) -> list[PropertyEventData]:
         sn = _escape_sql_literal(street_number)
         sname = _escape_sql_literal(street_name)
-        where = (
-            f"borough='1' AND upper(address) LIKE '%{sn} {sname}%' "
-            f"AND sale_price > '0'"
-        )
+        where = f"borough='1' AND upper(address) LIKE '%{sn} {sname}%' AND sale_price > '0'"
         try:
             rows = await query_socrata(
                 self.DOMAIN,
@@ -638,10 +635,7 @@ class NewYorkCountyAdapter(CountyAdapter):
     ) -> list[PropertyEventData]:
         sn = _escape_sql_literal(street_number)
         sname = _escape_sql_literal(street_name)
-        where = (
-            f"borough='MANHATTAN' AND house__='{sn}' "
-            f"AND upper(street_name) LIKE '%{sname}%'"
-        )
+        where = f"borough='MANHATTAN' AND house__='{sn}' AND upper(street_name) LIKE '%{sname}%'"
         try:
             rows = await query_socrata(
                 self.DOMAIN,
@@ -741,10 +735,19 @@ def classify_permit(raw_type: str) -> str:
         return "permit_mechanical"
     if "PLUM" in raw:
         return "permit_plumbing"
-    if any(k in raw for k in (
-        "BUILD", "BLDR", "NEW", "ADDITION", "REMODEL",
-        "ALTERATION", "TENANT FINISH", "RENOVATION",
-    )):
+    if any(
+        k in raw
+        for k in (
+            "BUILD",
+            "BLDR",
+            "NEW",
+            "ADDITION",
+            "REMODEL",
+            "ALTERATION",
+            "TENANT FINISH",
+            "RENOVATION",
+        )
+    ):
         return "permit_building"
     return "permit_other"
 

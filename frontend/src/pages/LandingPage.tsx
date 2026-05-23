@@ -14,7 +14,10 @@ export default function LandingPage() {
   const geocodeMutation = useGeocodeMutation();
   const navigate = useNavigate();
 
-  const handleSearch = (address: string, coords?: { lat: number; lon: number }) => {
+  const handleSearch = (
+    address: string,
+    coords?: { lat: number; lon: number },
+  ) => {
     geocodeMutation.mutate({ address, navigate, ...coords });
   };
 
@@ -43,8 +46,8 @@ export default function LandingPage() {
             See how any place has changed.
           </h1>
           <p className="text-slate-400 text-lg max-w-lg mx-auto leading-relaxed">
-            Enter any US address and explore decades of aerial imagery,
-            property history, and demographic shifts.
+            Enter any US address and explore decades of aerial imagery, property
+            history, and demographic shifts.
           </p>
         </motion.div>
 

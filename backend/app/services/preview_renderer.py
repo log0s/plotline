@@ -30,7 +30,10 @@ logger = logging.getLogger(__name__)
 
 
 def _bbox_around(
-    lat: float, lng: float, half_x_m: float, half_y_m: float | None = None,
+    lat: float,
+    lng: float,
+    half_x_m: float,
+    half_y_m: float | None = None,
 ) -> tuple[float, float, float, float]:
     """Return a lon/lat bbox ``(minx, miny, maxx, maxy)`` centred on ``(lat, lng)``.
 
@@ -91,8 +94,7 @@ async def render_preview(
 
     cog_urls = [latest.cog_url, *(latest.additional_cog_urls or [])]
     titiler_png_url = (
-        f"{settings.titiler_url}/cog/bbox/"
-        f"{minx},{miny},{maxx},{maxy}/{width}x{height}.png"
+        f"{settings.titiler_url}/cog/bbox/{minx},{miny},{maxx},{maxy}/{width}x{height}.png"
     )
 
     async def _fetch_tile(client: httpx.AsyncClient, raw_url: str) -> Image.Image | None:
@@ -108,15 +110,16 @@ async def render_preview(
         if resp.status_code != 200:
             logger.warning(
                 "Titiler bbox render failed for %s (%s): %s %s",
-                loc.slug, raw_url, resp.status_code, resp.text[:200],
+                loc.slug,
+                raw_url,
+                resp.status_code,
+                resp.text[:200],
             )
             return None
         return Image.open(BytesIO(resp.content)).convert("RGBA")
 
     async with httpx.AsyncClient(timeout=60) as client:
-        tiles = await asyncio.gather(
-            *(_fetch_tile(client, url) for url in cog_urls)
-        )
+        tiles = await asyncio.gather(*(_fetch_tile(client, url) for url in cog_urls))
 
     valid_tiles = [t for t in tiles if t is not None]
     if not valid_tiles:
@@ -139,6 +142,8 @@ async def render_preview(
     rel_url = f"/static/featured/{loc.slug}.jpg"
     logger.info(
         "Rendered preview for %s from %d NAIP tile(s) (%s)",
-        loc.slug, len(valid_tiles), latest.capture_date.isoformat(),
+        loc.slug,
+        len(valid_tiles),
+        latest.capture_date.isoformat(),
     )
     return rel_url

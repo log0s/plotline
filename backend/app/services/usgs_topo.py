@@ -76,9 +76,9 @@ async def search_usgs_topo(
 
     items: list[dict[str, object]] = data.get("items", [])
     return [
-        item for item in items
-        if isinstance((urls := item.get("urls")), dict)
-        and urls.get("GeoTIFF")
+        item
+        for item in items
+        if isinstance((urls := item.get("urls")), dict) and urls.get("GeoTIFF")
     ]
 
 
@@ -99,10 +99,12 @@ def select_topo_items(items: list[dict[str, object]]) -> list[dict[str, object]]
     selected: list[dict[str, object]] = []
     for decade in sorted(by_decade.keys()):
         candidates = by_decade[decade]
-        candidates.sort(key=lambda i: (
-            _EXTENT_PRIORITY.get(str(i.get("extent", "")), 99),
-            str(i.get("publicationDate", "9999")),
-        ))
+        candidates.sort(
+            key=lambda i: (
+                _EXTENT_PRIORITY.get(str(i.get("extent", "")), 99),
+                str(i.get("publicationDate", "9999")),
+            )
+        )
         selected.append(candidates[0])
 
     return selected

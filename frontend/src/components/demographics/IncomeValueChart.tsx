@@ -20,7 +20,12 @@ interface IncomeValueChartProps {
   compact?: boolean;
 }
 
-export function IncomeValueChart({ snapshots, selectedYear, subtitle, compact }: IncomeValueChartProps) {
+export function IncomeValueChart({
+  snapshots,
+  selectedYear,
+  subtitle,
+  compact,
+}: IncomeValueChartProps) {
   const data = snapshots
     .filter(
       (s) =>
@@ -42,7 +47,9 @@ export function IncomeValueChart({ snapshots, selectedYear, subtitle, compact }:
       transition={{ duration: 0.4, delay: 0.2 }}
     >
       <SectionHeader title="Income & Home Value" subtitle={subtitle} />
-      <p className="text-[9px] text-slate-500 mb-1">Nominal dollars (not inflation-adjusted)</p>
+      <p className="text-[9px] text-slate-500 mb-1">
+        Nominal dollars (not inflation-adjusted)
+      </p>
       <ResponsiveContainer width="100%" height={140}>
         <LineChart data={data} margin={CHART_MARGIN}>
           <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} />

@@ -23,7 +23,8 @@ def _seed(db: Session, n_locations: int = 5, snaps_per_parcel: int = 10) -> list
     """Insert N parcels + featured rows + snapshots. Return the parcel ids."""
     # Ensure the test SQLite DB has a featured_locations table — the
     # main conftest doesn't create it.
-    db.execute(text("""
+    db.execute(
+        text("""
         CREATE TABLE IF NOT EXISTS featured_locations (
             id              TEXT PRIMARY KEY,
             parcel_id       TEXT NOT NULL REFERENCES parcels(id),
@@ -36,7 +37,8 @@ def _seed(db: Session, n_locations: int = 5, snaps_per_parcel: int = 10) -> list
             display_order   INTEGER NOT NULL DEFAULT 0,
             created_at      TEXT DEFAULT (datetime('now'))
         )
-    """))
+    """)
+    )
 
     parcel_ids: list[uuid.UUID] = []
     for i in range(n_locations):
@@ -48,8 +50,10 @@ def _seed(db: Session, n_locations: int = 5, snaps_per_parcel: int = 10) -> list
                 "VALUES (:id, :addr, :lat, :lng, :pt)"
             ),
             {
-                "id": str(pid), "addr": f"{i} Test St",
-                "lat": 39.7 + i * 0.001, "lng": -105.0 - i * 0.001,
+                "id": str(pid),
+                "addr": f"{i} Test St",
+                "lat": 39.7 + i * 0.001,
+                "lng": -105.0 - i * 0.001,
                 "pt": f"POINT({-105.0 - i * 0.001} {39.7 + i * 0.001})",
             },
         )
@@ -60,9 +64,12 @@ def _seed(db: Session, n_locations: int = 5, snaps_per_parcel: int = 10) -> list
                 "VALUES (:id, :pid, :n, :s, :slug, :ord)"
             ),
             {
-                "id": str(uuid.uuid4()), "pid": str(pid),
-                "n": f"Featured {i}", "s": f"subtitle {i}",
-                "slug": f"feat-{i}", "ord": i,
+                "id": str(uuid.uuid4()),
+                "pid": str(pid),
+                "n": f"Featured {i}",
+                "s": f"subtitle {i}",
+                "slug": f"feat-{i}",
+                "ord": i,
             },
         )
         for s in range(snaps_per_parcel):
@@ -73,9 +80,12 @@ def _seed(db: Session, n_locations: int = 5, snaps_per_parcel: int = 10) -> list
                     "VALUES (:id, :pid, :src, :dt, :sid, :coll, :url)"
                 ),
                 {
-                    "id": str(uuid.uuid4()), "pid": str(pid),
-                    "src": "naip", "dt": (date(2010, 1, 1) + timedelta(days=s * 30)).isoformat(),
-                    "sid": f"item-{i}-{s}", "coll": "naip",
+                    "id": str(uuid.uuid4()),
+                    "pid": str(pid),
+                    "src": "naip",
+                    "dt": (date(2010, 1, 1) + timedelta(days=s * 30)).isoformat(),
+                    "sid": f"item-{i}-{s}",
+                    "coll": "naip",
                     "url": f"https://example.com/{i}/{s}.tif",
                 },
             )
@@ -113,9 +123,7 @@ def test_list_featured_uses_constant_queries(client: TestClient, db: Session) ->
 
     # Pre-fix: 2N+1 = 11 queries for N=5. With the batch loader it's
     # 3 queries: list locations, batch parcels, batch snapshots.
-    assert counter["n"] <= 4, (
-        f"featured endpoint ran {counter['n']} SELECT statements; expected ≤4"
-    )
+    assert counter["n"] <= 4, f"featured endpoint ran {counter['n']} SELECT statements; expected ≤4"
 
 
 def test_list_featured_returns_snapshot_endpoints(client: TestClient, db: Session) -> None:
@@ -137,7 +145,8 @@ def test_list_featured_returns_snapshot_endpoints(client: TestClient, db: Sessio
 
 def test_list_featured_skips_missing_parcel(client: TestClient, db: Session) -> None:
     """A featured row referencing a non-existent parcel is skipped, not a 500."""
-    db.execute(text("""
+    db.execute(
+        text("""
         CREATE TABLE IF NOT EXISTS featured_locations (
             id              TEXT PRIMARY KEY,
             parcel_id       TEXT NOT NULL REFERENCES parcels(id),
@@ -150,7 +159,8 @@ def test_list_featured_skips_missing_parcel(client: TestClient, db: Session) -> 
             display_order   INTEGER NOT NULL DEFAULT 0,
             created_at      TEXT DEFAULT (datetime('now'))
         )
-    """))
+    """)
+    )
     db.execute(
         text(
             "INSERT INTO featured_locations "
@@ -158,8 +168,12 @@ def test_list_featured_skips_missing_parcel(client: TestClient, db: Session) -> 
             "VALUES (:id, :pid, :n, :s, :slug, :ord)"
         ),
         {
-            "id": str(uuid.uuid4()), "pid": str(uuid.uuid4()),
-            "n": "Orphan", "s": "no parcel", "slug": "orphan", "ord": 0,
+            "id": str(uuid.uuid4()),
+            "pid": str(uuid.uuid4()),
+            "n": "Orphan",
+            "s": "no parcel",
+            "slug": "orphan",
+            "ord": 0,
         },
     )
     db.commit()

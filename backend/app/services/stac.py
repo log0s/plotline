@@ -262,7 +262,10 @@ def filter_items_intersecting_bbox(
             result.append(item)
             continue
         item_bbox = (
-            float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]),
+            float(bbox[0]),
+            float(bbox[1]),
+            float(bbox[2]),
+            float(bbox[3]),
         )
         if _bbox_intersection_area(item_bbox, viewport) > 0:
             result.append(item)
@@ -331,6 +334,7 @@ def select_naip_items(
         candidates = list(year_items)
 
         while candidates and len(selected_for_year) < max_tiles_per_year:
+
             def score(
                 item: dict[str, object],
                 _remaining: tuple[float, float, float, float] = remaining,
@@ -339,8 +343,10 @@ def select_naip_items(
                 if not isinstance(bbox, list) or len(bbox) < 4:
                     return (0.0, float(abs(_doy(item) - target_doy)))
                 ib = (
-                    float(bbox[0]), float(bbox[1]),
-                    float(bbox[2]), float(bbox[3]),
+                    float(bbox[0]),
+                    float(bbox[1]),
+                    float(bbox[2]),
+                    float(bbox[3]),
                 )
                 area = _bbox_intersection_area(ib, _remaining)
                 # Maximize area, minimize doy distance
@@ -353,8 +359,10 @@ def select_naip_items(
                 selected_for_year.append(best)
                 break
             best_ibox = (
-                float(best_bbox[0]), float(best_bbox[1]),
-                float(best_bbox[2]), float(best_bbox[3]),
+                float(best_bbox[0]),
+                float(best_bbox[1]),
+                float(best_bbox[2]),
+                float(best_bbox[3]),
             )
             gain = _bbox_intersection_area(best_ibox, remaining)
             if gain <= 0 and selected_for_year:
@@ -421,6 +429,7 @@ def select_landsat_items(items: list[dict[str, object]]) -> list[list[dict[str, 
     Returns single-item groups (outer list per year, inner list always
     length 1) for shape consistency with NAIP multi-tile groups.
     """
+
     def is_le07(item: dict[str, object]) -> bool:
         return str(item.get("id", "")).startswith("LE07")
 
@@ -434,9 +443,7 @@ def select_landsat_items(items: list[dict[str, object]]) -> list[list[dict[str, 
         pool = non_le07 if non_le07 else year_items
         pick = min(
             pool,
-            key=lambda i: float(
-                cast(dict[str, Any], i["properties"]).get("eo:cloud_cover", 100)
-            ),
+            key=lambda i: float(cast(dict[str, Any], i["properties"]).get("eo:cloud_cover", 100)),
         )
         selected.append(pick)
     selected.sort(key=_capture_date)
@@ -458,9 +465,7 @@ def select_sentinel_items(items: list[dict[str, object]]) -> list[list[dict[str,
     selected = [
         min(
             q_items,
-            key=lambda i: float(
-                cast(dict[str, Any], i["properties"]).get("eo:cloud_cover", 100)
-            ),
+            key=lambda i: float(cast(dict[str, Any], i["properties"]).get("eo:cloud_cover", 100)),
         )
         for q_items in by_quarter.values()
     ]
@@ -604,9 +609,7 @@ async def validate_landsat_selection(
         by_year[_capture_date(item).year].append(item)
     for year_items in by_year.values():
         year_items.sort(
-            key=lambda i: float(
-                cast(dict[str, Any], i["properties"]).get("eo:cloud_cover", 100)
-            ),
+            key=lambda i: float(cast(dict[str, Any], i["properties"]).get("eo:cloud_cover", 100)),
         )
 
     # Validate all selected items in parallel

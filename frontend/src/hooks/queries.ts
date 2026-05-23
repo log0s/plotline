@@ -8,16 +8,16 @@
  *   ["demographics", parcelId]    → DemographicsResponse
  *   ["propertyEvents", parcelId]  → PropertyEventsResponse
  */
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { NavigateFunction } from "react-router-dom";
 import { getDemographics } from "../api/demographics";
 import { getPropertyEvents } from "../api/events";
 import { geocodeAddress, getParcel } from "../api/geocode";
-import { getImagery, getTimelineRequest, triggerTimeline } from "../api/imagery";
+import {
+  getImagery,
+  getTimelineRequest,
+  triggerTimeline,
+} from "../api/imagery";
 import type {
   DemographicsResponse,
   GeocodeResponse,
@@ -128,7 +128,8 @@ export function useGeocodeMutation() {
   const queryClient = useQueryClient();
 
   return useMutation<GeocodeResponse, Error, GeocodeVars>({
-    mutationFn: ({ address, lat, lon }) => geocodeAddress({ address, lat, lon }),
+    mutationFn: ({ address, lat, lon }) =>
+      geocodeAddress({ address, lat, lon }),
     onSuccess: (data, { navigate }) => {
       // Prime the parcel cache so ExplorePage doesn't refetch it immediately.
       queryClient.setQueryData<GeocodeResponse>(["parcel", data.parcel_id], {

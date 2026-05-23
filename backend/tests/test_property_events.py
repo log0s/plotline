@@ -190,10 +190,9 @@ class TestDenverAdapterParsing:
     def test_fetch_sales_returns_empty(self) -> None:
         """Denver sales data is no longer available via public API."""
         import asyncio
+
         adapter = DenverAdapter()
-        result = asyncio.get_event_loop().run_until_complete(
-            adapter.fetch_sales("123", "MAIN")
-        )
+        result = asyncio.get_event_loop().run_until_complete(adapter.fetch_sales("123", "MAIN"))
         assert result == []
 
     def test_parse_permit_building(self) -> None:
@@ -315,16 +314,30 @@ class TestPropertyEventsDB:
     def test_filter_by_type(self, db: Session) -> None:
         parcel_id = self._seed_parcel(db)
         upsert_property_event(
-            db, parcel_id=parcel_id, event_type="sale",
-            event_date=date(2020, 1, 1), sale_price=100000,
-            permit_type=None, permit_description=None, permit_valuation=None,
-            description="Sale", source="denver_sales", source_record_id="S1",
+            db,
+            parcel_id=parcel_id,
+            event_type="sale",
+            event_date=date(2020, 1, 1),
+            sale_price=100000,
+            permit_type=None,
+            permit_description=None,
+            permit_valuation=None,
+            description="Sale",
+            source="denver_sales",
+            source_record_id="S1",
         )
         upsert_property_event(
-            db, parcel_id=parcel_id, event_type="permit_building",
-            event_date=date(2021, 6, 1), sale_price=None,
-            permit_type="BLDR", permit_description="New build", permit_valuation=50000,
-            description="Building permit", source="denver_permits", source_record_id="P1",
+            db,
+            parcel_id=parcel_id,
+            event_type="permit_building",
+            event_date=date(2021, 6, 1),
+            sale_price=None,
+            permit_type="BLDR",
+            permit_description="New build",
+            permit_valuation=50000,
+            description="Building permit",
+            source="denver_permits",
+            source_record_id="P1",
         )
 
         sales = get_property_events(db, parcel_id, event_types=["sale"])
@@ -337,20 +350,35 @@ class TestPropertyEventsDB:
     def test_date_range_filter(self, db: Session) -> None:
         parcel_id = self._seed_parcel(db)
         upsert_property_event(
-            db, parcel_id=parcel_id, event_type="sale",
-            event_date=date(2010, 1, 1), sale_price=100000,
-            permit_type=None, permit_description=None, permit_valuation=None,
-            description="Sale 1", source="denver_sales", source_record_id="S1",
+            db,
+            parcel_id=parcel_id,
+            event_type="sale",
+            event_date=date(2010, 1, 1),
+            sale_price=100000,
+            permit_type=None,
+            permit_description=None,
+            permit_valuation=None,
+            description="Sale 1",
+            source="denver_sales",
+            source_record_id="S1",
         )
         upsert_property_event(
-            db, parcel_id=parcel_id, event_type="sale",
-            event_date=date(2020, 6, 1), sale_price=300000,
-            permit_type=None, permit_description=None, permit_valuation=None,
-            description="Sale 2", source="denver_sales", source_record_id="S2",
+            db,
+            parcel_id=parcel_id,
+            event_type="sale",
+            event_date=date(2020, 6, 1),
+            sale_price=300000,
+            permit_type=None,
+            permit_description=None,
+            permit_valuation=None,
+            description="Sale 2",
+            source="denver_sales",
+            source_record_id="S2",
         )
 
         events = get_property_events(
-            db, parcel_id,
+            db,
+            parcel_id,
             start_date=date(2015, 1, 1),
             end_date=date(2025, 1, 1),
         )
@@ -365,22 +393,43 @@ class TestPriceSummary:
     def test_appreciation_calculation(self) -> None:
         events = [
             PropertyEventRow(
-                id=uuid.uuid4(), parcel_id=uuid.uuid4(), event_type="sale",
-                event_date=date(2000, 1, 1), sale_price=100000,
-                permit_type=None, permit_description=None, permit_valuation=None,
-                description="", source="denver_sales", source_record_id="S1",
+                id=uuid.uuid4(),
+                parcel_id=uuid.uuid4(),
+                event_type="sale",
+                event_date=date(2000, 1, 1),
+                sale_price=100000,
+                permit_type=None,
+                permit_description=None,
+                permit_valuation=None,
+                description="",
+                source="denver_sales",
+                source_record_id="S1",
             ),
             PropertyEventRow(
-                id=uuid.uuid4(), parcel_id=uuid.uuid4(), event_type="permit_building",
-                event_date=date(2015, 6, 1), sale_price=None,
-                permit_type="BLDR", permit_description="Remodel", permit_valuation=50000,
-                description="", source="denver_permits", source_record_id="P1",
+                id=uuid.uuid4(),
+                parcel_id=uuid.uuid4(),
+                event_type="permit_building",
+                event_date=date(2015, 6, 1),
+                sale_price=None,
+                permit_type="BLDR",
+                permit_description="Remodel",
+                permit_valuation=50000,
+                description="",
+                source="denver_permits",
+                source_record_id="P1",
             ),
             PropertyEventRow(
-                id=uuid.uuid4(), parcel_id=uuid.uuid4(), event_type="sale",
-                event_date=date(2020, 6, 1), sale_price=400000,
-                permit_type=None, permit_description=None, permit_valuation=None,
-                description="", source="denver_sales", source_record_id="S2",
+                id=uuid.uuid4(),
+                parcel_id=uuid.uuid4(),
+                event_type="sale",
+                event_date=date(2020, 6, 1),
+                sale_price=400000,
+                permit_type=None,
+                permit_description=None,
+                permit_valuation=None,
+                description="",
+                source="denver_sales",
+                source_record_id="S2",
             ),
         ]
         summary = compute_price_summary(events)
@@ -393,10 +442,17 @@ class TestPriceSummary:
     def test_single_sale_no_appreciation(self) -> None:
         events = [
             PropertyEventRow(
-                id=uuid.uuid4(), parcel_id=uuid.uuid4(), event_type="sale",
-                event_date=date(2020, 1, 1), sale_price=250000,
-                permit_type=None, permit_description=None, permit_valuation=None,
-                description="", source="denver_sales", source_record_id="S1",
+                id=uuid.uuid4(),
+                parcel_id=uuid.uuid4(),
+                event_type="sale",
+                event_date=date(2020, 1, 1),
+                sale_price=250000,
+                permit_type=None,
+                permit_description=None,
+                permit_valuation=None,
+                description="",
+                source="denver_sales",
+                source_record_id="S1",
             ),
         ]
         summary = compute_price_summary(events)
@@ -435,18 +491,30 @@ class TestEventsEndpoint:
         db.commit()
 
         upsert_property_event(
-            db, parcel_id=parcel_id, event_type="sale",
-            event_date=date(2018, 3, 15), sale_price=250000,
-            permit_type=None, permit_description=None, permit_valuation=None,
-            description="Sold for $250,000", source="denver_sales",
+            db,
+            parcel_id=parcel_id,
+            event_type="sale",
+            event_date=date(2018, 3, 15),
+            sale_price=250000,
+            permit_type=None,
+            permit_description=None,
+            permit_valuation=None,
+            description="Sold for $250,000",
+            source="denver_sales",
             source_record_id="REC100",
         )
         upsert_property_event(
-            db, parcel_id=parcel_id, event_type="permit_building",
-            event_date=date(2019, 7, 1), sale_price=None,
-            permit_type="BLDR", permit_description="Kitchen remodel",
-            permit_valuation=45000, description="BLDR — Kitchen remodel ($45,000)",
-            source="denver_permits", source_record_id="P100",
+            db,
+            parcel_id=parcel_id,
+            event_type="permit_building",
+            event_date=date(2019, 7, 1),
+            sale_price=None,
+            permit_type="BLDR",
+            permit_description="Kitchen remodel",
+            permit_valuation=45000,
+            description="BLDR — Kitchen remodel ($45,000)",
+            source="denver_permits",
+            source_record_id="P100",
         )
         return parcel_id
 

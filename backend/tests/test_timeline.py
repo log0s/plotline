@@ -72,7 +72,10 @@ async def test_retry_exhausted_raises_last_error() -> None:
 
     with patch("app.tasks.timeline.stac_service.search_stac", new_callable=AsyncMock) as mock:
         mock.side_effect = [error, error, error]
-        with patch("app.tasks.timeline.asyncio.sleep", new_callable=AsyncMock), pytest.raises(httpx.HTTPStatusError):
+        with (
+            patch("app.tasks.timeline.asyncio.sleep", new_callable=AsyncMock),
+            pytest.raises(httpx.HTTPStatusError),
+        ):
             await _search_stac_with_retry(
                 collection="naip",
                 bbox=(-105, 39, -104, 40),
@@ -200,13 +203,19 @@ async def test_fetch_source_stac_failure_marks_task_failed() -> None:
 
     with (
         patch("app.db.SessionLocal", return_value=mock_db),
-        patch("app.tasks.timeline._search_stac_with_retry", new_callable=AsyncMock,
-              side_effect=RuntimeError("STAC down")),
+        patch(
+            "app.tasks.timeline._search_stac_with_retry",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("STAC down"),
+        ),
         patch("app.tasks.timeline.imagery_service.update_request_task") as mock_update,
     ):
         count = await _fetch_source(
-            source_cfg, (-105, 39, -104, 40), (-105, 39, -104, 40),
-            parcel_id, req_id,
+            source_cfg,
+            (-105, 39, -104, 40),
+            (-105, 39, -104, 40),
+            parcel_id,
+            req_id,
         )
 
     assert count == 0
@@ -261,21 +270,32 @@ async def test_fetch_source_chunk_by_year_skips_failed_years() -> None:
         dt = kwargs.get("datetime_range", "")
         if "2020" in dt:
             raise httpx.HTTPStatusError(
-                "429", request=MagicMock(),
+                "429",
+                request=MagicMock(),
                 response=MagicMock(status_code=429),
             )
         return [stac_item]
 
     with (
         patch("app.db.SessionLocal", return_value=mock_db),
-        patch("app.tasks.timeline._search_stac_with_retry", new_callable=AsyncMock,
-              side_effect=mock_search),
-        patch("app.tasks.timeline.stac_service.filter_items_containing_point",
-              side_effect=lambda items, lat, lng: items),
-        patch("app.tasks.timeline.stac_service.validate_landsat_selection",
-              new_callable=AsyncMock, side_effect=lambda groups, raw: groups),
-        patch("app.tasks.timeline.stac_service.extract_cog_url",
-              return_value="https://example.com/cog.tif"),
+        patch(
+            "app.tasks.timeline._search_stac_with_retry",
+            new_callable=AsyncMock,
+            side_effect=mock_search,
+        ),
+        patch(
+            "app.tasks.timeline.stac_service.filter_items_containing_point",
+            side_effect=lambda items, lat, lng: items,
+        ),
+        patch(
+            "app.tasks.timeline.stac_service.validate_landsat_selection",
+            new_callable=AsyncMock,
+            side_effect=lambda groups, raw: groups,
+        ),
+        patch(
+            "app.tasks.timeline.stac_service.extract_cog_url",
+            return_value="https://example.com/cog.tif",
+        ),
         patch("app.tasks.timeline.stac_service.extract_thumbnail_url", return_value=None),
         patch("app.tasks.timeline.stac_service.extract_capture_date"),
         patch("app.tasks.timeline.stac_service.extract_bbox_wkt", return_value=None),
@@ -283,8 +303,13 @@ async def test_fetch_source_chunk_by_year_skips_failed_years() -> None:
         patch("app.tasks.timeline.imagery_service.update_request_task"),
     ):
         count = await _fetch_source(
-            source_cfg, (-105, 39, -104, 40), (-105, 39, -104, 40),
-            parcel_id, req_id, lat=39.5, lng=-104.5,
+            source_cfg,
+            (-105, 39, -104, 40),
+            (-105, 39, -104, 40),
+            parcel_id,
+            req_id,
+            lat=39.5,
+            lng=-104.5,
         )
 
     assert count == 1
@@ -376,7 +401,10 @@ async def test_fetch_property_unsupported_county_marks_skipped() -> None:
         patch("app.tasks.timeline.imagery_service.update_request_task") as mock_update,
     ):
         count = await _fetch_property(
-            parcel_id, req_id, "Unsupported County", "123 MAIN ST",
+            parcel_id,
+            req_id,
+            "Unsupported County",
+            "123 MAIN ST",
         )
 
     assert count == 0
@@ -407,7 +435,10 @@ async def test_fetch_property_no_search_terms_marks_failed() -> None:
         patch("app.tasks.timeline.imagery_service.update_request_task") as mock_update,
     ):
         count = await _fetch_property(
-            parcel_id, req_id, "Denver", "",
+            parcel_id,
+            req_id,
+            "Denver",
+            "",
         )
 
     assert count == 0
@@ -450,6 +481,7 @@ async def test_run_timeline_all_sources_failed_marks_request_failed() -> None:
     mock_db.__exit__ = MagicMock(return_value=False)
 
     call_count = [0]
+
     def mock_execute_side_effect(query):
         result = MagicMock()
         call_count[0] += 1
@@ -477,9 +509,13 @@ async def test_run_timeline_all_sources_failed_marks_request_failed() -> None:
         patch("app.config.get_settings", return_value=mock_settings),
         patch("app.tasks.timeline.stac_service.point_to_bbox", return_value=(-105, 39, -104, 40)),
         patch("app.tasks.timeline._fetch_source", new_callable=AsyncMock, side_effect=fail_source),
-        patch("app.tasks.timeline._fetch_usgs_topo", new_callable=AsyncMock, side_effect=fail_source),
+        patch(
+            "app.tasks.timeline._fetch_usgs_topo", new_callable=AsyncMock, side_effect=fail_source
+        ),
         patch("app.tasks.timeline._fetch_census", new_callable=AsyncMock, side_effect=fail_source),
-        patch("app.tasks.timeline._fetch_property", new_callable=AsyncMock, side_effect=fail_source),
+        patch(
+            "app.tasks.timeline._fetch_property", new_callable=AsyncMock, side_effect=fail_source
+        ),
         patch("app.tasks.timeline.imagery_service.update_timeline_request_status") as mock_status,
         patch("app.tasks.timeline.imagery_service.create_request_tasks"),
     ):
@@ -510,8 +546,11 @@ async def test_fetch_usgs_topo_error_marks_failed() -> None:
 
     with (
         patch("app.db.SessionLocal", return_value=mock_db),
-        patch("app.tasks.timeline.topo_service.search_usgs_topo",
-              new_callable=AsyncMock, side_effect=RuntimeError("TNM down")),
+        patch(
+            "app.tasks.timeline.topo_service.search_usgs_topo",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("TNM down"),
+        ),
         patch("app.tasks.timeline.imagery_service.update_request_task") as mock_update,
     ):
         count = await _fetch_usgs_topo((-105, 39, -104, 40), parcel_id, req_id)

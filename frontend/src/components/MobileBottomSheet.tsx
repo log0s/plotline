@@ -5,11 +5,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import {
-  motion,
-  animate,
-  type MotionValue,
-} from "framer-motion";
+import { motion, animate, type MotionValue } from "framer-motion";
 
 type SnapPoint = "closed" | "half" | "full";
 
@@ -50,8 +46,7 @@ export function MobileBottomSheet({
 
   const getSnapY = useCallback(
     (s: SnapPoint) => {
-      if (sheetHeight <= 0)
-        return s === "full" ? 0 : s === "half" ? 300 : 600;
+      if (sheetHeight <= 0) return s === "full" ? 0 : s === "half" ? 300 : 600;
       switch (s) {
         case "full":
           return 0;
@@ -81,11 +76,19 @@ export function MobileBottomSheet({
   }, [snap, sheetHeight, getSnapY, y]);
 
   useEffect(() => {
-    if (expandTrigger != null && expandTrigger !== prevTrigger.current && snap !== "full") {
+    if (
+      expandTrigger != null &&
+      expandTrigger !== prevTrigger.current &&
+      snap !== "full"
+    ) {
       preTriggerSnap.current = snap;
       openedByTrigger.current = true;
       setSnap("full");
-    } else if (expandTrigger == null && prevTrigger.current != null && openedByTrigger.current) {
+    } else if (
+      expandTrigger == null &&
+      prevTrigger.current != null &&
+      openedByTrigger.current
+    ) {
       openedByTrigger.current = false;
       setSnap(preTriggerSnap.current);
     }

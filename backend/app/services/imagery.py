@@ -99,9 +99,7 @@ def get_timeline_request(
 ) -> TimelineRequest | None:
     """Fetch a timeline request by ID, including its per-source tasks."""
     return (
-        db.execute(
-            select(TimelineRequest).where(TimelineRequest.id == request_id)
-        )
+        db.execute(select(TimelineRequest).where(TimelineRequest.id == request_id))
         .scalars()
         .first()
     )
@@ -198,11 +196,15 @@ def maybe_refetch_for_backfill(
         from app.services.county_adapters import get_adapter_for_county
 
         if get_adapter_for_county(parcel.county):
-            prop_task = db.execute(
-                select(TimelineRequestTask)
-                .where(TimelineRequestTask.timeline_request_id == existing_req.id)
-                .where(TimelineRequestTask.source == "property")
-            ).scalars().first()
+            prop_task = (
+                db.execute(
+                    select(TimelineRequestTask)
+                    .where(TimelineRequestTask.timeline_request_id == existing_req.id)
+                    .where(TimelineRequestTask.source == "property")
+                )
+                .scalars()
+                .first()
+            )
             if not prop_task or prop_task.status == "skipped":
                 needs_refetch = True
                 logger.info(
@@ -210,11 +212,15 @@ def maybe_refetch_for_backfill(
                     extra={"parcel_id": str(parcel.id), "county": parcel.county},
                 )
 
-    topo_task = db.execute(
-        select(TimelineRequestTask)
-        .where(TimelineRequestTask.timeline_request_id == existing_req.id)
-        .where(TimelineRequestTask.source == "usgs_topo")
-    ).scalars().first()
+    topo_task = (
+        db.execute(
+            select(TimelineRequestTask)
+            .where(TimelineRequestTask.timeline_request_id == existing_req.id)
+            .where(TimelineRequestTask.source == "usgs_topo")
+        )
+        .scalars()
+        .first()
+    )
     if not topo_task:
         needs_refetch = True
         logger.info(

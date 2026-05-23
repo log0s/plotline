@@ -81,10 +81,7 @@ def test_select_naip_one_group_per_year() -> None:
     assert len(groups) == 3
     for group in groups:
         assert len(group) == 1
-    years = [
-        date.fromisoformat(g[0]["properties"]["datetime"][:10]).year
-        for g in groups
-    ]
+    years = [date.fromisoformat(g[0]["properties"]["datetime"][:10]).year for g in groups]
     assert years == sorted(set(years))
 
 
@@ -115,9 +112,7 @@ def test_select_landsat_one_per_year() -> None:
     assert len(groups) == 2
     for g in groups:
         assert len(g) == 1
-    years = [
-        date.fromisoformat(g[0]["properties"]["datetime"][:10]).year for g in groups
-    ]
+    years = [date.fromisoformat(g[0]["properties"]["datetime"][:10]).year for g in groups]
     assert years == sorted(set(years))
 
 
@@ -201,7 +196,10 @@ def test_extract_cog_url_landsat_returns_self_link() -> None:
         "id": "LC09_TEST",
         "assets": {
             "rendered_preview": {"href": "https://example.com/preview.png", "type": "image/png"},
-            "red": {"href": "https://example.com/red.tif", "type": "image/tiff; application=geotiff"},
+            "red": {
+                "href": "https://example.com/red.tif",
+                "type": "image/tiff; application=geotiff",
+            },
         },
         "links": [
             {"rel": "self", "href": self_url},
@@ -545,10 +543,13 @@ async def test_search_stac_follows_next_link() -> None:
 @pytest.mark.asyncio
 async def test_search_stac_caps_at_max_items() -> None:
     """search_stac should not return more items than max_items."""
-    mock_client, _ = _make_httpx_mock_client("post", {
-        "features": [{"id": f"item-{i}"} for i in range(5)],
-        "links": [],
-    })
+    mock_client, _ = _make_httpx_mock_client(
+        "post",
+        {
+            "features": [{"id": f"item-{i}"} for i in range(5)],
+            "links": [],
+        },
+    )
 
     with patch("app.services.stac._get_search_client", return_value=mock_client):
         items = await search_stac(
@@ -580,8 +581,11 @@ async def test_validate_landsat_item_success() -> None:
     mock_client.head = AsyncMock(return_value=mock_head_resp)
 
     with (
-        patch("app.services.stac.sign_pc_url", new_callable=AsyncMock,
-              return_value="https://signed.example.com/red.tif"),
+        patch(
+            "app.services.stac.sign_pc_url",
+            new_callable=AsyncMock,
+            return_value="https://signed.example.com/red.tif",
+        ),
         patch("app.services.stac._get_search_client", return_value=mock_client),
     ):
         result = await validate_landsat_item(item)
@@ -604,8 +608,11 @@ async def test_validate_landsat_item_sign_failure() -> None:
 
     item = {"id": "LC08_TEST", "assets": {"red": {"href": "https://example.com/red.tif"}}}
 
-    with patch("app.services.stac.sign_pc_url", new_callable=AsyncMock,
-               side_effect=httpx.ConnectError("sign failed")):
+    with patch(
+        "app.services.stac.sign_pc_url",
+        new_callable=AsyncMock,
+        side_effect=httpx.ConnectError("sign failed"),
+    ):
         result = await validate_landsat_item(item)
 
     assert result is False
@@ -624,8 +631,11 @@ async def test_validate_landsat_item_head_returns_403() -> None:
     mock_client.head = AsyncMock(return_value=mock_head_resp)
 
     with (
-        patch("app.services.stac.sign_pc_url", new_callable=AsyncMock,
-              return_value="https://signed.example.com/red.tif"),
+        patch(
+            "app.services.stac.sign_pc_url",
+            new_callable=AsyncMock,
+            return_value="https://signed.example.com/red.tif",
+        ),
         patch("app.services.stac._get_search_client", return_value=mock_client),
     ):
         result = await validate_landsat_item(item)

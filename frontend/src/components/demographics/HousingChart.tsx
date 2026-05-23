@@ -19,7 +19,11 @@ interface HousingChartProps {
   subtitle?: string;
 }
 
-export function HousingChart({ snapshots, selectedYear, subtitle }: HousingChartProps) {
+export function HousingChart({
+  snapshots,
+  selectedYear,
+  subtitle,
+}: HousingChartProps) {
   const data = snapshots
     .filter(
       (s) =>
@@ -69,9 +73,26 @@ export function HousingChart({ snapshots, selectedYear, subtitle }: HousingChart
               strokeWidth={1.5}
             />
           )}
-          <Bar dataKey="Owner" stackId="a" fill={COLORS.owner} name="Owner" radius={[0, 0, 0, 0]} />
-          <Bar dataKey="Renter" stackId="a" fill={COLORS.renter} name="Renter" />
-          <Bar dataKey="Vacant" stackId="a" fill={COLORS.vacant} name="Vacant" radius={[2, 2, 0, 0]} />
+          <Bar
+            dataKey="Owner"
+            stackId="a"
+            fill={COLORS.owner}
+            name="Owner"
+            radius={[0, 0, 0, 0]}
+          />
+          <Bar
+            dataKey="Renter"
+            stackId="a"
+            fill={COLORS.renter}
+            name="Renter"
+          />
+          <Bar
+            dataKey="Vacant"
+            stackId="a"
+            fill={COLORS.vacant}
+            name="Vacant"
+            radius={[2, 2, 0, 0]}
+          />
         </BarChart>
       </ResponsiveContainer>
     </motion.div>

@@ -78,8 +78,7 @@ async def query_socrata(
 
         if resp.status_code != 200:
             raise SocrataError(
-                f"Socrata returned {resp.status_code} for {domain}/{resource_id}: "
-                f"{resp.text[:200]}"
+                f"Socrata returned {resp.status_code} for {domain}/{resource_id}: {resp.text[:200]}"
             )
 
         data = resp.json()

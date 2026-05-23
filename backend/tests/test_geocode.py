@@ -263,9 +263,7 @@ async def test_geocoder_service_parses_census_tract() -> None:
                     "matchedAddress": "123 MAIN ST, DENVER, CO, 80202",
                     "coordinates": {"x": -104.9903, "y": 39.7392},
                     "geographies": {
-                        "Census Tracts": [
-                            {"STATE": "08", "COUNTY": "031", "TRACT": "006202"}
-                        ],
+                        "Census Tracts": [{"STATE": "08", "COUNTY": "031", "TRACT": "006202"}],
                         "Counties": [{"BASENAME": "Denver"}],
                     },
                 }
@@ -339,9 +337,7 @@ async def test_reverse_geocode_success() -> None:
     mock_response = {
         "result": {
             "geographies": {
-                "Census Tracts": [
-                    {"STATE": "08", "COUNTY": "031", "TRACT": "006202"}
-                ],
+                "Census Tracts": [{"STATE": "08", "COUNTY": "031", "TRACT": "006202"}],
                 "Counties": [{"BASENAME": "Denver"}],
             }
         }

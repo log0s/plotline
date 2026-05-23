@@ -112,9 +112,7 @@ async def geocode_address(address: str, settings: Settings) -> GeocodeResult:
             address_matches = data.get("result", {}).get("addressMatches", [])
 
             if not address_matches:
-                raise AddressNotFoundError(
-                    f"No geocoding match found for address: {address!r}"
-                )
+                raise AddressNotFoundError(f"No geocoding match found for address: {address!r}")
 
             match = address_matches[0]
             coords = match["coordinates"]
@@ -220,9 +218,7 @@ async def reverse_geocode(
                     await asyncio.sleep(1.0)
                 continue
             except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                raise GeocoderUnavailableError(
-                    f"Census reverse geocoder error: {exc}"
-                ) from exc
+                raise GeocoderUnavailableError(f"Census reverse geocoder error: {exc}") from exc
 
             geographies = response.json().get("result", {}).get("geographies", {})
 

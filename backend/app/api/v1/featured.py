@@ -18,9 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _snapshot_ids_for_parcels(
-    db: Session, parcel_id_strs: list[str]
-) -> dict[str, tuple[str, str]]:
+def _snapshot_ids_for_parcels(db: Session, parcel_id_strs: list[str]) -> dict[str, tuple[str, str]]:
     """Return ``{parcel_id: (earliest_snapshot_id, latest_snapshot_id)}``.
 
     One raw-SQL query for any number of parcels — sorted by parcel_id
@@ -78,9 +76,7 @@ def _build_response(
     )
 
 
-def _parcel_coords(
-    db: Session, parcel_id_strs: list[str]
-) -> dict[str, tuple[float, float]]:
+def _parcel_coords(db: Session, parcel_id_strs: list[str]) -> dict[str, tuple[float, float]]:
     """Batch-load (latitude, longitude) per parcel via raw SQL.
 
     Skips the PostGIS geometry column so this works on both Postgres
@@ -91,10 +87,7 @@ def _parcel_coords(
     placeholders = ",".join(f":p{i}" for i in range(len(parcel_id_strs)))
     params = {f"p{i}": pid for i, pid in enumerate(parcel_id_strs)}
     rows = db.execute(
-        sa_text(
-            f"SELECT id, latitude, longitude FROM parcels "
-            f"WHERE id IN ({placeholders})"
-        ),
+        sa_text(f"SELECT id, latitude, longitude FROM parcels WHERE id IN ({placeholders})"),
         params,
     ).all()
     return {str(pid): (float(lat), float(lng)) for pid, lat, lng in rows}
@@ -120,7 +113,9 @@ def list_featured(db: Session = Depends(get_db)) -> FeaturedListResponse:
         if coords is None:
             logger.warning(
                 "Featured location %r (slug=%s) references missing parcel %s — skipping",
-                loc.name, loc.slug, loc.parcel_id,
+                loc.name,
+                loc.slug,
+                loc.parcel_id,
             )
             continue
         earliest_id, latest_id = snapshot_ids.get(pid_str, (None, None))
@@ -138,13 +133,9 @@ def list_featured(db: Session = Depends(get_db)) -> FeaturedListResponse:
 
 
 @router.get("/featured/{slug}", response_model=FeaturedLocationResponse)
-def get_featured_by_slug(
-    slug: str, db: Session = Depends(get_db)
-) -> FeaturedLocationResponse:
+def get_featured_by_slug(slug: str, db: Session = Depends(get_db)) -> FeaturedLocationResponse:
     """Get a single featured location by slug."""
-    loc = db.scalars(
-        select(FeaturedLocation).where(FeaturedLocation.slug == slug)
-    ).first()
+    loc = db.scalars(select(FeaturedLocation).where(FeaturedLocation.slug == slug)).first()
     if not loc:
         raise HTTPException(status_code=404, detail=f"Featured location '{slug}' not found")
 
@@ -153,9 +144,7 @@ def get_featured_by_slug(
     if coords is None:
         raise HTTPException(status_code=404, detail="Parcel for featured location not found")
 
-    earliest_id, latest_id = _snapshot_ids_for_parcels(db, [pid_str]).get(
-        pid_str, (None, None)
-    )
+    earliest_id, latest_id = _snapshot_ids_for_parcels(db, [pid_str]).get(pid_str, (None, None))
 
     return _build_response(
         loc,

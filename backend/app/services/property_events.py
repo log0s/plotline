@@ -181,15 +181,13 @@ def compute_price_summary(
         - total_events: total event count
     """
     sales = [
-        e for e in events
+        e
+        for e in events
         if e.event_type == "sale" and e.sale_price and e.sale_price > 0 and e.event_date
     ]
     sales.sort(key=lambda e: e.event_date or date.min)
 
-    price_history = [
-        {"date": str(s.event_date), "price": s.sale_price}
-        for s in sales
-    ]
+    price_history = [{"date": str(s.event_date), "price": s.sale_price} for s in sales]
 
     appreciation: str | None = None
     if len(sales) >= 2:

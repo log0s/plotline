@@ -75,7 +75,9 @@ def trigger_timeline(
         parcel = db.get(Parcel, parcel_id)
         if parcel:
             refetch_req = imagery_service.maybe_refetch_for_backfill(
-                db, parcel, request,
+                db,
+                parcel,
+                request,
             )
             if refetch_req is not None:
                 request = refetch_req
@@ -109,9 +111,7 @@ def get_timeline_request(
     """Return timeline request status including per-source tasks."""
     request = imagery_service.get_timeline_request(db, request_id)
     if not request:
-        raise HTTPException(
-            status_code=404, detail=f"Timeline request {request_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Timeline request {request_id} not found")
 
     tasks = [TimelineRequestTaskResponse.model_validate(t) for t in request.tasks]
     return TimelineRequestResponse(
@@ -140,7 +140,9 @@ def get_timeline_request(
 async def list_imagery(
     parcel_id: uuid.UUID,
     response: FastAPIResponse,
-    source: str | None = Query(default=None, description="Filter by source: naip, landsat, sentinel2, usgs_topo"),
+    source: str | None = Query(
+        default=None, description="Filter by source: naip, landsat, sentinel2, usgs_topo"
+    ),
     start_date: date | None = Query(default=None, description="Filter by start date (inclusive)"),
     end_date: date | None = Query(default=None, description="Filter by end date (inclusive)"),
     db: Session = Depends(get_db),
@@ -202,9 +204,7 @@ async def list_imagery(
             )
 
         signed_thumb = (
-            signed_map.get(snap.thumbnail_url, snap.thumbnail_url)
-            if snap.thumbnail_url
-            else None
+            signed_map.get(snap.thumbnail_url, snap.thumbnail_url) if snap.thumbnail_url else None
         )
 
         snapshot_responses.append(
@@ -236,9 +236,9 @@ async def list_imagery(
 # ── Tile proxy helpers ────────────────────────────────────────────────────────
 
 _COG_PARAMS: dict[str, dict[str, object]] = {
-    "naip": {"bidx": [1, 2, 3], "rescale": "0,255"},        # 4-band uint8 RGBI
-    "sentinel2": {"bidx": [1, 2, 3], "rescale": "0,255"},   # 3-band uint8 TCI
-    "usgs_topo": {"bidx": [1, 2, 3], "rescale": "0,255"},   # scanned RGB map
+    "naip": {"bidx": [1, 2, 3], "rescale": "0,255"},  # 4-band uint8 RGBI
+    "sentinel2": {"bidx": [1, 2, 3], "rescale": "0,255"},  # 3-band uint8 TCI
+    "usgs_topo": {"bidx": [1, 2, 3], "rescale": "0,255"},  # scanned RGB map
 }
 
 _titiler_client: httpx.AsyncClient | None = None
@@ -364,7 +364,11 @@ async def _proxy_cog_tile(
 
 
 async def _proxy_landsat_tile(
-    snap: ImagerySnapshotRow, z: int, x: int, y: int, settings: Settings,
+    snap: ImagerySnapshotRow,
+    z: int,
+    x: int,
+    y: int,
+    settings: Settings,
 ) -> Response:
     """Proxy a Landsat tile via Titiler's STAC endpoint for RGB compositing.
 

@@ -37,7 +37,10 @@ async function extractErrorDetail(response: Response): Promise<string> {
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    throw new ApiRequestError(response.status, await extractErrorDetail(response));
+    throw new ApiRequestError(
+      response.status,
+      await extractErrorDetail(response),
+    );
   }
   return response.json() as Promise<T>;
 }

@@ -18,7 +18,11 @@ interface ApplyImageryOptions {
   opacity?: number;
 }
 
-function collectManagedIds(map: maplibregl.Map, baseSource: string, baseLayer: string): {
+function collectManagedIds(
+  map: maplibregl.Map,
+  baseSource: string,
+  baseLayer: string,
+): {
   layers: string[];
   sources: string[];
 } {
@@ -101,10 +105,17 @@ export function applyImageryLayer(
         ? "building"
         : undefined;
     map.addLayer(
-      { id: layerId, type: "raster", source: sourceId, paint: { "raster-opacity": 0 } },
+      {
+        id: layerId,
+        type: "raster",
+        source: sourceId,
+        paint: { "raster-opacity": 0 },
+      },
       beforeLayer,
     );
-    map.setPaintProperty(layerId, "raster-opacity-transition", { duration: 600 });
+    map.setPaintProperty(layerId, "raster-opacity-transition", {
+      duration: 600,
+    });
     requestAnimationFrame(() => {
       if (map.getLayer(layerId)) {
         map.setPaintProperty(layerId, "raster-opacity", targetOpacity);
@@ -137,7 +148,9 @@ export function applyImageryLayer(
       },
       beforeLayer,
     );
-    map.setPaintProperty(entry.layer, "raster-opacity-transition", { duration: 600 });
+    map.setPaintProperty(entry.layer, "raster-opacity-transition", {
+      duration: 600,
+    });
   }
 
   // Fade all entries in together

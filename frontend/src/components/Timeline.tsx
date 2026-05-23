@@ -9,10 +9,7 @@
  * Keyboard arrow keys navigate between snapshots.
  */
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  Map,
-  SplitSquareHorizontal,
-} from "lucide-react";
+import { Map, SplitSquareHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EVENT_TYPE_CONFIG, SOURCE_LABELS } from "../constants";
 import { usePropertyEventsQuery } from "../hooks/queries";
@@ -120,15 +117,18 @@ export function Timeline({
   const eventsEnabled =
     timelineStatus?.status === "complete" ||
     (timelineRequestId == null && snapshots.length > 0);
-  const { data: propertyEvents } = usePropertyEventsQuery(parcelId, eventsEnabled);
+  const { data: propertyEvents } = usePropertyEventsQuery(
+    parcelId,
+    eventsEnabled,
+  );
 
   const [activeFilters, setActiveFilters] = useState<Set<ImagerySource>>(
     new Set(["naip", "landsat", "sentinel2", "usgs_topo"]),
   );
 
-  const [activeEventFilters, setActiveEventFilters] = useState<Set<EventFilterKey>>(
-    new Set(["sales", "building_permits"]),
-  );
+  const [activeEventFilters, setActiveEventFilters] = useState<
+    Set<EventFilterKey>
+  >(new Set(["sales", "building_permits"]));
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Build unified timeline
@@ -143,7 +143,7 @@ export function Timeline({
 
   // Add visible imagery snapshots
   for (const snap of snapshots) {
-    if (!activeFilters.has(snap.source as ImagerySource)) continue;
+    if (!activeFilters.has(snap.source)) continue;
     items.push({ kind: "imagery", data: snap, dateStr: snap.capture_date });
   }
 
@@ -162,7 +162,9 @@ export function Timeline({
 
   // Imagery-only items for keyboard nav
   const visibleSnapshots = items
-    .filter((i): i is TimelineItem & { kind: "imagery" } => i.kind === "imagery")
+    .filter(
+      (i): i is TimelineItem & { kind: "imagery" } => i.kind === "imagery",
+    )
     .map((i) => i.data);
 
   // Keyboard navigation (imagery only)
@@ -174,7 +176,8 @@ export function Timeline({
         : -1;
 
       if (e.key === "ArrowRight") {
-        const next = visibleSnapshots[Math.min(idx + 1, visibleSnapshots.length - 1)];
+        const next =
+          visibleSnapshots[Math.min(idx + 1, visibleSnapshots.length - 1)];
         if (next) onSnapshotSelect(next);
         e.preventDefault();
       } else if (e.key === "ArrowLeft") {
@@ -199,9 +202,9 @@ export function Timeline({
     if (!selectedSnapshot || !scrollContainerRef.current) return;
     const container = scrollContainerRef.current;
     const timer = setTimeout(() => {
-      const el = container.querySelector(
+      const el = container.querySelector<HTMLElement>(
         `[data-snapshot-id="${selectedSnapshot.id}"]`,
-      ) as HTMLElement | null;
+      );
       if (!el) return;
       const scrollTarget =
         el.offsetLeft - container.clientWidth / 2 + el.offsetWidth / 2;
@@ -332,7 +335,13 @@ export function Timeline({
         setCompareSnapshot(1, snap);
       }
     },
-    [compareMode, compareSnapshots, selectedSnapshot, onSnapshotSelect, setCompareSnapshot],
+    [
+      compareMode,
+      compareSnapshots,
+      selectedSnapshot,
+      onSnapshotSelect,
+      setCompareSnapshot,
+    ],
   );
 
   return (
@@ -357,7 +366,9 @@ export function Timeline({
         <div className="flex items-center gap-1.5 shrink-0 overflow-x-auto md:ml-3 md:overflow-visible">
           {/* Imagery source toggles */}
           {snapshots.length > 0 &&
-            (["usgs_topo", "naip", "landsat", "sentinel2"] as ImagerySource[]).map((src) => {
+            (
+              ["usgs_topo", "naip", "landsat", "sentinel2"] as ImagerySource[]
+            ).map((src) => {
               const hasItems = snapshots.some((s) => s.source === src);
               if (!hasItems) return null;
               const active = activeFilters.has(src);
@@ -379,23 +390,25 @@ export function Timeline({
           {hasEvents && !compareMode && (
             <>
               <span className="w-px h-4 bg-navy-700/60 mx-1" />
-              {(Object.keys(EVENT_FILTER_LABELS) as EventFilterKey[]).map((key) => {
-                const active = activeEventFilters.has(key);
-                return (
-                  <button
-                    key={key}
-                    onClick={() => toggleEventFilter(key)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition-opacity ${
-                      active
-                        ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
-                        : "bg-navy-800 text-slate-500"
-                    }`}
-                    title={`${active ? "Hide" : "Show"} ${EVENT_FILTER_LABELS[key]}`}
-                  >
-                    {EVENT_FILTER_LABELS[key]}
-                  </button>
-                );
-              })}
+              {(Object.keys(EVENT_FILTER_LABELS) as EventFilterKey[]).map(
+                (key) => {
+                  const active = activeEventFilters.has(key);
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => toggleEventFilter(key)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-opacity ${
+                        active
+                          ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                          : "bg-navy-800 text-slate-500"
+                      }`}
+                      title={`${active ? "Hide" : "Show"} ${EVENT_FILTER_LABELS[key]}`}
+                    >
+                      {EVENT_FILTER_LABELS[key]}
+                    </button>
+                  );
+                },
+              )}
             </>
           )}
 
@@ -410,7 +423,9 @@ export function Timeline({
                     ? "bg-amber-500 text-navy-950 font-semibold"
                     : "border border-amber-500/40 text-amber-400/70 hover:border-amber-500 hover:text-amber-400"
                 }`}
-                title={compareMode ? "Exit compare mode" : "Compare two snapshots"}
+                title={
+                  compareMode ? "Exit compare mode" : "Compare two snapshots"
+                }
               >
                 <SplitSquareHorizontal size={12} />
                 <span className="hidden md:inline">Compare</span>
@@ -437,13 +452,22 @@ export function Timeline({
         {isProcessing && snapshots.length === 0 && (
           <div className="flex items-center gap-3 py-2">
             {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="flex flex-col items-center gap-1 shrink-0">
+              <div
+                key={i}
+                className="flex flex-col items-center gap-1 shrink-0"
+              >
                 <div
                   className="w-16 h-16 rounded-md bg-navy-800 animate-pulse"
                   style={{ animationDelay: `${i * 100}ms` }}
                 />
-                <div className="h-[15px] w-10 rounded bg-navy-800/50 animate-pulse" style={{ animationDelay: `${i * 100}ms` }} />
-                <div className="h-[13px] w-12 rounded bg-navy-800/30 animate-pulse" style={{ animationDelay: `${i * 100}ms` }} />
+                <div
+                  className="h-[15px] w-10 rounded bg-navy-800/50 animate-pulse"
+                  style={{ animationDelay: `${i * 100}ms` }}
+                />
+                <div
+                  className="h-[13px] w-12 rounded bg-navy-800/30 animate-pulse"
+                  style={{ animationDelay: `${i * 100}ms` }}
+                />
               </div>
             ))}
           </div>
@@ -494,13 +518,14 @@ export function Timeline({
                 key={`evt-${item.data.id}`}
                 event={item.data}
                 isSelected={selectedEvent?.id === item.data.id}
-                onSelect={(evt) => setSelectedEvent(selectedEvent?.id === evt.id ? null : evt)}
+                onSelect={(evt) =>
+                  setSelectedEvent(selectedEvent?.id === evt.id ? null : evt)
+                }
               />
             ),
           )}
         </AnimatePresence>
       </div>
-
     </div>
   );
 }
@@ -515,9 +540,15 @@ interface SnapshotCardProps {
   compareAwaiting?: boolean;
 }
 
-function SnapshotCard({ snapshot, isSelected, onSelect, compareSlot, compareAwaiting }: SnapshotCardProps) {
+function SnapshotCard({
+  snapshot,
+  isSelected,
+  onSelect,
+  compareSlot,
+  compareAwaiting,
+}: SnapshotCardProps) {
   const [imgError, setImgError] = useState(false);
-  const source = snapshot.source as ImagerySource;
+  const source = snapshot.source;
   const isTopo = source === "usgs_topo";
 
   return (
@@ -560,9 +591,13 @@ function SnapshotCard({ snapshot, isSelected, onSelect, compareSlot, compareAwai
             onError={() => setImgError(true)}
           />
         ) : (
-          <div className={`w-full h-full flex flex-col items-center justify-center gap-0.5 ${isTopo ? "bg-amber-950/40" : "bg-navy-800"}`}>
+          <div
+            className={`w-full h-full flex flex-col items-center justify-center gap-0.5 ${isTopo ? "bg-amber-950/40" : "bg-navy-800"}`}
+          >
             {isTopo && <Map size={14} className="text-amber-600/70" />}
-            <span className={`text-[9px] font-mono leading-tight text-center px-1 ${isTopo ? "text-amber-600/70" : "text-slate-500"}`}>
+            <span
+              className={`text-[9px] font-mono leading-tight text-center px-1 ${isTopo ? "text-amber-600/70" : "text-slate-500"}`}
+            >
               {snapshot.capture_date.slice(0, 4)}
             </span>
           </div>
@@ -576,7 +611,9 @@ function SnapshotCard({ snapshot, isSelected, onSelect, compareSlot, compareAwai
         {/* Compare slot badge */}
         {compareSlot && (
           <div className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-amber-500 flex items-center justify-center">
-            <span className="text-[8px] font-bold text-navy-950">{compareSlot}</span>
+            <span className="text-[8px] font-bold text-navy-950">
+              {compareSlot}
+            </span>
           </div>
         )}
       </div>
@@ -605,7 +642,8 @@ interface EventCardProps {
 }
 
 function EventCard({ event, isSelected, onSelect }: EventCardProps) {
-  const config = EVENT_TYPE_CONFIG[event.event_type] ?? EVENT_TYPE_CONFIG.permit_other;
+  const config =
+    EVENT_TYPE_CONFIG[event.event_type] ?? EVENT_TYPE_CONFIG.permit_other;
   const Icon = config.icon;
 
   return (
@@ -654,4 +692,3 @@ function EventCard({ event, isSelected, onSelect }: EventCardProps) {
     </motion.button>
   );
 }
-

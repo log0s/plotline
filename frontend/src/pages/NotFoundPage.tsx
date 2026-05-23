@@ -15,11 +15,10 @@ export default function NotFoundPage() {
       <h1 className="text-7xl font-bold text-white mb-2">
         4<span className="text-amber-400">0</span>4
       </h1>
-      <p className="text-slate-400 text-lg mb-2">
-        This page doesn't exist.
-      </p>
+      <p className="text-slate-400 text-lg mb-2">This page doesn't exist.</p>
       <p className="text-sm text-slate-500 mb-8 text-center max-w-sm">
-        The URL may be incorrect, or the parcel you're looking for may not be in our database yet.
+        The URL may be incorrect, or the parcel you're looking for may not be in
+        our database yet.
       </p>
       <Link
         to="/"

@@ -18,7 +18,7 @@ settings = get_settings()
 
 engine = create_engine(
     settings.database_url,
-    pool_pre_ping=True,   # detect stale connections
+    pool_pre_ping=True,  # detect stale connections
     pool_size=10,
     max_overflow=20,
     echo=(settings.app_env == "development"),
@@ -82,9 +82,7 @@ def get_redis() -> _redis_lib.Redis[bytes]:
     if _redis_client is None:
         with _redis_lock:
             if _redis_client is None:
-                _redis_client = _redis_lib.from_url(
-                    settings.redis_url, decode_responses=False
-                )
+                _redis_client = _redis_lib.from_url(settings.redis_url, decode_responses=False)
     return _redis_client
 
 
