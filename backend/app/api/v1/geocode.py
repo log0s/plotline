@@ -197,7 +197,7 @@ async def geocode_address(
         logger.warning("Address not geocodable", extra={"address": body.address})
         raise HTTPException(
             status_code=422,
-            detail=f"Could not geocode address: {exc}",
+            detail="Could not match this address. Please check the spelling and include city and state.",
         ) from exc
 
     # 2. Deduplicate / upsert parcel

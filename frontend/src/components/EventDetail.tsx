@@ -108,7 +108,7 @@ export function EventDetail({ event, onClose }: EventDetailProps) {
               Source
             </p>
             <p className="text-sm text-slate-300">
-              {event.source.replace("_", " ")}
+              {event.source.replaceAll("_", " ")}
             </p>
           </div>
         </div>

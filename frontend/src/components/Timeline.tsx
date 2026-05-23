@@ -260,15 +260,16 @@ export function Timeline({
     if (hasFinePointer) {
       container.addEventListener("wheel", onWheel, { passive: false });
     }
-    // Prevent default middle-click auto-scroll behavior
-    container.addEventListener("auxclick", (e) => {
+    const onAuxClick = (e: MouseEvent) => {
       if (e.button === 1) e.preventDefault();
-    });
+    };
+    container.addEventListener("auxclick", onAuxClick);
 
     return () => {
       container.removeEventListener("mousedown", onMouseDown);
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
+      container.removeEventListener("auxclick", onAuxClick);
       if (hasFinePointer) {
         container.removeEventListener("wheel", onWheel);
       }

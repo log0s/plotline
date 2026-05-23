@@ -144,7 +144,7 @@ async def _fetch_source(
     source_name: str = source_cfg["source"]
     collection: str = source_cfg["collection"]
 
-    logger.info(f"Starting STAC search: {source_name}", extra={"collection": collection})
+    logger.info("Starting STAC search", extra={"source": source_name, "collection": collection})
     t0 = time.perf_counter()
 
     with SessionLocal() as db:
@@ -172,7 +172,7 @@ async def _fetch_source(
             .first()
         )
         if not task_row:
-            logger.warning(f"No task row found for {source_name}")
+            logger.warning("No task row found for source", extra={"source": source_name})
             return 0
 
         imagery_service.update_request_task(db, task_row, "processing")
@@ -220,8 +220,9 @@ async def _fetch_source(
             )
     except Exception as exc:
         logger.error(
-            f"STAC search failed for {source_name}",
-            extra={"error": str(exc)},
+            "STAC search failed",
+            extra={"source": source_name},
+            exc_info=exc,
         )
         with SessionLocal() as db:
             from sqlalchemy import select as sa_select
@@ -269,8 +270,9 @@ async def _fetch_source(
 
     elapsed = time.perf_counter() - t0
     logger.info(
-        f"STAC search complete: {source_name}",
+        "STAC search complete",
         extra={
+            "source": source_name,
             "raw_count": len(raw_items),
             "selected_groups": len(selected_groups),
             "selected_items": sum(len(g) for g in selected_groups),
@@ -341,8 +343,8 @@ async def _fetch_source(
             imagery_service.update_request_task(db, task_row, "complete", items_found=items_saved)
 
     logger.info(
-        f"Imagery source done: {source_name}",
-        extra={"items_saved": items_saved},
+        "Imagery source done",
+        extra={"source": source_name, "items_saved": items_saved},
     )
     return items_saved
 
@@ -379,7 +381,7 @@ async def _fetch_usgs_topo(
     try:
         raw_items = await topo_service.search_usgs_topo(search_bbox)
     except Exception as exc:
-        logger.error(f"USGS topo search failed: {exc}")
+        logger.error("USGS topo search failed", exc_info=exc)
         with SessionLocal() as db:
             task_row = (
                 db.execute(
@@ -459,7 +461,7 @@ async def _fetch_census(
     try:
         state_fips, county_fips, tract_code = parse_tract_fips(tract_fips)
     except ValueError as exc:
-        logger.warning(f"Invalid tract FIPS: {exc}")
+        logger.warning("Invalid tract FIPS", exc_info=exc)
         with SessionLocal() as db:
             task_row = (
                 db.execute(
@@ -508,9 +510,9 @@ async def _fetch_census(
                             raw_data=data,
                         )
                         items_saved += 1
-                    logger.info(f"Census decennial {year} saved", extra={"tract": tract_fips})
+                    logger.info("Census decennial saved", extra={"year": year, "tract": tract_fips})
             except CensusApiError as exc:
-                logger.warning(f"Census decennial {year} failed: {exc}")
+                logger.warning("Census decennial failed", extra={"year": year}, exc_info=exc)
             # Be a good citizen — small delay between requests
             await asyncio.sleep(0.5)
 
@@ -530,9 +532,9 @@ async def _fetch_census(
                             raw_data=data,
                         )
                         items_saved += 1
-                    logger.info(f"Census ACS5 {year} saved", extra={"tract": tract_fips})
+                    logger.info("Census ACS5 saved", extra={"year": year, "tract": tract_fips})
             except CensusApiError as exc:
-                logger.warning(f"Census ACS5 {year} failed: {exc}")
+                logger.warning("Census ACS5 failed", extra={"year": year}, exc_info=exc)
             await asyncio.sleep(0.5)
 
     finally:
@@ -588,8 +590,8 @@ async def _fetch_property(
 
         if not adapter:
             logger.info(
-                f"No property adapter for county: {county}",
-                extra={"parcel_id": str(parcel_id)},
+                "No property adapter for county",
+                extra={"county": county, "parcel_id": str(parcel_id)},
             )
             if task_row:
                 imagery_service.update_request_task(
@@ -650,7 +652,7 @@ async def _fetch_property(
         all_events.extend(sales)
         all_events.extend(permits)
     except Exception as exc:
-        logger.error(f"Property fetch failed for {county}: {exc}")
+        logger.error("Property fetch failed", extra={"county": county}, exc_info=exc)
         with SessionLocal() as db:
             task_row = (
                 db.execute(
@@ -980,7 +982,7 @@ def fetch_imagery_timeline(self: Any, timeline_request_id: str) -> dict[str, Any
                         db, request, "failed", error_message="Task timed out"
                     )
         except Exception:
-            pass
+            logger.debug("Failed to mark request as failed during timeout handling", exc_info=True)
         raise
     except Exception as exc:
         # Boundary: anything escaping _run_timeline gets surfaced as a
@@ -1007,8 +1009,5 @@ def fetch_imagery_timeline(self: Any, timeline_request_id: str) -> dict[str, Any
                         db, request, "failed", error_message=str(exc)
                     )
         except Exception:
-            # Cleanup-of-cleanup: if marking failed itself fails (DB down,
-            # stale request id), swallow so we still re-raise the original
-            # exception below for Celery's retry/visibility.
-            pass
+            logger.debug("Failed to mark request as failed during error handling", exc_info=True)
         raise

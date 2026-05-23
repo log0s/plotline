@@ -2,14 +2,15 @@ import { Link, useRouteError } from "react-router-dom";
 
 export function RootErrorFallback() {
   const error = useRouteError();
-  const message =
-    error instanceof Error ? error.message : "An unexpected error occurred";
+  if (error instanceof Error) {
+    console.error("RootErrorFallback:", error);
+  }
 
   return (
     <div className="relative w-full min-h-screen bg-navy-950 flex flex-col items-center justify-center px-4">
       <h2 className="text-2xl font-bold text-white mb-2">Something broke</h2>
       <p className="text-sm text-slate-400 mb-6 text-center max-w-md">
-        {message}
+        An unexpected error occurred. Please try refreshing the page.
       </p>
       <Link
         to="/"

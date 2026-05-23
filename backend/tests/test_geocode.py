@@ -135,7 +135,7 @@ def test_geocode_address_not_found_returns_422(client: TestClient) -> None:
         )
 
     assert response.status_code == 422
-    assert "geocode" in response.json()["detail"].lower()
+    assert "could not match" in response.json()["detail"].lower()
 
 
 def test_geocode_upstream_unavailable_returns_502(client: TestClient) -> None:

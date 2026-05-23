@@ -77,9 +77,11 @@ async def query_socrata(
             return []
 
         if resp.status_code != 200:
-            raise SocrataError(
-                f"Socrata returned {resp.status_code} for {domain}/{resource_id}: {resp.text[:200]}"
+            logger.error(
+                "Socrata error response",
+                extra={"domain": domain, "resource": resource_id, "status": resp.status_code, "body": resp.text[:500]},
             )
+            raise SocrataError(f"Socrata returned {resp.status_code} for {domain}/{resource_id}")
 
         data = resp.json()
         if not isinstance(data, list):

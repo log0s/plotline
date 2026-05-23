@@ -56,7 +56,6 @@ def upsert_census_snapshot(
 
     Returns True if a row was inserted/updated.
     """
-    # Compute vacancy_rate if we have the data
     vacancy_rate: float | None = None
     total_housing = data.get("total_housing_units")
     occupied = data.get("occupied_housing_units")

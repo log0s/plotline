@@ -70,9 +70,11 @@ async def query_feature_service(
             raise ArcGISError(f"Request error: {exc}") from exc
 
         if resp.status_code != 200:
-            raise ArcGISError(
-                f"ArcGIS returned {resp.status_code} for {service_url}: {resp.text[:200]}"
+            logger.error(
+                "ArcGIS error response",
+                extra={"url": service_url, "status": resp.status_code, "body": resp.text[:500]},
             )
+            raise ArcGISError(f"ArcGIS returned {resp.status_code} for {service_url}")
 
         data = resp.json()
 

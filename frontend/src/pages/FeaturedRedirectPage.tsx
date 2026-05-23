@@ -30,11 +30,8 @@ export default function FeaturedRedirectPage() {
             Featured location not found
           </h2>
           <p className="text-sm text-slate-400 mb-6 text-center max-w-sm">
-            The location &quot;{slug}&quot; hasn&apos;t been seeded yet. Run{" "}
-            <code className="text-amber-400 bg-navy-800 px-1.5 py-0.5 rounded text-xs">
-              make featured
-            </code>{" "}
-            to populate featured locations.
+            This featured location is not available. Try searching for an
+            address instead.
           </p>
           <Link
             to="/"

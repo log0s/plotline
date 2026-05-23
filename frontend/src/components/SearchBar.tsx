@@ -1,13 +1,12 @@
 /**
- * SearchBar — address input used on both the landing page (hero variant)
- * and explore page (compact variant in top nav).
+ * SearchBar — address input used on the landing page (hero variant).
  *
  * Features:
- * - Autocomplete suggestions from Nominatim via debounced API calls
+ * - Autocomplete suggestions via debounced API calls
  * - Keyboard navigation (arrow keys, Enter, Escape) through suggestions
  * - Loading spinner while geocoding
  * - Error display
- * - "Try these" example address chips (hero variant only)
+ * - "Try these" example address chips
  */
 import { AnimatePresence, motion } from "framer-motion";
 import { type FormEvent, useEffect, useRef, useState } from "react";
@@ -17,7 +16,6 @@ interface SearchBarProps {
   onSearch: (address: string, coords?: { lat: number; lon: number }) => void;
   isLoading: boolean;
   error: string | null;
-  variant?: "hero" | "compact";
 }
 
 const EXAMPLE_ADDRESSES: { address: string; lat: number; lon: number }[] = [
@@ -43,14 +41,12 @@ export function SearchBar({
   onSearch,
   isLoading,
   error,
-  variant = "hero",
 }: SearchBarProps) {
   const [value, setValue] = useState("");
   const [highlightIndex, setHighlightIndex] = useState(-1);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const isCompact = variant === "compact";
 
   const {
     suggestions,
@@ -198,68 +194,6 @@ export function SearchBar({
       })}
     </div>
   );
-
-  if (isCompact) {
-    return (
-      <form onSubmit={handleSubmit} className="flex items-center gap-2">
-        <div className="relative">
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-navy-800 border border-navy-700/60 focus-within:border-amber-500/60 transition-colors">
-            <svg
-              className="w-4 h-4 text-slate-500 flex-shrink-0"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"
-              />
-            </svg>
-            <input
-              ref={inputRef}
-              type="text"
-              value={value}
-              onChange={(e) => handleChange(e.target.value)}
-              onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-              onKeyDown={handleKeyDown}
-              placeholder="Search address..."
-              disabled={isLoading}
-              autoComplete="off"
-              className="bg-transparent text-white placeholder-slate-500 text-sm outline-none w-48 lg:w-64 disabled:opacity-60"
-              aria-label="Address search"
-              role="combobox"
-              aria-expanded={showSuggestions && suggestions.length > 0}
-              aria-autocomplete="list"
-            />
-          </div>
-          {suggestionDropdown}
-        </div>
-        {isLoading && (
-          <svg
-            className="animate-spin w-4 h-4 text-amber-400"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8v8z"
-            />
-          </svg>
-        )}
-      </form>
-    );
-  }
 
   return (
     <div className="w-full max-w-2xl mx-auto">

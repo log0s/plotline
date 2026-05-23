@@ -42,5 +42,3 @@ export async function getImagery(
   const response = await apiFetch(url, { signal: options?.signal });
   return handleResponse<ImageryListResponse>(response);
 }
-
-export { ApiRequestError } from "./client";

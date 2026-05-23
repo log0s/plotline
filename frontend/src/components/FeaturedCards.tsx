@@ -107,15 +107,11 @@ const PLACEHOLDER_CARDS: FeaturedLocation[] = [
 ];
 
 export function FeaturedCards() {
-  const { data: apiLocations, error } = useQuery({
+  const { data: apiLocations } = useQuery({
     queryKey: ["featured"],
     queryFn: getFeaturedLocations,
     staleTime: 10 * 60 * 1000,
   });
-
-  useEffect(() => {
-    if (error) console.error("Failed to load featured locations:", error);
-  }, [error]);
 
   useEffect(() => {
     if (!apiLocations) return;

@@ -1,5 +1,5 @@
 /**
- * Hook for debounced address autocomplete suggestions via Photon.
+ * Hook for debounced address autocomplete suggestions.
  *
  * Returns suggestions after the user pauses typing for 150ms.
  * Cancels in-flight requests when the query changes.

@@ -18,7 +18,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   property: "Property",
 };
 
-export interface EventTypeConfig {
+interface EventTypeConfig {
   label: string;
   color: string;
   icon: LucideIcon;

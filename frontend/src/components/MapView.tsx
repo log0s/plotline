@@ -5,6 +5,7 @@
  * as a raster layer with a crossfade transition via the shared
  * applyImageryLayer utility.
  */
+import { useEffect, useRef, useState } from "react";
 import {
   motion,
   useMotionValue,
@@ -13,10 +14,9 @@ import {
 } from "framer-motion";
 import { Info, LocateFixed } from "lucide-react";
 import maplibregl from "maplibre-gl";
-import { useEffect, useRef, useState } from "react";
 import { SOURCE_LABELS } from "../constants";
-import { applyImageryLayer } from "../utils/applyImageryLayer";
 import { useAppStore } from "../store";
+import { applyImageryLayer } from "../utils/applyImageryLayer";
 import type { GeocodeResponse, ImagerySnapshot } from "../types";
 
 interface MapViewProps {

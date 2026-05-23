@@ -57,7 +57,6 @@ export default function LandingPage() {
             onSearch={handleSearch}
             isLoading={isLoading}
             error={error}
-            variant="hero"
           />
         </div>
       </div>

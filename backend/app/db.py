@@ -99,6 +99,7 @@ def get_async_redis() -> _redis_async_lib.Redis[bytes]:
 
 
 async def close_async_redis() -> None:
+    """Close the shared async Redis client and release connections."""
     global _async_redis_client
     if _async_redis_client is not None:
         await _async_redis_client.close()
@@ -109,5 +110,5 @@ def check_redis_connection() -> bool:
     """Probe Redis — used by the health endpoint."""
     try:
         return get_redis().ping()
-    except Exception:
+    except (_redis_lib.RedisError, OSError):
         return False

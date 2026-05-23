@@ -72,9 +72,11 @@ async def query_ckan_datastore(
             raise CKANError(f"Request error: {exc}") from exc
 
         if resp.status_code != 200:
-            raise CKANError(
-                f"CKAN returned {resp.status_code} for {domain}/{resource_id}: {resp.text[:200]}"
+            logger.error(
+                "CKAN error response",
+                extra={"domain": domain, "resource": resource_id, "status": resp.status_code, "body": resp.text[:500]},
             )
+            raise CKANError(f"CKAN returned {resp.status_code} for {domain}/{resource_id}")
 
         data = resp.json()
         if not data.get("success"):

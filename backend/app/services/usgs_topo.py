@@ -37,6 +37,7 @@ _tnm_client: httpx.AsyncClient | None = None
 
 
 def _get_tnm_client() -> httpx.AsyncClient:
+    """Return a shared httpx client for TNM API requests."""
     global _tnm_client
     if _tnm_client is None:
         _tnm_client = httpx.AsyncClient(
@@ -47,6 +48,7 @@ def _get_tnm_client() -> httpx.AsyncClient:
 
 
 async def close_client() -> None:
+    """Close the shared TNM API client and release connections."""
     global _tnm_client
     if _tnm_client is not None:
         await _tnm_client.aclose()
@@ -111,6 +113,7 @@ def select_topo_items(items: list[dict[str, object]]) -> list[dict[str, object]]
 
 
 def extract_geotiff_url(item: dict[str, object]) -> str | None:
+    """Extract the GeoTIFF download URL from a TNM product item."""
     urls = item.get("urls")
     if isinstance(urls, dict):
         val = urls.get("GeoTIFF")
@@ -119,15 +122,18 @@ def extract_geotiff_url(item: dict[str, object]) -> str | None:
 
 
 def extract_publication_date(item: dict[str, object]) -> date:
+    """Return the publication year as a date (Jan 1 of that year)."""
     year = _publication_year(item) or 1900
     return date(year, 1, 1)
 
 
 def extract_source_id(item: dict[str, object]) -> str:
+    """Extract the USGS source ID from a TNM product item."""
     return str(item.get("sourceId", ""))
 
 
 def extract_bbox_wkt(item: dict[str, object]) -> str | None:
+    """Convert a TNM bounding box to a WKT POLYGON string."""
     bb = item.get("boundingBox")
     if not isinstance(bb, dict):
         return None

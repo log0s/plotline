@@ -6,12 +6,12 @@
  * The right map (B) is clipped with clip-path so only the portion to
  * the right of the divider is visible, revealing map A underneath on the left.
  */
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LocateFixed } from "lucide-react";
 import maplibregl from "maplibre-gl";
-import { useCallback, useEffect, useRef, useState } from "react";
 import { SOURCE_LABELS } from "../constants";
-import { applyImageryLayer } from "../utils/applyImageryLayer";
 import { useAppStore } from "../store";
+import { applyImageryLayer } from "../utils/applyImageryLayer";
 import type { GeocodeResponse, ImagerySnapshot } from "../types";
 
 interface CompareViewProps {

@@ -168,7 +168,7 @@ class DenverAdapter(CountyAdapter):
                     result_record_count=100,
                 )
             except Exception as exc:
-                logger.warning(f"Denver {label} permits query failed: {exc}")
+                logger.warning("Denver permits query failed", extra={"label": label}, exc_info=exc)
                 return []
 
         chunks = await asyncio.gather(
@@ -257,7 +257,7 @@ class AdamsCountyAdapter(CountyAdapter):
                 result_record_count=100,
             )
         except Exception as exc:
-            logger.warning(f"Adams County permits query failed: {exc}")
+            logger.warning("Adams County permits query failed", exc_info=exc)
             return []
         return [self._parse_permit(row) for row in rows]
 
@@ -346,7 +346,7 @@ class DCAdapter(CountyAdapter):
                 result_record_count=20,
             )
         except Exception as exc:
-            logger.warning(f"DC sales query failed: {exc}")
+            logger.warning("DC sales query failed", exc_info=exc)
             return []
         return [self._parse_sale(row) for row in rows if row.get("LAST_SALE_PRICE")]
 
@@ -396,7 +396,7 @@ class DCAdapter(CountyAdapter):
                     result_record_count=50,
                 )
             except Exception as exc:
-                logger.warning(f"DC permits {year_label} query failed: {exc}")
+                logger.warning("DC permits query failed", extra={"year_label": year_label}, exc_info=exc)
                 return []
 
         chunks = await asyncio.gather(*(_query(lid, label) for lid, label in self.PERMIT_LAYERS))
@@ -489,7 +489,7 @@ class SantaClaraAdapter(CountyAdapter):
                     limit=100,
                 )
             except Exception as exc:
-                logger.warning(f"San Jose {label} permits query failed: {exc}")
+                logger.warning("San Jose permits query failed", extra={"label": label}, exc_info=exc)
                 return []
 
         chunks = await asyncio.gather(*(_query(rid, label) for rid, label in self.PERMIT_RESOURCES))
@@ -589,7 +589,7 @@ class NewYorkCountyAdapter(CountyAdapter):
                 app_token=app_token,
             )
         except Exception as exc:
-            logger.warning(f"NYC sales query failed: {exc}")
+            logger.warning("NYC sales query failed", exc_info=exc)
             return []
         return [self._parse_sale(row) for row in rows]
 
@@ -646,7 +646,7 @@ class NewYorkCountyAdapter(CountyAdapter):
                 app_token=app_token,
             )
         except Exception as exc:
-            logger.warning(f"NYC permits query failed: {exc}")
+            logger.warning("NYC permits query failed", exc_info=exc)
             return []
         return [self._parse_permit(row) for row in rows]
 

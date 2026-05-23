@@ -5,8 +5,8 @@
  * (see src/hooks/queries.ts). A parcel that lands here with no existing
  * imagery triggers a fresh timeline job.
  */
-import { AnimatePresence, motion, useMotionValue } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useMotionValue } from "framer-motion";
 import {
   useLocation,
   useNavigate,

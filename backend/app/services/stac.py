@@ -164,6 +164,7 @@ def _get_sign_client() -> httpx.AsyncClient:
 
 
 async def close_clients() -> None:
+    """Close shared STAC HTTP clients and release connections."""
     global _search_client, _sign_client
     if _search_client is not None:
         await _search_client.aclose()

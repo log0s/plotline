@@ -40,5 +40,3 @@ export async function fetchAutocompleteSuggestions(
     return [];
   }
 }
-
-export { ApiRequestError } from "./client";

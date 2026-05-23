@@ -43,13 +43,6 @@ export interface ParcelResponse {
   created_at: string;
 }
 
-export interface HealthResponse {
-  status: "ok" | "degraded";
-  db: "connected" | "error";
-  redis: "connected" | "error";
-  version: string;
-}
-
 // ── Imagery / Timeline types ───────────────────────────────────────────────────
 
 export type ImagerySource = "naip" | "landsat" | "sentinel2" | "usgs_topo";
@@ -175,13 +168,6 @@ export interface FeaturedLocation {
   earliest_snapshot_id: string | null;
   latest_snapshot_id: string | null;
   preview_image_url: string | null;
-}
-
-// ── API Error shape ───────────────────────────────────────────────────────────
-
-export interface ApiError {
-  detail: string;
-  status: number;
 }
 
 // ── Application state (UI only — server data lives in React Query) ───────────

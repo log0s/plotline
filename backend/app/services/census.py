@@ -124,7 +124,7 @@ class CensusFetcher:
         """
         config = _DECENNIAL_CONFIGS.get(year)
         if not config:
-            logger.warning(f"No decennial config for year {year}")
+            logger.warning("No decennial config for year %d", year)
             return {}
 
         url = f"{self.BASE_URL}/{year}/{config['dataset']}"
@@ -164,7 +164,7 @@ class CensusFetcher:
         try:
             resp = await self.client.get(url, params=params)
         except httpx.HTTPError as exc:
-            logger.error(f"Census API request failed: {exc}", extra={"url": url})
+            logger.error("Census API request failed", extra={"url": url}, exc_info=exc)
             raise CensusApiError(f"HTTP error: {exc}") from exc
 
         if resp.status_code in (204, 404):
@@ -179,7 +179,7 @@ class CensusFetcher:
                 "Census API error",
                 extra={"url": url, "status": resp.status_code, "body": resp.text[:500]},
             )
-            raise CensusApiError(f"Census API returned {resp.status_code}: {resp.text[:200]}")
+            raise CensusApiError(f"Census API returned {resp.status_code}")
 
         return cast(list[list[str]], resp.json())
 
