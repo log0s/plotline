@@ -14,6 +14,7 @@ import uuid
 from typing import Any
 
 import httpx
+from celery.exceptions import SoftTimeLimitExceeded
 
 from app.services import demographics as demographics_service
 from app.services import imagery as imagery_service
@@ -706,7 +707,9 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
     # Load the request and its parcel
     with SessionLocal() as db:
         request = db.execute(
-            sa_select(TimelineRequest).where(TimelineRequest.id == req_uuid)
+            sa_select(TimelineRequest)
+            .where(TimelineRequest.id == req_uuid)
+            .with_for_update()
         ).scalars().first()
         if not request:
             raise ValueError(f"TimelineRequest {timeline_request_id!r} not found")
@@ -846,7 +849,7 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
 # ── Celery task ────────────────────────────────────────────────────────────────
 
 
-@celery_app.task(bind=True, name="tasks.fetch_imagery_timeline", max_retries=3)  # type: ignore[misc]
+@celery_app.task(bind=True, name="tasks.fetch_imagery_timeline", max_retries=3, soft_time_limit=1800, time_limit=2100)  # type: ignore[misc]
 def fetch_imagery_timeline(self: Any, timeline_request_id: str) -> dict[str, Any]:  # type: ignore[misc]
     """Fetch NAIP, Landsat, and Sentinel-2 imagery for a timeline request.
 
@@ -862,6 +865,29 @@ def fetch_imagery_timeline(self: Any, timeline_request_id: str) -> dict[str, Any
     )
     try:
         return asyncio.run(_run_timeline(timeline_request_id))
+    except SoftTimeLimitExceeded:
+        logger.error(
+            "Timeline request %s timed out after 30 minutes",
+            timeline_request_id,
+        )
+        try:
+            from sqlalchemy import select as sa_select
+
+            from app.db import SessionLocal
+            from app.models.parcels import TimelineRequest
+
+            req_uuid = uuid.UUID(timeline_request_id)
+            with SessionLocal() as db:
+                request = db.execute(
+                    sa_select(TimelineRequest).where(TimelineRequest.id == req_uuid)
+                ).scalars().first()
+                if request:
+                    imagery_service.update_timeline_request_status(
+                        db, request, "failed", error_message="Task timed out"
+                    )
+        except Exception:
+            pass
+        raise
     except Exception as exc:
         # Boundary: anything escaping _run_timeline gets surfaced as a
         # failed TimelineRequest so the user sees a definitive status.

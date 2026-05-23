@@ -2,17 +2,11 @@
 
 from __future__ import annotations
 
-import logging
+from fastapi import APIRouter, Response
 
-import redis as redis_client
-from fastapi import APIRouter, Depends, Response
-from redis.exceptions import RedisError
-
-from app.config import Settings, get_settings
-from app.db import check_db_connection
+from app.db import check_db_connection, check_redis_connection
 from app.schemas.parcels import HealthResponse
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -25,17 +19,9 @@ router = APIRouter()
 )
 def health_check(
     response: Response,
-    settings: Settings = Depends(get_settings),
 ) -> HealthResponse:
     db_status = "connected" if check_db_connection() else "error"
-
-    try:
-        r = redis_client.from_url(settings.redis_url, socket_connect_timeout=2)
-        r.ping()
-        redis_status = "connected"
-    except (RedisError, OSError):
-        logger.warning("Redis health check failed")
-        redis_status = "error"
+    redis_status = "connected" if check_redis_connection() else "error"
 
     overall = "ok" if (db_status == "connected" and redis_status == "connected") else "degraded"
     if overall != "ok":

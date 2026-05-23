@@ -80,88 +80,88 @@ async def geocode_address(address: str, settings: Settings) -> GeocodeResult:
 
     last_exc: Exception | None = None
 
-    for attempt in range(1, _MAX_ATTEMPTS + 1):
-        logger.info(
-            "Calling Census Geocoder",
-            extra={"address": address, "attempt": attempt},
-        )
-        try:
-            async with httpx.AsyncClient(timeout=settings.census_geocoder_timeout) as client:
+    async with httpx.AsyncClient(timeout=settings.census_geocoder_timeout) as client:
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            logger.info(
+                "Calling Census Geocoder",
+                extra={"address": address, "attempt": attempt},
+            )
+            try:
                 response = await client.get(settings.census_geocoder_url, params=params)
                 response.raise_for_status()
-        except httpx.TimeoutException as exc:
-            last_exc = exc
-            logger.warning(
-                "Census Geocoder timeout",
-                extra={"attempt": attempt, "timeout": settings.census_geocoder_timeout},
+            except httpx.TimeoutException as exc:
+                last_exc = exc
+                logger.warning(
+                    "Census Geocoder timeout",
+                    extra={"attempt": attempt, "timeout": settings.census_geocoder_timeout},
+                )
+                if attempt < _MAX_ATTEMPTS:
+                    await asyncio.sleep(1.0)
+                continue
+            except httpx.HTTPStatusError as exc:
+                raise GeocoderUnavailableError(
+                    f"Census Geocoder returned HTTP {exc.response.status_code}"
+                ) from exc
+            except httpx.RequestError as exc:
+                raise GeocoderUnavailableError(
+                    f"Network error contacting Census Geocoder: {exc}"
+                ) from exc
+
+            # Success — parse and return
+            data = response.json()
+            address_matches = data.get("result", {}).get("addressMatches", [])
+
+            if not address_matches:
+                raise AddressNotFoundError(
+                    f"No geocoding match found for address: {address!r}"
+                )
+
+            match = address_matches[0]
+            coords = match["coordinates"]
+            geographies = match.get("geographies", {})
+
+            census_tract_id: str | None = None
+            county: str | None = None
+            state_fips: str | None = None
+
+            census_tracts = geographies.get("Census Tracts", [])
+            if census_tracts:
+                tract = census_tracts[0]
+                state_fips = tract.get("STATE")
+                county_fips = tract.get("COUNTY")
+                tract_fips = tract.get("TRACT")
+                if state_fips and county_fips and tract_fips:
+                    census_tract_id = f"{state_fips}{county_fips}{tract_fips}"
+
+            # County name comes from the Counties geography, not the tract
+            counties = geographies.get("Counties", [])
+            if counties:
+                county = counties[0].get("BASENAME")
+            elif census_tracts:
+                county = census_tracts[0].get("NAME", "").split(",")[0].strip() or None
+
+            logger.info(
+                "Census Geocoder match found",
+                extra={
+                    "normalized_address": match.get("matchedAddress"),
+                    "lat": coords["y"],
+                    "lng": coords["x"],
+                },
             )
-            if attempt < _MAX_ATTEMPTS:
-                await asyncio.sleep(1.0)
-            continue
-        except httpx.HTTPStatusError as exc:
-            raise GeocoderUnavailableError(
-                f"Census Geocoder returned HTTP {exc.response.status_code}"
-            ) from exc
-        except httpx.RequestError as exc:
-            raise GeocoderUnavailableError(
-                f"Network error contacting Census Geocoder: {exc}"
-            ) from exc
 
-        # Success — parse and return
-        data = response.json()
-        address_matches = data.get("result", {}).get("addressMatches", [])
-
-        if not address_matches:
-            raise AddressNotFoundError(
-                f"No geocoding match found for address: {address!r}"
+            return GeocodeResult(
+                normalized_address=match.get("matchedAddress", address),
+                latitude=float(coords["y"]),
+                longitude=float(coords["x"]),
+                census_tract_id=census_tract_id,
+                county=county,
+                state_fips=state_fips,
             )
 
-        match = address_matches[0]
-        coords = match["coordinates"]
-        geographies = match.get("geographies", {})
-
-        census_tract_id: str | None = None
-        county: str | None = None
-        state_fips: str | None = None
-
-        census_tracts = geographies.get("Census Tracts", [])
-        if census_tracts:
-            tract = census_tracts[0]
-            state_fips = tract.get("STATE")
-            county_fips = tract.get("COUNTY")
-            tract_fips = tract.get("TRACT")
-            if state_fips and county_fips and tract_fips:
-                census_tract_id = f"{state_fips}{county_fips}{tract_fips}"
-
-        # County name comes from the Counties geography, not the tract
-        counties = geographies.get("Counties", [])
-        if counties:
-            county = counties[0].get("BASENAME")
-        elif census_tracts:
-            county = census_tracts[0].get("NAME", "").split(",")[0].strip() or None
-
-        logger.info(
-            "Census Geocoder match found",
-            extra={
-                "normalized_address": match.get("matchedAddress"),
-                "lat": coords["y"],
-                "lng": coords["x"],
-            },
-        )
-
-        return GeocodeResult(
-            normalized_address=match.get("matchedAddress", address),
-            latitude=float(coords["y"]),
-            longitude=float(coords["x"]),
-            census_tract_id=census_tract_id,
-            county=county,
-            state_fips=state_fips,
-        )
-
-    raise GeocoderUnavailableError(
-        f"Census Geocoder timed out after {_MAX_ATTEMPTS} attempts "
-        f"({settings.census_geocoder_timeout}s each)"
-    ) from last_exc
+        raise GeocoderUnavailableError(
+            f"Census Geocoder timed out after {_MAX_ATTEMPTS} attempts "
+            f"({settings.census_geocoder_timeout}s each)"
+        ) from last_exc
 
 
 async def reverse_geocode(
@@ -201,64 +201,64 @@ async def reverse_geocode(
 
     last_exc: Exception | None = None
 
-    for attempt in range(1, _MAX_ATTEMPTS + 1):
-        logger.info(
-            "Calling Census reverse geocoder",
-            extra={"lat": latitude, "lon": longitude, "attempt": attempt},
-        )
-        try:
-            async with httpx.AsyncClient(timeout=settings.census_geocoder_timeout) as client:
+    async with httpx.AsyncClient(timeout=settings.census_geocoder_timeout) as client:
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            logger.info(
+                "Calling Census reverse geocoder",
+                extra={"lat": latitude, "lon": longitude, "attempt": attempt},
+            )
+            try:
                 response = await client.get(url, params=params)
                 response.raise_for_status()
-        except httpx.TimeoutException as exc:
-            last_exc = exc
-            logger.warning(
-                "Census reverse geocoder timeout",
-                extra={"attempt": attempt},
+            except httpx.TimeoutException as exc:
+                last_exc = exc
+                logger.warning(
+                    "Census reverse geocoder timeout",
+                    extra={"attempt": attempt},
+                )
+                if attempt < _MAX_ATTEMPTS:
+                    await asyncio.sleep(1.0)
+                continue
+            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+                raise GeocoderUnavailableError(
+                    f"Census reverse geocoder error: {exc}"
+                ) from exc
+
+            geographies = response.json().get("result", {}).get("geographies", {})
+
+            census_tract_id: str | None = None
+            county: str | None = None
+            state_fips: str | None = None
+
+            census_tracts = geographies.get("Census Tracts", [])
+            if census_tracts:
+                tract = census_tracts[0]
+                state_fips = tract.get("STATE")
+                county_fips = tract.get("COUNTY")
+                tract_fips = tract.get("TRACT")
+                if state_fips and county_fips and tract_fips:
+                    census_tract_id = f"{state_fips}{county_fips}{tract_fips}"
+
+            counties = geographies.get("Counties", [])
+            if counties:
+                county = counties[0].get("BASENAME")
+            elif census_tracts:
+                county = census_tracts[0].get("NAME", "").split(",")[0].strip() or None
+
+            logger.info(
+                "Census reverse geocode complete",
+                extra={"census_tract": census_tract_id, "county": county},
             )
-            if attempt < _MAX_ATTEMPTS:
-                await asyncio.sleep(1.0)
-            continue
-        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-            raise GeocoderUnavailableError(
-                f"Census reverse geocoder error: {exc}"
-            ) from exc
 
-        geographies = response.json().get("result", {}).get("geographies", {})
+            return GeocodeResult(
+                normalized_address=address,
+                latitude=latitude,
+                longitude=longitude,
+                census_tract_id=census_tract_id,
+                county=county,
+                state_fips=state_fips,
+            )
 
-        census_tract_id: str | None = None
-        county: str | None = None
-        state_fips: str | None = None
-
-        census_tracts = geographies.get("Census Tracts", [])
-        if census_tracts:
-            tract = census_tracts[0]
-            state_fips = tract.get("STATE")
-            county_fips = tract.get("COUNTY")
-            tract_fips = tract.get("TRACT")
-            if state_fips and county_fips and tract_fips:
-                census_tract_id = f"{state_fips}{county_fips}{tract_fips}"
-
-        counties = geographies.get("Counties", [])
-        if counties:
-            county = counties[0].get("BASENAME")
-        elif census_tracts:
-            county = census_tracts[0].get("NAME", "").split(",")[0].strip() or None
-
-        logger.info(
-            "Census reverse geocode complete",
-            extra={"census_tract": census_tract_id, "county": county},
-        )
-
-        return GeocodeResult(
-            normalized_address=address,
-            latitude=latitude,
-            longitude=longitude,
-            census_tract_id=census_tract_id,
-            county=county,
-            state_fips=state_fips,
-        )
-
-    raise GeocoderUnavailableError(
-        f"Census reverse geocoder timed out after {_MAX_ATTEMPTS} attempts"
-    ) from last_exc
+        raise GeocoderUnavailableError(
+            f"Census reverse geocoder timed out after {_MAX_ATTEMPTS} attempts"
+        ) from last_exc
