@@ -184,12 +184,19 @@ def maybe_refetch_for_backfill(
     needs_refetch = False
 
     if parcel.census_tract_id:
-        from app.services import demographics as demographics_service
-
-        if not demographics_service.get_census_snapshots(db, parcel.id):
+        census_task = (
+            db.execute(
+                select(TimelineRequestTask)
+                .where(TimelineRequestTask.timeline_request_id == existing_req.id)
+                .where(TimelineRequestTask.source == "census")
+            )
+            .scalars()
+            .first()
+        )
+        if not census_task:
             needs_refetch = True
             logger.info(
-                "Census data missing — refetch needed",
+                "Census task missing — refetch needed",
                 extra={"parcel_id": str(parcel.id)},
             )
 
