@@ -4,12 +4,13 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { Link, Navigate, useParams } from "react-router-dom";
+import { ApiRequestError } from "../api/client";
 import { getFeaturedBySlug } from "../api/featured";
 
 export default function FeaturedRedirectPage() {
   const { slug } = useParams<{ slug: string }>();
 
-  const { data, error, isLoading } = useQuery({
+  const { data, error } = useQuery({
     queryKey: ["featuredBySlug", slug],
     queryFn: () => getFeaturedBySlug(slug as string),
     enabled: !!slug,
@@ -21,6 +22,29 @@ export default function FeaturedRedirectPage() {
   }
 
   if (error) {
+    const isNotFound = error instanceof ApiRequestError && error.status === 404;
+    if (isNotFound) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen px-4">
+          <h2 className="text-2xl font-bold text-white mb-2">
+            Featured location not found
+          </h2>
+          <p className="text-sm text-slate-400 mb-6 text-center max-w-sm">
+            The location &quot;{slug}&quot; hasn&apos;t been seeded yet. Run{" "}
+            <code className="text-amber-400 bg-navy-800 px-1.5 py-0.5 rounded text-xs">
+              make featured
+            </code>{" "}
+            to populate featured locations.
+          </p>
+          <Link
+            to="/"
+            className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-navy-950 font-medium transition-colors"
+          >
+            Search an address instead
+          </Link>
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col items-center justify-center min-h-screen px-4">
         <h2 className="text-2xl font-bold text-white mb-2">
@@ -34,29 +58,6 @@ export default function FeaturedRedirectPage() {
           className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-navy-950 font-medium transition-colors"
         >
           Back to search
-        </Link>
-      </div>
-    );
-  }
-
-  if (!isLoading && !data) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen px-4">
-        <h2 className="text-2xl font-bold text-white mb-2">
-          Featured location not found
-        </h2>
-        <p className="text-sm text-slate-400 mb-6 text-center max-w-sm">
-          The location &quot;{slug}&quot; hasn&apos;t been seeded yet. Run{" "}
-          <code className="text-amber-400 bg-navy-800 px-1.5 py-0.5 rounded text-xs">
-            make featured
-          </code>{" "}
-          to populate featured locations.
-        </p>
-        <Link
-          to="/"
-          className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-navy-950 font-medium transition-colors"
-        >
-          Search an address instead
         </Link>
       </div>
     );

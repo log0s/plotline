@@ -1,42 +1,17 @@
-/**
- * ParcelInfo — sidebar panel displaying geocoded parcel metadata.
- *
- * Shows the normalized address, coordinates, census tract, and
- * a search-again input. Uses React Router for navigation.
- */
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  DollarSign,
-  FileText,
-  Hammer,
-  Pipette,
-  Trash2,
-  Wrench,
-  X,
-  Zap,
-} from "lucide-react";
-import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { SOURCE_LABELS } from "../constants";
 import { DemographicsPanel } from "./DemographicsPanel";
-import { useAddressAutocomplete } from "../hooks/useAddressAutocomplete";
+import { EventDetail } from "./EventDetail";
+import { SearchInput } from "./SearchInput";
 import { useGeocodeMutation } from "../hooks/queries";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { useAppStore } from "../store";
 import type {
   GeocodeResponse,
   ImagerySnapshot,
-  PropertyEvent,
   TimelineRequest,
 } from "../types";
-
-const SOURCE_LABELS: Record<string, string> = {
-  naip: "NAIP",
-  landsat: "Landsat",
-  sentinel2: "Sentinel-2",
-  usgs_topo: "USGS Topo",
-  census: "Census",
-  property: "Property",
-};
 
 function TaskRow({
   task,
@@ -103,19 +78,6 @@ function DataRow({ label, value, mono = false }: DataRowProps) {
     </div>
   );
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const EVENT_TYPE_CONFIG: Record<string, { label: string; color: string; icon: React.ComponentType<any> }> = {
-  sale: { label: "Sale", color: "bg-amber-500 text-amber-50", icon: DollarSign },
-  permit_building: { label: "Building", color: "bg-orange-600 text-orange-50", icon: Hammer },
-  permit_demolition: { label: "Demolition", color: "bg-red-600 text-red-50", icon: Trash2 },
-  permit_electrical: { label: "Electrical", color: "bg-yellow-600 text-yellow-50", icon: Zap },
-  permit_mechanical: { label: "Mechanical", color: "bg-slate-600 text-slate-50", icon: Wrench },
-  permit_plumbing: { label: "Plumbing", color: "bg-sky-600 text-sky-50", icon: Pipette },
-  permit_other: { label: "Permit", color: "bg-slate-600 text-slate-50", icon: FileText },
-  zoning_change: { label: "Zoning", color: "bg-purple-600 text-purple-50", icon: FileText },
-  assessment: { label: "Assessment", color: "bg-teal-600 text-teal-50", icon: FileText },
-};
 
 export function ParcelInfo({
   parcel,
@@ -282,240 +244,5 @@ export function ParcelInfo({
         />
       </div>
     </motion.aside>
-  );
-}
-
-// ── Compact inline search for the sidebar footer ─────────────────────────────
-
-interface SearchInputProps {
-  onSearch: (address: string, coords?: { lat: number; lon: number }) => void;
-  isLoading: boolean;
-  error: string | null;
-  onClearError: () => void;
-}
-
-function EventDetail({ event, onClose }: { event: PropertyEvent; onClose: () => void }) {
-  const config = EVENT_TYPE_CONFIG[event.event_type] ?? EVENT_TYPE_CONFIG.permit_other;
-  const Icon = config.icon;
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: "auto" }}
-      exit={{ opacity: 0, height: 0 }}
-      transition={{ duration: 0.2 }}
-      className="overflow-hidden"
-    >
-      <div className="mt-6">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <div className={`p-1.5 rounded-md ${config.color}`}>
-              <Icon size={14} />
-            </div>
-            <p className="data-label uppercase tracking-widest text-xs">
-              {config.label}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-navy-700 text-slate-500 hover:text-slate-300 transition-colors"
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        <div className="space-y-0">
-          {(event.description ?? null) && (
-            <div className="py-2 border-b border-navy-700/50">
-              <p className="data-label uppercase tracking-widest text-xs mb-0.5">Description</p>
-              <p className="text-sm text-white">{event.description}</p>
-            </div>
-          )}
-          <div className="py-2 border-b border-navy-700/50">
-            <p className="data-label uppercase tracking-widest text-xs mb-0.5">Date</p>
-            <p className="text-sm text-white font-mono">
-              {event.event_date
-                ? new Date(event.event_date + "T00:00:00").toLocaleDateString("en-US", {
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                  })
-                : "Unknown"}
-            </p>
-          </div>
-          {event.sale_price != null && event.sale_price > 0 && (
-            <div className="py-2 border-b border-navy-700/50">
-              <p className="data-label uppercase tracking-widest text-xs mb-0.5">Sale Price</p>
-              <p className="text-sm text-amber-400 font-mono font-medium">
-                ${event.sale_price.toLocaleString()}
-              </p>
-            </div>
-          )}
-          {event.permit_type && (
-            <div className="py-2 border-b border-navy-700/50">
-              <p className="data-label uppercase tracking-widest text-xs mb-0.5">Permit Type</p>
-              <p className="text-sm text-white">{event.permit_type}</p>
-            </div>
-          )}
-          {event.permit_valuation != null && event.permit_valuation > 0 && (
-            <div className="py-2 border-b border-navy-700/50">
-              <p className="data-label uppercase tracking-widest text-xs mb-0.5">Valuation</p>
-              <p className="text-sm text-white font-mono">
-                ${event.permit_valuation.toLocaleString()}
-              </p>
-            </div>
-          )}
-          {event.permit_description && (
-            <div className="py-2 border-b border-navy-700/50">
-              <p className="data-label uppercase tracking-widest text-xs mb-0.5">Details</p>
-              <p className="text-sm text-slate-300">{event.permit_description}</p>
-            </div>
-          )}
-          <div className="py-2">
-            <p className="data-label uppercase tracking-widest text-xs mb-0.5">Source</p>
-            <p className="text-sm text-slate-300">{event.source.replace("_", " ")}</p>
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-function SearchInput({ onSearch, isLoading, error, onClearError }: SearchInputProps) {
-  const { setQuery, suggestions, clear } = useAddressAutocomplete();
-  const [value, setValue] = useState("");
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [highlightIndex, setHighlightIndex] = useState(-1);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const handleSelect = (displayName: string, lat: number, lon: number) => {
-    setValue("");
-    setShowSuggestions(false);
-    clear();
-    onSearch(displayName, { lat, lon });
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (highlightIndex >= 0 && highlightIndex < suggestions.length) {
-      const s = suggestions[highlightIndex];
-      handleSelect(s.display_name, s.lat, s.lon);
-      return;
-    }
-    const addr = value.trim();
-    if (addr.length >= 5) {
-      setValue("");
-      clear();
-      setShowSuggestions(false);
-      onSearch(addr);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!showSuggestions || suggestions.length === 0) return;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setHighlightIndex((i) => Math.min(i + 1, suggestions.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setHighlightIndex((i) => Math.max(i - 1, 0));
-    } else if (e.key === "Escape") {
-      setShowSuggestions(false);
-    }
-  };
-
-  return (
-    <div>
-    <form onSubmit={handleSubmit} className="relative flex gap-2">
-      <div className="relative flex-1">
-        <input
-          ref={inputRef}
-          type="text"
-          value={value}
-          onChange={(e) => {
-            setValue(e.target.value);
-            setQuery(e.target.value);
-            setShowSuggestions(true);
-            setHighlightIndex(-1);
-            if (error) onClearError();
-          }}
-          onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-          onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-          onKeyDown={handleKeyDown}
-          placeholder="Search another address..."
-          disabled={isLoading}
-          className={`
-            w-full px-3 py-2 rounded-xl bg-navy-800 border
-            text-sm text-white placeholder-slate-500
-            focus:outline-none focus:border-amber-500/60
-            disabled:opacity-50
-            ${error ? "border-red-500/60" : "border-navy-600"}
-          `}
-        />
-        {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute left-0 right-0 bottom-full mb-1 z-50 bg-navy-800 border border-navy-600 rounded-xl shadow-2xl shadow-black/40 overflow-hidden">
-            {suggestions.map((s, i) => {
-              const parts = s.display_name.split(", ");
-              const primary = parts[0];
-              const secondary = parts.slice(1).join(", ");
-              return (
-                <button
-                  key={`${s.lat}-${s.lon}-${i}`}
-                  type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    handleSelect(s.display_name, s.lat, s.lon);
-                  }}
-                  onMouseEnter={() => setHighlightIndex(i)}
-                  className={`
-                    w-full text-left px-3 py-2 flex items-start gap-2
-                    transition-colors duration-75
-                    ${i === highlightIndex ? "bg-navy-700" : "hover:bg-navy-700/50"}
-                    ${i > 0 ? "border-t border-navy-700/40" : ""}
-                  `}
-                >
-                  <svg
-                    className="w-3.5 h-3.5 text-slate-500 mt-0.5 shrink-0"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  <div className="min-w-0">
-                    <span className="text-xs text-white block truncate">{primary}</span>
-                    {secondary && (
-                      <span className="text-[11px] text-slate-400 block truncate">{secondary}</span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-      <button
-        type="submit"
-        disabled={isLoading}
-        className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-navy-950 text-sm font-medium disabled:opacity-50 transition-colors shrink-0"
-      >
-        {isLoading ? "..." : "Go"}
-      </button>
-    </form>
-    <AnimatePresence>
-      {error && (
-        <motion.p
-          initial={{ opacity: 0, y: -4 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
-          className="mt-2 text-xs text-red-400"
-        >
-          {error}
-        </motion.p>
-      )}
-    </AnimatePresence>
-    </div>
   );
 }

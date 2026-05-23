@@ -9,6 +9,7 @@ import { motion, useMotionValue, useTransform, type MotionValue } from "framer-m
 import { Info, LocateFixed } from "lucide-react";
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
+import { SOURCE_LABELS } from "../constants";
 import { applyImageryLayer } from "../utils/applyImageryLayer";
 import { useAppStore } from "../store";
 import type { GeocodeResponse, ImagerySnapshot } from "../types";
@@ -20,13 +21,6 @@ interface MapViewProps {
 
 // OpenFreeMap — free, no API key needed
 const MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
-
-const SOURCE_LABELS: Record<string, string> = {
-  naip: "NAIP",
-  landsat: "Landsat",
-  sentinel2: "Sentinel-2",
-  usgs_topo: "USGS Topo",
-};
 
 function isWebGLSupported(): boolean {
   try {

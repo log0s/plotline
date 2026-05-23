@@ -1,5 +1,7 @@
 const BASE_URL = `${import.meta.env.VITE_API_BASE_URL ?? ""}/api/v1`;
 
+const API_TIMEOUT_MS = 30_000;
+
 class ApiRequestError extends Error {
   constructor(
     public readonly status: number,
@@ -40,4 +42,20 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export { ApiRequestError, BASE_URL, handleResponse };
+async function apiFetch(url: string, options?: RequestInit): Promise<Response> {
+  const timeoutSignal = AbortSignal.timeout(API_TIMEOUT_MS);
+  const signal = options?.signal
+    ? AbortSignal.any([timeoutSignal, options.signal])
+    : timeoutSignal;
+
+  try {
+    return await fetch(url, { ...options, signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      throw new ApiRequestError(0, "Request timed out");
+    }
+    throw error;
+  }
+}
+
+export { ApiRequestError, BASE_URL, apiFetch, handleResponse };

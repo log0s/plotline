@@ -10,17 +10,11 @@
  */
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  DollarSign,
-  Hammer,
   Map,
-  Trash2,
-  Wrench,
-  Zap,
-  Pipette,
-  FileText,
   SplitSquareHorizontal,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { EVENT_TYPE_CONFIG, SOURCE_LABELS } from "../constants";
 import { usePropertyEventsQuery } from "../hooks/queries";
 import { useAppStore } from "../store";
 import type {
@@ -38,33 +32,6 @@ const SOURCE_COLORS: Record<ImagerySource, string> = {
   landsat: "bg-blue-700 text-blue-100",
   sentinel2: "bg-violet-700 text-violet-100",
   usgs_topo: "bg-amber-700 text-amber-100",
-};
-
-const SOURCE_LABELS: Record<string, string> = {
-  naip: "NAIP",
-  landsat: "Landsat",
-  sentinel2: "Sentinel-2",
-  usgs_topo: "USGS Topo",
-  census: "Census",
-  property: "Property",
-};
-
-// ── Event type config ─────────────────────────────────────────────────────────
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const EVENT_TYPE_CONFIG: Record<
-  string,
-  { label: string; color: string; icon: React.ComponentType<any> }
-> = {
-  sale: { label: "Sale", color: "bg-amber-500 text-amber-50", icon: DollarSign },
-  permit_building: { label: "Building", color: "bg-orange-600 text-orange-50", icon: Hammer },
-  permit_demolition: { label: "Demolition", color: "bg-red-600 text-red-50", icon: Trash2 },
-  permit_electrical: { label: "Electrical", color: "bg-yellow-600 text-yellow-50", icon: Zap },
-  permit_mechanical: { label: "Mechanical", color: "bg-slate-600 text-slate-50", icon: Wrench },
-  permit_plumbing: { label: "Plumbing", color: "bg-sky-600 text-sky-50", icon: Pipette },
-  permit_other: { label: "Permit", color: "bg-slate-600 text-slate-50", icon: FileText },
-  zoning_change: { label: "Zoning", color: "bg-purple-600 text-purple-50", icon: FileText },
-  assessment: { label: "Assessment", color: "bg-teal-600 text-teal-50", icon: FileText },
 };
 
 // ── Unified timeline item type ───────────────────────────────────────────────

@@ -9,6 +9,7 @@
 import { LocateFixed } from "lucide-react";
 import maplibregl from "maplibre-gl";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SOURCE_LABELS } from "../constants";
 import { applyImageryLayer } from "../utils/applyImageryLayer";
 import { useAppStore } from "../store";
 import type { GeocodeResponse, ImagerySnapshot } from "../types";
@@ -18,13 +19,6 @@ interface CompareViewProps {
 }
 
 const MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
-
-const SOURCE_LABELS: Record<string, string> = {
-  naip: "NAIP",
-  landsat: "Landsat",
-  sentinel2: "Sentinel-2",
-  usgs_topo: "USGS Topo",
-};
 
 function formatDate(iso: string): string {
   const d = new Date(iso + "T00:00:00");
