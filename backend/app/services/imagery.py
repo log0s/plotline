@@ -130,12 +130,13 @@ def update_request_task(
     db: Session,
     task: TimelineRequestTask,
     status: str,
-    items_found: int = 0,
+    items_found: int | None = None,
     error_message: str | None = None,
 ) -> None:
     """Update a task's status fields."""
     task.status = status
-    task.items_found = items_found
+    if items_found is not None:
+        task.items_found = items_found
     if status == "processing":
         task.started_at = datetime.now(tz=UTC)
     elif status in ("complete", "failed", "skipped"):
@@ -243,6 +244,22 @@ def maybe_refetch_for_backfill(
 
 
 # ── Imagery snapshot helpers ──────────────────────────────────────────────────
+
+
+def count_imagery_snapshots(
+    db: Session,
+    parcel_id: uuid.UUID,
+    source: str,
+) -> int:
+    """Return the total number of imagery snapshots for a parcel + source."""
+    row = db.execute(
+        sa_text(
+            "SELECT COUNT(*) FROM imagery_snapshots"
+            " WHERE parcel_id = :parcel_id AND source = :source"
+        ),
+        {"parcel_id": str(parcel_id), "source": source},
+    ).scalar()
+    return int(row or 0)
 
 
 def upsert_imagery_snapshot(

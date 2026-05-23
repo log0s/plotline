@@ -96,6 +96,20 @@ def upsert_property_event(
     return inserted > 0
 
 
+def count_property_events(
+    db: Session,
+    parcel_id: uuid.UUID,
+) -> int:
+    """Return the total number of property events for a parcel."""
+    row = db.execute(
+        sa_text(
+            "SELECT COUNT(*) FROM property_events WHERE parcel_id = :parcel_id"
+        ),
+        {"parcel_id": str(parcel_id)},
+    ).scalar()
+    return int(row or 0)
+
+
 def get_property_events(
     db: Session,
     parcel_id: uuid.UUID,

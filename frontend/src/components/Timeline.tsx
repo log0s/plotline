@@ -304,7 +304,7 @@ export function Timeline({
     imageryLoading ||
     timelineStatus?.status === "queued" ||
     timelineStatus?.status === "processing" ||
-    (timelineRequestId != null && timelineStatus == null);
+    (timelineRequestId != null && timelineStatus == null && snapshots.length === 0);
 
   const isEmpty = !isProcessing && snapshots.length === 0;
 

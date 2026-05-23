@@ -97,7 +97,7 @@ export function ParcelInfo({
     imageryLoading ||
     timelineStatus?.status === "queued" ||
     timelineStatus?.status === "processing" ||
-    (timelineRequestId != null && timelineStatus == null);
+    (timelineRequestId != null && timelineStatus == null && snapshots.length === 0);
 
   const handleReset = () => {
     useAppStore.getState().reset();

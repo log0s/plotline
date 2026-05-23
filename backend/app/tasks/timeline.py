@@ -308,7 +308,7 @@ async def _fetch_source(
             )
             bbox_wkt = stac_service.extract_bbox_wkt(primary)
 
-            was_inserted = imagery_service.upsert_imagery_snapshot(
+            imagery_service.upsert_imagery_snapshot(
                 db,
                 parcel_id=parcel_id,
                 source=source_name,
@@ -322,10 +322,11 @@ async def _fetch_source(
                 cloud_cover_pct=float(cloud_cover) if cloud_cover is not None else None,
                 bbox_wkt=bbox_wkt,
             )
-            if was_inserted:
-                items_saved += 1
+            items_saved += 1
 
-        # Update task status
+        # Use actual DB count — covers items from prior runs too
+        total_items = imagery_service.count_imagery_snapshots(db, parcel_id, source_name)
+
         from sqlalchemy import select as sa_select
 
         from app.models.parcels import TimelineRequestTask
@@ -340,7 +341,7 @@ async def _fetch_source(
             .first()
         )
         if task_row:
-            imagery_service.update_request_task(db, task_row, "complete", items_found=items_saved)
+            imagery_service.update_request_task(db, task_row, "complete", items_found=total_items)
 
     logger.info(
         "Imagery source done",
@@ -410,7 +411,7 @@ async def _fetch_usgs_topo(
             if not cog_url:
                 continue
 
-            was_inserted = imagery_service.upsert_imagery_snapshot(
+            imagery_service.upsert_imagery_snapshot(
                 db,
                 parcel_id=parcel_id,
                 source=source_name,
@@ -423,8 +424,9 @@ async def _fetch_usgs_topo(
                 cloud_cover_pct=None,
                 bbox_wkt=topo_service.extract_bbox_wkt(item),
             )
-            if was_inserted:
-                items_saved += 1
+            items_saved += 1
+
+        total_items = imagery_service.count_imagery_snapshots(db, parcel_id, source_name)
 
         task_row = (
             db.execute(
@@ -436,7 +438,7 @@ async def _fetch_usgs_topo(
             .first()
         )
         if task_row:
-            imagery_service.update_request_task(db, task_row, "complete", items_found=items_saved)
+            imagery_service.update_request_task(db, task_row, "complete", items_found=total_items)
 
     logger.info("USGS topo done", extra={"items_saved": items_saved})
     return items_saved
@@ -540,8 +542,9 @@ async def _fetch_census(
     finally:
         await fetcher.close()
 
-    # Update task status
     with SessionLocal() as db:
+        total_items = demographics_service.count_census_snapshots(db, parcel_id)
+
         task_row = (
             db.execute(
                 sa_select(TimelineRequestTask)
@@ -552,7 +555,7 @@ async def _fetch_census(
             .first()
         )
         if task_row:
-            imagery_service.update_request_task(db, task_row, "complete", items_found=items_saved)
+            imagery_service.update_request_task(db, task_row, "complete", items_found=total_items)
 
     logger.info("Census fetch complete", extra={"items_saved": items_saved, "tract": tract_fips})
     return items_saved
@@ -696,7 +699,7 @@ async def _fetch_property(
         for event in matched_events:
             if not event.source_record_id:
                 continue
-            was_inserted = property_events_service.upsert_property_event(
+            property_events_service.upsert_property_event(
                 db,
                 parcel_id=parcel_id,
                 event_type=event.event_type,
@@ -710,10 +713,10 @@ async def _fetch_property(
                 source_record_id=event.source_record_id,
                 raw_data=event.raw_data,
             )
-            if was_inserted:
-                items_saved += 1
+            items_saved += 1
 
-        # Update task status
+        total_items = property_events_service.count_property_events(db, parcel_id)
+
         task_row = (
             db.execute(
                 sa_select(TimelineRequestTask)
@@ -728,7 +731,7 @@ async def _fetch_property(
                 db,
                 task_row,
                 "complete",
-                items_found=items_saved,
+                items_found=total_items,
             )
 
     logger.info(

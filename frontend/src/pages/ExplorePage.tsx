@@ -86,8 +86,6 @@ export default function ExplorePage() {
     triggerTimelineMutation,
   ]);
 
-  // When timeline hits "complete", do one last refetch after a short delay
-  // to catch any snapshot rows committed right at the tail of the final task.
   useEffect(() => {
     if (timelineRequestQuery.data?.status !== "complete") return;
     const t = setTimeout(() => void imageryQuery.refetch(), 500);
@@ -96,6 +94,8 @@ export default function ExplorePage() {
   }, [timelineRequestQuery.data?.status]);
 
   const snapshots = useMemo(() => imageryQuery.data ?? [], [imageryQuery.data]);
+
+  const imageryLoading = imageryQuery.isLoading;
 
   // Auto-select the most recent NAIP snapshot (or most recent overall)
   // the first time snapshots arrive for this parcel.
@@ -267,11 +267,7 @@ export default function ExplorePage() {
               timelineRequestId={timelineRequestId}
               timelineStatus={timelineRequestQuery.data ?? null}
               snapshots={snapshots}
-              imageryLoading={
-                imageryQuery.isLoading ||
-                (timelineRequestQuery.data?.status === "complete" &&
-                  imageryQuery.isFetching)
-              }
+              imageryLoading={imageryLoading}
             />
           </AnimatePresence>
         )}
@@ -288,11 +284,7 @@ export default function ExplorePage() {
               timelineRequestId={timelineRequestId}
               timelineStatus={timelineRequestQuery.data ?? null}
               snapshots={snapshots}
-              imageryLoading={
-                imageryQuery.isLoading ||
-                (timelineRequestQuery.data?.status === "complete" &&
-                  imageryQuery.isFetching)
-              }
+              imageryLoading={imageryLoading}
             />
           </MobileBottomSheet>
         )}
@@ -319,11 +311,7 @@ export default function ExplorePage() {
           snapshots={snapshots}
           timelineRequestId={timelineRequestId}
           timelineStatus={timelineRequestQuery.data ?? null}
-          imageryLoading={
-            imageryQuery.isLoading ||
-            (timelineRequestQuery.data?.status === "complete" &&
-              imageryQuery.isFetching)
-          }
+          imageryLoading={imageryLoading}
           onSnapshotSelect={handleSnapshotSelect}
         />
       </div>

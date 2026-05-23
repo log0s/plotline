@@ -121,6 +121,20 @@ def upsert_census_snapshot(
     return True
 
 
+def count_census_snapshots(
+    db: Session,
+    parcel_id: uuid.UUID,
+) -> int:
+    """Return the total number of census snapshots for a parcel."""
+    row = db.execute(
+        sa_text(
+            "SELECT COUNT(*) FROM census_snapshots WHERE parcel_id = :parcel_id"
+        ),
+        {"parcel_id": str(parcel_id)},
+    ).scalar()
+    return int(row or 0)
+
+
 def get_census_snapshots(
     db: Session,
     parcel_id: uuid.UUID,
