@@ -106,6 +106,9 @@ docker compose up
 
 That's it. Open [http://localhost:5173](http://localhost:5173).
 
+> **Reproducible builds:** Python dependencies are pinned in `backend/uv.lock`. To update
+> deps, install [uv](https://docs.astral.sh/uv/) and run `uv lock` in the `backend/` directory.
+
 The first startup takes a minute or two while Docker pulls images and runs migrations. Subsequent starts are fast.
 
 ### Seed featured locations (optional)

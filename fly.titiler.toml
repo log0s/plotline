@@ -7,7 +7,7 @@ app = 'plotline-titiler'
 primary_region = 'lax'
 
 [build]
-  image = 'ghcr.io/developmentseed/titiler:latest'
+  image = 'ghcr.io/developmentseed/titiler:1.2.1'
 
 [env]
   MAX_WORKERS = '2'
