@@ -223,12 +223,7 @@ async def list_imagery(
             )
         )
 
-    # Only cache non-empty responses — empty results may become stale when
-    # the timeline completes and imagery is inserted later.
-    if snapshot_responses:
-        response.headers["Cache-Control"] = "public, max-age=3600"
-    else:
-        response.headers["Cache-Control"] = "no-cache"
+    response.headers["Cache-Control"] = "no-cache"
 
     return ImageryListResponse(parcel_id=parcel_id, snapshots=snapshot_responses)
 
