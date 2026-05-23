@@ -62,7 +62,7 @@ async def search_usgs_topo(
     Returns raw product dicts from the TNM API, filtered to those with
     available GeoTIFF downloads.
     """
-    params = {
+    params: dict[str, str | int] = {
         "datasets": "Historical Topographic Maps",
         "bbox": f"{bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]}",
         "max": max_items,
@@ -77,8 +77,8 @@ async def search_usgs_topo(
     items: list[dict[str, object]] = data.get("items", [])
     return [
         item for item in items
-        if isinstance(item.get("urls"), dict)
-        and item["urls"].get("GeoTIFF")  # type: ignore[union-attr]
+        if isinstance((urls := item.get("urls")), dict)
+        and urls.get("GeoTIFF")
     ]
 
 

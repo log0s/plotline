@@ -39,7 +39,7 @@ class CensusSnapshotRow:
     vacancy_rate: float | None = None
     median_age: float | None = None
     median_gross_rent: int | None = None
-    raw_data: dict | None = None
+    raw_data: dict[str, Any] | None = None
 
 
 def upsert_census_snapshot(
@@ -50,7 +50,7 @@ def upsert_census_snapshot(
     dataset: str,
     year: int,
     data: dict[str, Any],
-    raw_data: dict | None = None,
+    raw_data: dict[str, Any] | None = None,
 ) -> bool:
     """Insert a census snapshot, updating on conflict (idempotent).
 

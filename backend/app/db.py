@@ -72,11 +72,11 @@ import redis.asyncio as _redis_async_lib  # noqa: E402
 
 _redis_lock = threading.Lock()
 _async_redis_lock = threading.Lock()
-_redis_client: _redis_lib.Redis | None = None
-_async_redis_client: _redis_async_lib.Redis | None = None
+_redis_client: _redis_lib.Redis[bytes] | None = None
+_async_redis_client: _redis_async_lib.Redis[bytes] | None = None
 
 
-def get_redis() -> _redis_lib.Redis:
+def get_redis() -> _redis_lib.Redis[bytes]:
     """Return a shared Redis client (binary mode for tile bytes)."""
     global _redis_client
     if _redis_client is None:
@@ -88,7 +88,7 @@ def get_redis() -> _redis_lib.Redis:
     return _redis_client
 
 
-def get_async_redis() -> _redis_async_lib.Redis:
+def get_async_redis() -> _redis_async_lib.Redis[bytes]:
     """Return a shared asyncio Redis client for use inside async handlers."""
     global _async_redis_client
     if _async_redis_client is None:
@@ -103,7 +103,7 @@ def get_async_redis() -> _redis_async_lib.Redis:
 async def close_async_redis() -> None:
     global _async_redis_client
     if _async_redis_client is not None:
-        await _async_redis_client.aclose()
+        await _async_redis_client.close()
         _async_redis_client = None
 
 

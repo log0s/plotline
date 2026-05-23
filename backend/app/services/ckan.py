@@ -7,7 +7,7 @@ adapters for jurisdictions that publish data on CKAN (e.g. San Jose).
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -88,4 +88,4 @@ async def query_ckan_datastore(
             "CKAN response",
             extra={"domain": domain, "resource": resource_id, "rows": len(records)},
         )
-        return records
+        return cast(list[dict[str, Any]], records)

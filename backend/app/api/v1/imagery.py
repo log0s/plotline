@@ -14,6 +14,7 @@ import json
 import logging
 import uuid
 from datetime import date
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -286,12 +287,12 @@ _TRANSPARENT_PNG = (
 
 async def _fetch_titiler(
     titiler_url: str,
-    params: dict[str, object] | list[tuple[str, str]],
+    params: dict[str, Any] | list[tuple[str, str]],
     snapshot_id: uuid.UUID,
 ) -> Response:
     """Forward a tile request to Titiler and return the response."""
     try:
-        upstream = await _get_titiler_client().get(titiler_url, params=params)
+        upstream = await _get_titiler_client().get(titiler_url, params=params)  # type: ignore[arg-type]  # params values are httpx-compatible primitives (str, int, list[str])
     except httpx.RequestError as exc:
         logger.error("Titiler request failed", exc_info=exc)
         raise HTTPException(status_code=502, detail="Titiler upstream unreachable") from exc
@@ -357,7 +358,7 @@ async def _proxy_cog_tile(
         signed_url = source_url
 
     band_params = _COG_PARAMS.get(snap.source, {"bidx": [1, 2, 3], "rescale": "0,255"})
-    params: dict[str, object] = {"url": signed_url, **band_params}
+    params: dict[str, Any] = {"url": signed_url, **band_params}
     titiler_url = f"{settings.titiler_url}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}"
     return await _fetch_titiler(titiler_url, params, snap.id)
 
@@ -376,7 +377,7 @@ async def _proxy_landsat_tile(
     # Landsat C2 L2 surface reflectance: uint16, nodata=0,
     # scale=2.75e-05, offset=-0.2.  Typical land DNs are 7000–20000.
     # rescale 7000,14000 gives good contrast for most land surfaces.
-    params: dict[str, object] = {
+    params: dict[str, Any] = {
         "url": stac_item_url,
         "assets": ["red", "green", "blue"],
         "asset_as_band": True,

@@ -88,4 +88,4 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Return a cached Settings instance. Inject via FastAPI Depends()."""
-    return Settings()  # type: ignore[call-arg]
+    return Settings()

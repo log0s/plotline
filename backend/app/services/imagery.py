@@ -17,6 +17,7 @@ from datetime import UTC, date, datetime
 
 from sqlalchemy import select
 from sqlalchemy import text as sa_text
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 
 from app.models.parcels import Parcel, TimelineRequest, TimelineRequestTask
@@ -334,7 +335,7 @@ def upsert_imagery_snapshot(
 def _is_postgres(db: Session) -> bool:
     """Return True if the bound engine is PostgreSQL (SQLite lacks PostGIS)."""
     try:
-        return db.get_bind().dialect.name == "postgresql"  # type: ignore[no-any-return]
+        return db.get_bind().dialect.name == "postgresql"
     except Exception:
         return False
 
@@ -446,7 +447,7 @@ def get_imagery_snapshots(
     ]
 
 
-def _row_bbox(row: dict[str, object]) -> tuple[float, float, float, float] | None:
+def _row_bbox(row: RowMapping) -> tuple[float, float, float, float] | None:
     """Return (w, s, e, n) from a row's bbox_w/s/e/n columns, or None if absent."""
     w = row.get("bbox_w")
     s = row.get("bbox_s")

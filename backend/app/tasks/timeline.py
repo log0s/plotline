@@ -11,7 +11,7 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from celery.exceptions import SoftTimeLimitExceeded
@@ -291,7 +291,8 @@ async def _fetch_source(
 
             thumbnail_url = stac_service.extract_thumbnail_url(primary)
             capture_date = stac_service.extract_capture_date(primary)
-            cloud_cover = primary.get("properties", {}).get("eo:cloud_cover")  # type: ignore[union-attr]
+            props = primary.get("properties")
+            cloud_cover = cast(dict[str, Any], props).get("eo:cloud_cover") if isinstance(props, dict) else None
             bbox_wkt = stac_service.extract_bbox_wkt(primary)
 
             was_inserted = imagery_service.upsert_imagery_snapshot(
@@ -849,8 +850,8 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
 # ── Celery task ────────────────────────────────────────────────────────────────
 
 
-@celery_app.task(bind=True, name="tasks.fetch_imagery_timeline", max_retries=3, soft_time_limit=1800, time_limit=2100)  # type: ignore[misc]
-def fetch_imagery_timeline(self: Any, timeline_request_id: str) -> dict[str, Any]:  # type: ignore[misc]
+@celery_app.task(bind=True, name="tasks.fetch_imagery_timeline", max_retries=3, soft_time_limit=1800, time_limit=2100)  # type: ignore[untyped-decorator]  # Celery task decorator lacks complete type stubs
+def fetch_imagery_timeline(self: Any, timeline_request_id: str) -> dict[str, Any]:
     """Fetch NAIP, Landsat, and Sentinel-2 imagery for a timeline request.
 
     Each source is fetched independently — a failure in one source does not

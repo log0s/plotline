@@ -7,7 +7,7 @@ Community Survey 5-year estimates (2009–2023) at the census-tract level.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -183,7 +183,7 @@ class CensusFetcher:
                 f"Census API returned {resp.status_code}: {resp.text[:200]}"
             )
 
-        return resp.json()
+        return cast(list[list[str]], resp.json())
 
 
 def parse_tract_fips(tract_fips: str) -> tuple[str, str, str]:

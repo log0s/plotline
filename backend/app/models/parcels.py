@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from typing import Any
 
 from geoalchemy2 import Geometry
 from sqlalchemy import (
@@ -310,7 +311,7 @@ class CensusSnapshot(Base):
     median_age: Mapped[float | None] = mapped_column(Double, nullable=True)
     median_gross_rent: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    raw_data: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -384,7 +385,7 @@ class PropertyEvent(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(Text, nullable=False)
     source_record_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    raw_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    raw_data: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

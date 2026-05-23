@@ -92,7 +92,7 @@ export default function ExplorePage() {
     if (timelineRequestQuery.data?.status !== "complete") return;
     const t = setTimeout(() => void imageryQuery.refetch(), 500);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run when status transitions, not on every refetch identity change
   }, [timelineRequestQuery.data?.status]);
 
   const snapshots = useMemo(() => imageryQuery.data ?? [], [imageryQuery.data]);
@@ -125,7 +125,7 @@ export default function ExplorePage() {
       setSelectedSnapshot(match);
       snapParamApplied.current = true;
     }
-  }, [snapshots]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [snapshots]); // eslint-disable-line react-hooks/exhaustive-deps -- one-shot deep-link apply; including setSelectedSnapshot/searchParams would re-trigger
 
   // User-driven snapshot selection: updates store AND URL.
   // Auto-select and deep-link paths bypass this and only touch store state,

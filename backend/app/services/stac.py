@@ -10,6 +10,7 @@ import asyncio
 import logging
 from collections import defaultdict
 from datetime import date
+from typing import Any, cast
 
 import httpx
 from shapely.geometry import Point
@@ -221,7 +222,7 @@ def filter_items_containing_point(
     result = []
     for item in items:
         bbox = item.get("bbox")
-        if not bbox or len(bbox) < 4:  # type: ignore[arg-type]
+        if not isinstance(bbox, list) or len(bbox) < 4:
             result.append(item)  # no bbox — keep it, can't verify
             continue
         w, s, e, n = float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])
@@ -257,7 +258,7 @@ def filter_items_intersecting_bbox(
     result = []
     for item in items:
         bbox = item.get("bbox")
-        if not bbox or len(bbox) < 4:  # type: ignore[arg-type]
+        if not isinstance(bbox, list) or len(bbox) < 4:
             result.append(item)
             continue
         item_bbox = (
@@ -272,7 +273,8 @@ def filter_items_intersecting_bbox(
 
 
 def _capture_date(item: dict[str, object]) -> date:
-    dt_str = str(item["properties"]["datetime"])  # type: ignore[index]
+    props = cast(dict[str, object], item["properties"])
+    dt_str = str(props["datetime"])
     return date.fromisoformat(dt_str[:10])
 
 
@@ -334,11 +336,11 @@ def select_naip_items(
                 _remaining: tuple[float, float, float, float] = remaining,
             ) -> tuple[float, float]:
                 bbox = item.get("bbox")
-                if not bbox or len(bbox) < 4:  # type: ignore[arg-type]
+                if not isinstance(bbox, list) or len(bbox) < 4:
                     return (0.0, float(abs(_doy(item) - target_doy)))
                 ib = (
-                    float(bbox[0]), float(bbox[1]),  # type: ignore[index]
-                    float(bbox[2]), float(bbox[3]),  # type: ignore[index]
+                    float(bbox[0]), float(bbox[1]),
+                    float(bbox[2]), float(bbox[3]),
                 )
                 area = _bbox_intersection_area(ib, _remaining)
                 # Maximize area, minimize doy distance
@@ -346,13 +348,13 @@ def select_naip_items(
 
             best = min(candidates, key=score)
             best_bbox = best.get("bbox")
-            if not best_bbox or len(best_bbox) < 4:  # type: ignore[arg-type]
+            if not isinstance(best_bbox, list) or len(best_bbox) < 4:
                 # No bbox to reason about; just take it and stop
                 selected_for_year.append(best)
                 break
             best_ibox = (
-                float(best_bbox[0]), float(best_bbox[1]),  # type: ignore[index]
-                float(best_bbox[2]), float(best_bbox[3]),  # type: ignore[index]
+                float(best_bbox[0]), float(best_bbox[1]),
+                float(best_bbox[2]), float(best_bbox[3]),
             )
             gain = _bbox_intersection_area(best_ibox, remaining)
             if gain <= 0 and selected_for_year:
@@ -368,15 +370,15 @@ def select_naip_items(
             covered_so_far = sum(
                 _bbox_intersection_area(
                     (
-                        float(s["bbox"][0]),  # type: ignore[index]
-                        float(s["bbox"][1]),  # type: ignore[index]
-                        float(s["bbox"][2]),  # type: ignore[index]
-                        float(s["bbox"][3]),  # type: ignore[index]
+                        float(sb[0]),
+                        float(sb[1]),
+                        float(sb[2]),
+                        float(sb[3]),
                     ),
                     viewport,
                 )
                 for s in selected_for_year
-                if s.get("bbox") and len(s["bbox"]) >= 4  # type: ignore[arg-type,index]
+                if isinstance((sb := s.get("bbox")), list) and len(sb) >= 4
             )
             if covered_so_far / viewport_area >= coverage_target:
                 break
@@ -433,7 +435,7 @@ def select_landsat_items(items: list[dict[str, object]]) -> list[list[dict[str, 
         pick = min(
             pool,
             key=lambda i: float(
-                i["properties"].get("eo:cloud_cover", 100)  # type: ignore[union-attr]
+                cast(dict[str, Any], i["properties"]).get("eo:cloud_cover", 100)
             ),
         )
         selected.append(pick)
@@ -457,7 +459,7 @@ def select_sentinel_items(items: list[dict[str, object]]) -> list[list[dict[str,
         min(
             q_items,
             key=lambda i: float(
-                i["properties"].get("eo:cloud_cover", 100)  # type: ignore[union-attr]
+                cast(dict[str, Any], i["properties"]).get("eo:cloud_cover", 100)
             ),
         )
         for q_items in by_quarter.values()
@@ -495,7 +497,7 @@ def extract_cog_url(item: dict[str, object], collection: str) -> str | None:
 
     Returns None if no suitable asset / link is found.
     """
-    assets: dict[str, dict[str, object]] = item.get("assets", {})  # type: ignore[assignment]
+    assets: dict[str, dict[str, object]] = item.get("assets", {})  # type: ignore[assignment]  # STAC item "assets" is a dict of asset objects
 
     if collection == "naip":
         if "image" in assets and assets["image"].get("href") and _is_cog_asset(assets["image"]):
@@ -506,7 +508,7 @@ def extract_cog_url(item: dict[str, object], collection: str) -> str | None:
         # Store the STAC item self-link — the tile proxy uses Titiler's
         # /stac/tiles/ endpoint with per-asset signing at request time to
         # compose a true-colour RGB from the red, green, and blue band COGs.
-        links: list[dict[str, str]] = item.get("links", [])  # type: ignore[assignment]
+        links: list[dict[str, str]] = item.get("links", [])  # type: ignore[assignment]  # STAC item "links" is a list of link objects
         self_href = next((lnk["href"] for lnk in links if lnk.get("rel") == "self"), None)
         if self_href:
             return str(self_href)
@@ -533,7 +535,7 @@ def extract_thumbnail_url(item: dict[str, object]) -> str | None:
     Checks standard STAC thumbnail/preview asset keys.
     Returns None if none are available (caller should generate via Titiler).
     """
-    assets: dict[str, dict[str, object]] = item.get("assets", {})  # type: ignore[assignment]
+    assets: dict[str, dict[str, object]] = item.get("assets", {})  # type: ignore[assignment]  # STAC item "assets" is a dict of asset objects
     for key in ("rendered_preview", "thumbnail", "overview"):
         if key in assets and assets[key].get("href"):
             return str(assets[key]["href"])
@@ -552,7 +554,7 @@ async def validate_landsat_item(item: dict[str, object]) -> bool:
     assets on Planetary Computer.  A single-band canary check is enough
     because all bands share the same storage container.
     """
-    assets: dict[str, dict[str, object]] = item.get("assets", {})  # type: ignore[assignment]
+    assets: dict[str, dict[str, object]] = item.get("assets", {})  # type: ignore[assignment]  # STAC item "assets" is a dict of asset objects
     red = assets.get("red")
     if not red or not red.get("href"):
         logger.info("Landsat item missing red band", extra={"item_id": item.get("id")})
@@ -602,7 +604,9 @@ async def validate_landsat_selection(
         by_year[_capture_date(item).year].append(item)
     for year_items in by_year.values():
         year_items.sort(
-            key=lambda i: float(i["properties"].get("eo:cloud_cover", 100)),  # type: ignore[attr-defined]
+            key=lambda i: float(
+                cast(dict[str, Any], i["properties"]).get("eo:cloud_cover", 100)
+            ),
         )
 
     # Validate all selected items in parallel
@@ -650,7 +654,7 @@ async def validate_landsat_selection(
 def extract_bbox_wkt(item: dict[str, object]) -> str | None:
     """Extract the item bounding box as a WKT POLYGON string, or None."""
     bbox = item.get("bbox")
-    if not bbox or len(bbox) < 4:  # type: ignore[arg-type]
+    if not isinstance(bbox, list) or len(bbox) < 4:
         return None
     w, s, e, n = bbox[0], bbox[1], bbox[2], bbox[3]
     return f"SRID=4326;POLYGON(({w} {s},{e} {s},{e} {n},{w} {n},{w} {s}))"

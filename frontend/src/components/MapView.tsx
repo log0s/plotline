@@ -105,8 +105,8 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
       map.remove();
       mapRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only runs once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- map init runs once; deps would remount the GL context
+  }, []);
 
   // Update marker whenever parcel changes
   useEffect(() => {

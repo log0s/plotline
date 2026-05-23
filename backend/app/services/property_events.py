@@ -37,7 +37,7 @@ class PropertyEventRow:
     description: str | None
     source: str
     source_record_id: str | None
-    raw_data: dict | None = None
+    raw_data: dict[str, Any] | None = None
 
 
 def upsert_property_event(
@@ -53,7 +53,7 @@ def upsert_property_event(
     description: str | None,
     source: str,
     source_record_id: str,
-    raw_data: dict | None = None,
+    raw_data: dict[str, Any] | None = None,
 ) -> bool:
     """Insert a property event, skipping on conflict (idempotent).
 
@@ -92,7 +92,8 @@ def upsert_property_event(
 
     result = db.execute(sql, params)
     db.commit()
-    return result.rowcount > 0
+    inserted: int = result.rowcount  # type: ignore[attr-defined]  # text() returns CursorResult which has rowcount
+    return inserted > 0
 
 
 def get_property_events(
@@ -183,7 +184,7 @@ def compute_price_summary(
         e for e in events
         if e.event_type == "sale" and e.sale_price and e.sale_price > 0 and e.event_date
     ]
-    sales.sort(key=lambda e: e.event_date)  # type: ignore[arg-type]
+    sales.sort(key=lambda e: e.event_date or date.min)
 
     price_history = [
         {"date": str(s.event_date), "price": s.sale_price}
