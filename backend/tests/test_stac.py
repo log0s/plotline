@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import date
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from app.services.stac import (
@@ -351,3 +352,379 @@ async def test_sign_pc_url() -> None:
         result = await sign_pc_url("https://example.com/asset.tif")
 
     assert result == signed
+
+
+# ── sign_pc_url cache hit ────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_sign_pc_url_cache_hit() -> None:
+    """When Redis has a cached signed URL, return it without calling the API."""
+    cached = "https://example.com/asset.tif?sv=cached"
+
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = cached.encode()
+
+    with (
+        patch("app.db.get_async_redis", return_value=mock_redis),
+    ):
+        result = await sign_pc_url("https://example.com/asset.tif")
+
+    assert result == cached
+
+
+@pytest.mark.asyncio
+async def test_sign_pc_url_redis_read_failure_falls_through() -> None:
+    """Redis read failure should fall through to API call."""
+    from redis.exceptions import RedisError
+
+    signed = "https://example.com/asset.tif?sv=fresh"
+    mock_client, _ = _make_httpx_mock_client("get", {"href": signed})
+
+    mock_redis = AsyncMock()
+    mock_redis.get.side_effect = RedisError("connection lost")
+    mock_redis.setex.return_value = None
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=mock_redis),
+    ):
+        result = await sign_pc_url("https://example.com/asset.tif")
+
+    assert result == signed
+
+
+@pytest.mark.asyncio
+async def test_sign_pc_url_redis_write_failure_still_returns() -> None:
+    """Redis write failure should not prevent the signed URL from being returned."""
+    from redis.exceptions import RedisError
+
+    signed = "https://example.com/asset.tif?sv=fresh"
+    mock_client, _ = _make_httpx_mock_client("get", {"href": signed})
+
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = None
+    mock_redis.setex.side_effect = RedisError("connection lost")
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=mock_redis),
+    ):
+        result = await sign_pc_url("https://example.com/asset.tif")
+
+    assert result == signed
+
+
+# ── Spatial filtering ────────────────────────────────────────────────────────
+
+
+def test_filter_items_containing_point_keeps_matching() -> None:
+    from app.services.stac import filter_items_containing_point
+
+    items = [
+        {"id": "covers", "bbox": [-105.0, 39.0, -104.0, 40.0]},
+        {"id": "outside", "bbox": [-100.0, 35.0, -99.0, 36.0]},
+        {"id": "no-bbox"},
+    ]
+    result = filter_items_containing_point(items, lat=39.5, lng=-104.5)
+    ids = [i["id"] for i in result]
+    assert "covers" in ids
+    assert "outside" not in ids
+    assert "no-bbox" in ids  # items without bbox are kept
+
+
+def test_filter_items_intersecting_bbox_keeps_overlap() -> None:
+    from app.services.stac import filter_items_intersecting_bbox
+
+    viewport = (-105.0, 39.0, -104.0, 40.0)
+    items = [
+        {"id": "overlap", "bbox": [-104.5, 39.5, -103.0, 40.5]},
+        {"id": "disjoint", "bbox": [-100.0, 35.0, -99.0, 36.0]},
+        {"id": "no-bbox"},
+    ]
+    result = filter_items_intersecting_bbox(items, viewport)
+    ids = [i["id"] for i in result]
+    assert "overlap" in ids
+    assert "disjoint" not in ids
+    assert "no-bbox" in ids
+
+
+def test_bbox_intersection_area_no_overlap() -> None:
+    from app.services.stac import _bbox_intersection_area
+
+    a = (-105.0, 39.0, -104.0, 40.0)
+    b = (-100.0, 35.0, -99.0, 36.0)
+    assert _bbox_intersection_area(a, b) == 0.0
+
+
+def test_bbox_intersection_area_partial_overlap() -> None:
+    from app.services.stac import _bbox_intersection_area
+
+    a = (-105.0, 39.0, -104.0, 40.0)
+    b = (-104.5, 39.5, -103.5, 40.5)
+    area = _bbox_intersection_area(a, b)
+    assert area > 0
+    assert area == pytest.approx(0.5 * 0.5, rel=1e-6)
+
+
+# ── extract_bbox_wkt ─────────────────────────────────────────────────────────
+
+
+def test_extract_bbox_wkt_valid() -> None:
+    from app.services.stac import extract_bbox_wkt
+
+    item = {"bbox": [-105.0, 39.0, -104.0, 40.0]}
+    wkt = extract_bbox_wkt(item)
+    assert wkt is not None
+    assert "POLYGON" in wkt
+    assert "SRID=4326" in wkt
+
+
+def test_extract_bbox_wkt_missing() -> None:
+    from app.services.stac import extract_bbox_wkt
+
+    assert extract_bbox_wkt({}) is None
+    assert extract_bbox_wkt({"bbox": None}) is None
+    assert extract_bbox_wkt({"bbox": [1, 2]}) is None
+
+
+# ── extract_capture_date ─────────────────────────────────────────────────────
+
+
+def test_extract_capture_date() -> None:
+    from app.services.stac import extract_capture_date
+
+    item = {"properties": {"datetime": "2021-07-15T10:30:00Z"}}
+    d = extract_capture_date(item)
+    assert d == date(2021, 7, 15)
+
+
+# ── search_stac pagination ──────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_search_stac_follows_next_link() -> None:
+    """search_stac should follow next links to paginate results."""
+    from unittest.mock import MagicMock as SyncMock
+
+    page1 = {
+        "features": [{"id": "item-1"}],
+        "links": [{"rel": "next", "href": "https://stac.example.com/page2"}],
+    }
+    page2 = {
+        "features": [{"id": "item-2"}],
+        "links": [],
+    }
+
+    mock_resp_1 = SyncMock()
+    mock_resp_1.raise_for_status = SyncMock()
+    mock_resp_1.json = SyncMock(return_value=page1)
+
+    mock_resp_2 = SyncMock()
+    mock_resp_2.raise_for_status = SyncMock()
+    mock_resp_2.json = SyncMock(return_value=page2)
+
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=mock_resp_1)
+    mock_client.get = AsyncMock(return_value=mock_resp_2)
+
+    with patch("app.services.stac._get_search_client", return_value=mock_client):
+        items = await search_stac(
+            collection="naip",
+            bbox=(-105.0, 39.7, -104.9, 39.8),
+            datetime_range="2020-01-01/2021-12-31",
+            max_items=10,
+        )
+
+    assert len(items) == 2
+    assert items[0]["id"] == "item-1"
+    assert items[1]["id"] == "item-2"
+    mock_client.get.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_search_stac_caps_at_max_items() -> None:
+    """search_stac should not return more items than max_items."""
+    mock_client, _ = _make_httpx_mock_client("post", {
+        "features": [{"id": f"item-{i}"} for i in range(5)],
+        "links": [],
+    })
+
+    with patch("app.services.stac._get_search_client", return_value=mock_client):
+        items = await search_stac(
+            collection="naip",
+            bbox=(-105.0, 39.7, -104.9, 39.8),
+            datetime_range="2020-01-01/2021-12-31",
+            max_items=3,
+        )
+
+    assert len(items) == 3
+
+
+# ── validate_landsat_item ────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_validate_landsat_item_success() -> None:
+    from app.services.stac import validate_landsat_item
+
+    item = {
+        "id": "LC08_TEST",
+        "assets": {"red": {"href": "https://example.com/red.tif"}},
+    }
+
+    mock_head_resp = MagicMock()
+    mock_head_resp.status_code = 200
+
+    mock_client = AsyncMock()
+    mock_client.head = AsyncMock(return_value=mock_head_resp)
+
+    with (
+        patch("app.services.stac.sign_pc_url", new_callable=AsyncMock,
+              return_value="https://signed.example.com/red.tif"),
+        patch("app.services.stac._get_search_client", return_value=mock_client),
+    ):
+        result = await validate_landsat_item(item)
+
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_validate_landsat_item_missing_red_band() -> None:
+    from app.services.stac import validate_landsat_item
+
+    item = {"id": "LC08_TEST", "assets": {"green": {"href": "https://example.com/green.tif"}}}
+    result = await validate_landsat_item(item)
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_validate_landsat_item_sign_failure() -> None:
+    from app.services.stac import validate_landsat_item
+
+    item = {"id": "LC08_TEST", "assets": {"red": {"href": "https://example.com/red.tif"}}}
+
+    with patch("app.services.stac.sign_pc_url", new_callable=AsyncMock,
+               side_effect=httpx.ConnectError("sign failed")):
+        result = await validate_landsat_item(item)
+
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_validate_landsat_item_head_returns_403() -> None:
+    from app.services.stac import validate_landsat_item
+
+    item = {"id": "LC08_TEST", "assets": {"red": {"href": "https://example.com/red.tif"}}}
+
+    mock_head_resp = MagicMock()
+    mock_head_resp.status_code = 403
+
+    mock_client = AsyncMock()
+    mock_client.head = AsyncMock(return_value=mock_head_resp)
+
+    with (
+        patch("app.services.stac.sign_pc_url", new_callable=AsyncMock,
+              return_value="https://signed.example.com/red.tif"),
+        patch("app.services.stac._get_search_client", return_value=mock_client),
+    ):
+        result = await validate_landsat_item(item)
+
+    assert result is False
+
+
+# ── validate_landsat_selection ───────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_validate_landsat_selection_swaps_fallback() -> None:
+    from app.services.stac import validate_landsat_selection
+
+    bad_item = {
+        "id": "bad",
+        "properties": {"datetime": "2020-06-01T00:00:00Z", "eo:cloud_cover": 5.0},
+        "assets": {"red": {"href": "https://example.com/bad.tif"}},
+    }
+    good_fallback = {
+        "id": "good",
+        "properties": {"datetime": "2020-07-01T00:00:00Z", "eo:cloud_cover": 10.0},
+        "assets": {"red": {"href": "https://example.com/good.tif"}},
+    }
+
+    selected_groups = [[bad_item]]
+    raw_items = [bad_item, good_fallback]
+
+    call_count = [0]
+
+    async def mock_validate(item):
+        call_count[0] += 1
+        return item["id"] != "bad"
+
+    with patch("app.services.stac.validate_landsat_item", side_effect=mock_validate):
+        result = await validate_landsat_selection(selected_groups, raw_items)
+
+    assert len(result) == 1
+    assert result[0][0]["id"] == "good"
+
+
+@pytest.mark.asyncio
+async def test_validate_landsat_selection_drops_year_with_no_valid() -> None:
+    from app.services.stac import validate_landsat_selection
+
+    bad_item = {
+        "id": "bad",
+        "properties": {"datetime": "2020-06-01T00:00:00Z", "eo:cloud_cover": 5.0},
+        "assets": {"red": {"href": "https://example.com/bad.tif"}},
+    }
+
+    selected_groups = [[bad_item]]
+    raw_items = [bad_item]
+
+    async def always_invalid(item):
+        return False
+
+    with patch("app.services.stac.validate_landsat_item", side_effect=always_invalid):
+        result = await validate_landsat_selection(selected_groups, raw_items)
+
+    assert len(result) == 0
+
+
+# ── close_clients ────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_close_clients() -> None:
+    import app.services.stac as stac_mod
+
+    mock_search = AsyncMock()
+    mock_sign = AsyncMock()
+
+    stac_mod._search_client = mock_search
+    stac_mod._sign_client = mock_sign
+
+    await stac_mod.close_clients()
+
+    mock_search.aclose.assert_called_once()
+    mock_sign.aclose.assert_called_once()
+    assert stac_mod._search_client is None
+    assert stac_mod._sign_client is None
+
+
+# ── Landsat LE07 deprioritization ────────────────────────────────────────────
+
+
+def test_select_landsat_prefers_non_le07() -> None:
+    """LE07 items should only be used as fallback when no other items exist for a year."""
+    items = [
+        {
+            "id": "LE07_2005_08_01",
+            "properties": {"datetime": "2005-08-01T00:00:00Z", "eo:cloud_cover": 3.0},
+        },
+        {
+            "id": "LT05_2005_07_15",
+            "properties": {"datetime": "2005-07-15T00:00:00Z", "eo:cloud_cover": 8.0},
+        },
+    ]
+    groups = select_landsat_items(items)
+    assert len(groups) == 1
+    assert groups[0][0]["id"] == "LT05_2005_07_15"

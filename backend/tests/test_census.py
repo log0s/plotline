@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 
 from app.services.census import (
@@ -185,6 +186,50 @@ class TestCensusFetcher:
 
         result = await fetcher.fetch_decennial(1990, "08", "031", "999999")
         assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_fetch_decennial_unsupported_year(self) -> None:
+        """Year without config should return empty dict."""
+        fetcher = CensusFetcher(api_key="test-key")
+        fetcher.client = AsyncMock()
+        result = await fetcher.fetch_decennial(1980, "08", "031", "006202")
+        assert result == {}
+        fetcher.client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_request_raises_on_http_error(self) -> None:
+        """Network errors in _request should raise CensusApiError."""
+        from app.services.census import CensusApiError
+
+        fetcher = CensusFetcher(api_key="test-key")
+        fetcher.client = AsyncMock()
+        fetcher.client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
+
+        with pytest.raises(CensusApiError, match="HTTP error"):
+            await fetcher.fetch_acs5(2023, "08", "031", "006202")
+
+    @pytest.mark.asyncio
+    async def test_request_raises_on_unexpected_status(self) -> None:
+        """Non-200/204/404 responses should raise CensusApiError."""
+        from app.services.census import CensusApiError
+
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.text = "Internal Server Error"
+
+        fetcher = CensusFetcher(api_key="test-key")
+        fetcher.client = AsyncMock()
+        fetcher.client.get = AsyncMock(return_value=mock_response)
+
+        with pytest.raises(CensusApiError, match="500"):
+            await fetcher.fetch_acs5(2023, "08", "031", "006202")
+
+    @pytest.mark.asyncio
+    async def test_close_calls_aclose(self) -> None:
+        fetcher = CensusFetcher()
+        fetcher.client = AsyncMock()
+        await fetcher.close()
+        fetcher.client.aclose.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_sentinel_value_handled(self) -> None:

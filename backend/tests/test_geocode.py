@@ -243,3 +243,198 @@ async def test_geocoder_service_raises_on_timeout() -> None:
         )
         with pytest.raises(GeocoderUnavailableError, match="timed out"):
             await geocode_address("1600 Pennsylvania Ave NW", settings)
+
+
+@pytest.mark.asyncio
+async def test_geocoder_service_parses_census_tract() -> None:
+    """geocode_address() extracts census tract FIPS from geographies."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import geocode_address
+
+    settings = get_settings()
+
+    mock_response = {
+        "result": {
+            "addressMatches": [
+                {
+                    "matchedAddress": "123 MAIN ST, DENVER, CO, 80202",
+                    "coordinates": {"x": -104.9903, "y": 39.7392},
+                    "geographies": {
+                        "Census Tracts": [
+                            {"STATE": "08", "COUNTY": "031", "TRACT": "006202"}
+                        ],
+                        "Counties": [{"BASENAME": "Denver"}],
+                    },
+                }
+            ]
+        }
+    }
+
+    with respx.mock:
+        respx.get(settings.census_geocoder_url).mock(
+            return_value=httpx.Response(200, json=mock_response)
+        )
+        result = await geocode_address("123 Main St, Denver CO", settings)
+
+    assert result.census_tract_id == "08031006202"
+    assert result.county == "Denver"
+    assert result.state_fips == "08"
+
+
+@pytest.mark.asyncio
+async def test_geocoder_raises_on_http_error() -> None:
+    """Non-timeout HTTP errors should raise GeocoderUnavailableError."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import geocode_address
+
+    settings = get_settings()
+
+    with respx.mock:
+        respx.get(settings.census_geocoder_url).mock(
+            return_value=httpx.Response(500, text="Internal Server Error")
+        )
+        with pytest.raises(GeocoderUnavailableError, match="HTTP 500"):
+            await geocode_address("123 Main St", settings)
+
+
+@pytest.mark.asyncio
+async def test_geocoder_raises_on_network_error() -> None:
+    """Network errors should raise GeocoderUnavailableError."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import geocode_address
+
+    settings = get_settings()
+
+    with respx.mock:
+        respx.get(settings.census_geocoder_url).mock(
+            side_effect=httpx.ConnectError("Connection refused")
+        )
+        with pytest.raises(GeocoderUnavailableError, match="Network error"):
+            await geocode_address("123 Main St", settings)
+
+
+# ── Reverse geocoder ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_reverse_geocode_success() -> None:
+    """reverse_geocode() returns census metadata for known coordinates."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import reverse_geocode
+
+    settings = get_settings()
+
+    mock_response = {
+        "result": {
+            "geographies": {
+                "Census Tracts": [
+                    {"STATE": "08", "COUNTY": "031", "TRACT": "006202"}
+                ],
+                "Counties": [{"BASENAME": "Denver"}],
+            }
+        }
+    }
+
+    with respx.mock:
+        respx.get("https://geocoding.geo.census.gov/geocoder/geographies/coordinates").mock(
+            return_value=httpx.Response(200, json=mock_response)
+        )
+        result = await reverse_geocode(
+            latitude=39.7392,
+            longitude=-104.9903,
+            address="123 Main St, Denver CO",
+            settings=settings,
+        )
+
+    assert result.latitude == 39.7392
+    assert result.longitude == -104.9903
+    assert result.census_tract_id == "08031006202"
+    assert result.county == "Denver"
+
+
+@pytest.mark.asyncio
+async def test_reverse_geocode_timeout_retries() -> None:
+    """reverse_geocode() retries on timeout and eventually raises."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import reverse_geocode
+
+    settings = get_settings()
+
+    with respx.mock:
+        respx.get("https://geocoding.geo.census.gov/geocoder/geographies/coordinates").mock(
+            side_effect=httpx.TimeoutException("timed out")
+        )
+        with pytest.raises(GeocoderUnavailableError, match="timed out"):
+            await reverse_geocode(
+                latitude=39.7392,
+                longitude=-104.9903,
+                address="123 Main St",
+                settings=settings,
+            )
+
+
+@pytest.mark.asyncio
+async def test_reverse_geocode_http_error() -> None:
+    """reverse_geocode() raises on HTTP status errors."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import reverse_geocode
+
+    settings = get_settings()
+
+    with respx.mock:
+        respx.get("https://geocoding.geo.census.gov/geocoder/geographies/coordinates").mock(
+            return_value=httpx.Response(503, text="Service Unavailable")
+        )
+        with pytest.raises(GeocoderUnavailableError):
+            await reverse_geocode(
+                latitude=39.7392,
+                longitude=-104.9903,
+                address="123 Main St",
+                settings=settings,
+            )
+
+
+@pytest.mark.asyncio
+async def test_reverse_geocode_no_tracts_returns_none_fields() -> None:
+    """reverse_geocode() with empty geographies returns None for census fields."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import reverse_geocode
+
+    settings = get_settings()
+
+    mock_response = {"result": {"geographies": {}}}
+
+    with respx.mock:
+        respx.get("https://geocoding.geo.census.gov/geocoder/geographies/coordinates").mock(
+            return_value=httpx.Response(200, json=mock_response)
+        )
+        result = await reverse_geocode(
+            latitude=39.7392,
+            longitude=-104.9903,
+            address="123 Main St",
+            settings=settings,
+        )
+
+    assert result.census_tract_id is None
+    assert result.county is None
