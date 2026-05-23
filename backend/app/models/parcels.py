@@ -79,6 +79,10 @@ class Parcel(Base):
     )
 
     __table_args__ = (
+        CheckConstraint("latitude >= -90 AND latitude <= 90", name="ck_parcels_latitude"),
+        CheckConstraint(
+            "longitude >= -180 AND longitude <= 180", name="ck_parcels_longitude"
+        ),
         Index("idx_parcels_point", "point", postgresql_using="gist"),
     )
 
@@ -112,6 +116,12 @@ class TimelineRequest(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
         nullable=False,
     )
     completed_at: Mapped[datetime | None] = mapped_column(

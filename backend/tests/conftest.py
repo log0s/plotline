@@ -72,6 +72,7 @@ def _create_test_tables() -> None:
                     parcel_id     TEXT REFERENCES parcels(id),
                     status        TEXT NOT NULL DEFAULT 'queued',
                     created_at    TEXT DEFAULT (datetime('now')),
+                    updated_at    TEXT DEFAULT (datetime('now')),
                     completed_at  TEXT,
                     error_message TEXT
                 )
@@ -172,7 +173,8 @@ def db() -> Generator[Session, None, None]:
     yield session
 
     session.close()
-    transaction.rollback()
+    if transaction.is_active:
+        transaction.rollback()
     connection.close()
 
 
