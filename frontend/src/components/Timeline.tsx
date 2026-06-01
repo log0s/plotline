@@ -363,74 +363,84 @@ export function Timeline({
           </span>
         </div>
 
-        {/* Filter toggles */}
-        <div className="flex items-center gap-1.5 shrink-0 overflow-x-auto md:ml-3 md:overflow-visible">
-          {/* Imagery source toggles */}
-          {snapshots.length > 0 &&
-            (
-              ["usgs_topo", "naip", "landsat", "sentinel2"] as ImagerySource[]
-            ).map((src) => {
-              const hasItems = snapshots.some((s) => s.source === src);
-              if (!hasItems) return null;
-              const active = activeFilters.has(src);
-              return (
-                <button
-                  key={src}
-                  onClick={() => toggleFilter(src)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-opacity ${
-                    active ? SOURCE_COLORS[src] : "bg-navy-800 text-slate-500"
-                  }`}
-                  title={`${active ? "Hide" : "Show"} ${SOURCE_LABELS[src]}`}
-                >
-                  {SOURCE_LABELS[src]}
-                </button>
-              );
-            })}
-
-          {/* Event filter toggles (hidden in compare mode) */}
-          {hasEvents && !compareMode && (
-            <>
-              <span className="w-px h-4 bg-navy-700/60 mx-1" />
-              {(Object.keys(EVENT_FILTER_LABELS) as EventFilterKey[]).map(
-                (key) => {
-                  const active = activeEventFilters.has(key);
+        {/* Filter toggles + Compare */}
+        <div className="flex items-center gap-1.5 flex-1 min-w-0 md:flex-none md:shrink-0 md:ml-3">
+          {/* Scrollable filter toggles */}
+          <div className="relative flex-1 min-w-0 md:flex-none">
+            <div className="flex items-center gap-1.5 overflow-x-auto md:overflow-visible scrollbar-none pr-6 md:pr-0">
+              {/* Imagery source toggles */}
+              {snapshots.length > 0 &&
+                (
+                  ["usgs_topo", "naip", "landsat", "sentinel2"] as ImagerySource[]
+                ).map((src) => {
+                  const hasItems = snapshots.some((s) => s.source === src);
+                  if (!hasItems) return null;
+                  const active = activeFilters.has(src);
                   return (
                     <button
-                      key={key}
-                      onClick={() => toggleEventFilter(key)}
-                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-opacity ${
-                        active
-                          ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
-                          : "bg-navy-800 text-slate-500"
+                      key={src}
+                      onClick={() => toggleFilter(src)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium whitespace-nowrap transition-opacity ${
+                        active ? SOURCE_COLORS[src] : "bg-navy-800 text-slate-500"
                       }`}
-                      title={`${active ? "Hide" : "Show"} ${EVENT_FILTER_LABELS[key]}`}
+                      title={`${active ? "Hide" : "Show"} ${SOURCE_LABELS[src]}`}
                     >
-                      {EVENT_FILTER_LABELS[key]}
+                      {SOURCE_LABELS[src]}
                     </button>
                   );
-                },
-              )}
-            </>
-          )}
+                })}
 
-          {/* Compare toggle */}
+              {/* Event filter toggles (hidden in compare mode) */}
+              {hasEvents && !compareMode && (
+                <>
+                  <span className="w-px h-4 bg-navy-700/60 mx-1" />
+                  {(Object.keys(EVENT_FILTER_LABELS) as EventFilterKey[]).map(
+                    (key) => {
+                      const active = activeEventFilters.has(key);
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => toggleEventFilter(key)}
+                          className={`px-2 py-0.5 rounded text-[10px] font-medium whitespace-nowrap transition-opacity ${
+                            active
+                              ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                              : "bg-navy-800 text-slate-500"
+                          }`}
+                          title={`${active ? "Hide" : "Show"} ${EVENT_FILTER_LABELS[key]}`}
+                        >
+                          {EVENT_FILTER_LABELS[key]}
+                        </button>
+                      );
+                    },
+                  )}
+                </>
+              )}
+            </div>
+            {/* Fade hint for scroll overflow (mobile only) */}
+            <div
+              className="pointer-events-none absolute inset-y-0 right-0 w-6 md:hidden"
+              style={{ background: "linear-gradient(to left, rgba(8,13,26,0.95), transparent)" }}
+            />
+          </div>
+
+          {/* Compare toggle — pinned outside scroll area */}
           {snapshots.length >= 2 && (
             <>
-              <span className="w-px h-4 bg-navy-700/60 mx-0.5" />
-              <button
-                onClick={() => setCompareMode(!compareMode)}
-                className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
-                  compareMode
-                    ? "bg-amber-500 text-navy-950 font-semibold"
-                    : "border border-amber-500/40 text-amber-400/70 hover:border-amber-500 hover:text-amber-400"
-                }`}
-                title={
-                  compareMode ? "Exit compare mode" : "Compare two snapshots"
-                }
-              >
-                <SplitSquareHorizontal size={12} />
-                <span className="hidden md:inline">Compare</span>
-              </button>
+            <span className="hidden md:block w-px h-4 bg-navy-700/60 mx-1" />
+            <button
+              onClick={() => setCompareMode(!compareMode)}
+              className={`flex items-center justify-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-all shrink-0 min-w-[32px] min-h-[32px] ${
+                compareMode
+                  ? "bg-amber-500 text-navy-950 font-semibold"
+                  : "border border-amber-500/40 text-amber-400/70 hover:border-amber-500 hover:text-amber-400"
+              }`}
+              title={
+                compareMode ? "Exit compare mode" : "Compare two snapshots"
+              }
+            >
+              <SplitSquareHorizontal size={12} />
+              <span className="hidden md:inline">Compare</span>
+            </button>
             </>
           )}
         </div>
