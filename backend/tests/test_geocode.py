@@ -108,6 +108,10 @@ def test_geocode_dedup_returns_existing(client: TestClient) -> None:
             "app.api.v1.geocode.imagery_service.get_or_create_timeline_request",
             return_value=(mock_req, False),
         ),
+        patch(
+            "app.api.v1.geocode.imagery_service.maybe_refetch_for_backfill",
+            return_value=None,
+        ),
     ):
         response = client.post(
             "/api/v1/geocode",

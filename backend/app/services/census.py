@@ -6,6 +6,7 @@ Community Survey 5-year estimates (2009–2023) at the census-tract level.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, cast
 
@@ -13,8 +14,11 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# Sentinel value the Census API uses for "data not available"
-_NOT_AVAILABLE = -666666666
+# The Census API encodes "not available" as large negative annotation values:
+# -666666666 (estimate not computed) is the most common, but ACS also returns
+# -999999999, -888888888, -555555555, and -222222222. Anything at or below
+# this threshold is an annotation, never real data.
+_NOT_AVAILABLE_THRESHOLD = -111111111
 
 # ── Variable mappings per decade ──────────────────────────────────────────────
 
@@ -181,7 +185,15 @@ class CensusFetcher:
             )
             raise CensusApiError(f"Census API returned {resp.status_code}")
 
-        return cast(list[list[str]], resp.json())
+        # The Census API sometimes returns its HTML error page with a 200.
+        try:
+            return cast(list[list[str]], resp.json())
+        except json.JSONDecodeError as exc:
+            logger.error(
+                "Census API returned non-JSON body",
+                extra={"url": url, "body": resp.text[:200]},
+            )
+            raise CensusApiError(f"Census API returned invalid JSON: {exc}") from exc
 
 
 def parse_tract_fips(tract_fips: str) -> tuple[str, str, str]:
@@ -221,16 +233,17 @@ def _normalize(
 def _to_number(val: str | None) -> int | float | None:
     """Parse a Census API string value to a number.
 
-    The API returns numbers as strings. -666666666 means "not available".
+    The API returns numbers as strings; large negative annotation values
+    mean "not available" and are mapped to None.
     """
     if val is None or val == "":
         return None
     try:
         n = int(val)
-        return None if n == _NOT_AVAILABLE else n
+        return None if n <= _NOT_AVAILABLE_THRESHOLD else n
     except ValueError:
         try:
             f = float(val)
-            return None if f == float(_NOT_AVAILABLE) else f
+            return None if f <= _NOT_AVAILABLE_THRESHOLD else f
         except ValueError:
             return None

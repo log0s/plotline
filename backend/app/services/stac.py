@@ -34,7 +34,9 @@ RESOLUTION_M: dict[str, float] = {
 
 def get_utm_epsg(lng: float, lat: float) -> int:
     """Return the UTM zone EPSG code for a given WGS-84 coordinate."""
-    zone = int((lng + 180) / 6) + 1
+    # lng=180 would otherwise yield zone 61 → EPSG 32661, which is UPS
+    # North (polar stereographic), not a UTM zone.
+    zone = min(60, max(1, int((lng + 180) / 6) + 1))
     return 32600 + zone if lat >= 0 else 32700 + zone
 
 
@@ -71,23 +73,31 @@ def point_to_bbox(
 # ── STAC search ───────────────────────────────────────────────────────────────
 
 
-_search_client: httpx.AsyncClient | None = None
+# Clients are keyed by event loop: the Celery worker runs every task in
+# its own asyncio.run() loop (possibly concurrently under a threaded
+# pool), and httpx clients are loop-affine — sharing one across loops
+# corrupts its connection pool, and one task's cleanup would close a
+# client another task is still using.
+_search_clients: dict[asyncio.AbstractEventLoop, httpx.AsyncClient] = {}
+_sign_clients: dict[asyncio.AbstractEventLoop, httpx.AsyncClient] = {}
 
 
 def _get_search_client() -> httpx.AsyncClient:
-    """Module-level pooled client for STAC searches.
+    """Pooled client for STAC searches, one per running event loop.
 
     timeline.py issues 41 sequential year-chunk searches per parcel for
     Landsat alone; per-call client construction would mean 41 fresh TLS
     handshakes. Pooling reuses the connection.
     """
-    global _search_client
-    if _search_client is None:
-        _search_client = httpx.AsyncClient(
+    loop = asyncio.get_running_loop()
+    client = _search_clients.get(loop)
+    if client is None or client.is_closed:
+        client = httpx.AsyncClient(
             timeout=30,
             limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
         )
-    return _search_client
+        _search_clients[loop] = client
+    return client
 
 
 async def search_stac(
@@ -130,12 +140,23 @@ async def search_stac(
 
     while len(items) < max_items:
         next_link = next(
-            (lnk for lnk in data.get("links", []) if lnk["rel"] == "next"),
+            (lnk for lnk in data.get("links", []) if lnk.get("rel") == "next"),
             None,
         )
         if not next_link:
             break
-        resp = await client.get(next_link["href"])
+        # POST-search pagination carries the continuation token in the link
+        # body and must be re-POSTed — Planetary Computer returns
+        # {"method": "POST", "body": {...original search + token...}}.
+        # A GET on the href would run an unfiltered default search.
+        if str(next_link.get("method", "GET")).upper() == "POST":
+            body = next_link.get("body")
+            next_payload = body if isinstance(body, dict) and body else payload
+            if next_link.get("merge"):
+                next_payload = {**payload, **next_payload}
+            resp = await client.post(next_link["href"], json=next_payload)
+        else:
+            resp = await client.get(next_link["href"])
         resp.raise_for_status()
         data = resp.json()
         items.extend(data.get("features", []))
@@ -149,29 +170,28 @@ async def search_stac(
 _SAS_CACHE_TTL = 600  # 10 minutes (tokens last ~30 min)
 
 
-_sign_client: httpx.AsyncClient | None = None
-
-
 def _get_sign_client() -> httpx.AsyncClient:
-    """Module-level pooled client so parallel signs share TLS connections."""
-    global _sign_client
-    if _sign_client is None:
-        _sign_client = httpx.AsyncClient(
+    """Pooled client (per event loop) so parallel signs share TLS connections."""
+    loop = asyncio.get_running_loop()
+    client = _sign_clients.get(loop)
+    if client is None or client.is_closed:
+        client = httpx.AsyncClient(
             timeout=10,
             limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
         )
-    return _sign_client
+        _sign_clients[loop] = client
+    return client
 
 
 async def close_clients() -> None:
-    """Close shared STAC HTTP clients and release connections."""
-    global _search_client, _sign_client
-    if _search_client is not None:
-        await _search_client.aclose()
-        _search_client = None
-    if _sign_client is not None:
-        await _sign_client.aclose()
-        _sign_client = None
+    """Close this event loop's STAC HTTP clients and release connections."""
+    loop = asyncio.get_running_loop()
+    search = _search_clients.pop(loop, None)
+    if search is not None:
+        await search.aclose()
+    sign = _sign_clients.pop(loop, None)
+    if sign is not None:
+        await sign.aclose()
 
 
 async def sign_pc_url(url: str) -> str:
@@ -282,6 +302,31 @@ def _capture_date(item: dict[str, object]) -> date:
     return date.fromisoformat(dt_str[:10])
 
 
+def _has_capture_date(item: dict[str, object]) -> bool:
+    """True if the item carries a parseable properties.datetime.
+
+    STAC allows ``"datetime": null`` — such items would crash the selectors,
+    so they're filtered out up front.
+    """
+    props = item.get("properties")
+    if not isinstance(props, dict):
+        return False
+    dt = props.get("datetime")
+    if not isinstance(dt, str) or len(dt) < 10:
+        return False
+    try:
+        date.fromisoformat(dt[:10])
+    except ValueError:
+        return False
+    return True
+
+
+def _cloud_cover(item: dict[str, object]) -> float:
+    """eo:cloud_cover with missing or null treated as fully cloudy."""
+    val = cast(dict[str, Any], item["properties"]).get("eo:cloud_cover")
+    return float(cast(float, val)) if val is not None else 100.0
+
+
 def _doy(item: dict[str, object]) -> int:
     return _capture_date(item).timetuple().tm_yday
 
@@ -309,6 +354,8 @@ def select_naip_items(
     target_doy = 196
     by_year: dict[int, list[dict[str, object]]] = defaultdict(list)
     for item in items:
+        if not _has_capture_date(item):
+            continue
         by_year[_capture_date(item).year].append(item)
 
     groups: list[list[dict[str, object]]] = []
@@ -436,16 +483,15 @@ def select_landsat_items(items: list[dict[str, object]]) -> list[list[dict[str, 
 
     by_year: dict[int, list[dict[str, object]]] = defaultdict(list)
     for item in items:
+        if not _has_capture_date(item):
+            continue
         by_year[_capture_date(item).year].append(item)
 
     selected: list[dict[str, object]] = []
     for year_items in by_year.values():
         non_le07 = [i for i in year_items if not is_le07(i)]
         pool = non_le07 if non_le07 else year_items
-        pick = min(
-            pool,
-            key=lambda i: float(cast(dict[str, Any], i["properties"]).get("eo:cloud_cover", 100)),
-        )
+        pick = min(pool, key=_cloud_cover)
         selected.append(pick)
     selected.sort(key=_capture_date)
     return [[i] for i in selected]
@@ -459,17 +505,13 @@ def select_sentinel_items(items: list[dict[str, object]]) -> list[list[dict[str,
     """
     by_quarter: dict[tuple[int, int], list[dict[str, object]]] = defaultdict(list)
     for item in items:
+        if not _has_capture_date(item):
+            continue
         d = _capture_date(item)
         quarter = (d.year, (d.month - 1) // 3 + 1)
         by_quarter[quarter].append(item)
 
-    selected = [
-        min(
-            q_items,
-            key=lambda i: float(cast(dict[str, Any], i["properties"]).get("eo:cloud_cover", 100)),
-        )
-        for q_items in by_quarter.values()
-    ]
+    selected = [min(q_items, key=_cloud_cover) for q_items in by_quarter.values()]
     selected.sort(key=_capture_date)
     return [[i] for i in selected]
 
@@ -607,11 +649,11 @@ async def validate_landsat_selection(
     """
     by_year: dict[int, list[dict[str, object]]] = defaultdict(list)
     for item in raw_items:
+        if not _has_capture_date(item):
+            continue
         by_year[_capture_date(item).year].append(item)
     for year_items in by_year.values():
-        year_items.sort(
-            key=lambda i: float(cast(dict[str, Any], i["properties"]).get("eo:cloud_cover", 100)),
-        )
+        year_items.sort(key=_cloud_cover)
 
     # Validate all selected items in parallel
     valid_flags = await asyncio.gather(

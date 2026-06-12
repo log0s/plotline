@@ -22,7 +22,9 @@ from fastapi import Response as FastAPIResponse
 from fastapi.responses import Response
 from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
+from app.api.rate_limit import RateLimit
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.schemas.imagery import (
@@ -51,7 +53,9 @@ router = APIRouter()
     ),
     responses={
         404: {"description": "Parcel not found"},
+        429: {"description": "Rate limit exceeded"},
     },
+    dependencies=[Depends(RateLimit(times=20, seconds=60))],
 )
 def trigger_timeline(
     parcel_id: uuid.UUID,
@@ -84,13 +88,7 @@ def trigger_timeline(
                 is_new = True
 
     if is_new:
-        from app.tasks.timeline import fetch_imagery_timeline
-
-        fetch_imagery_timeline.delay(str(request.id))
-        logger.info(
-            "Timeline task dispatched",
-            extra={"parcel_id": str(parcel_id), "request_id": str(request.id)},
-        )
+        imagery_service.dispatch_timeline_task(db, request)
 
     return TriggerTimelineResponse(timeline_request_id=request.id)
 
@@ -150,20 +148,26 @@ async def list_imagery(
     """Return imagery snapshots with signed COG URLs."""
     from sqlalchemy import text as sa_text
 
-    row = db.execute(
-        sa_text("SELECT id FROM parcels WHERE id = :id"),
-        {"id": str(parcel_id)},
-    ).first()
-    if not row:
-        raise HTTPException(status_code=404, detail=f"Parcel {parcel_id} not found")
+    # Sync DB work runs in the threadpool — this handler is async (for the
+    # parallel URL signing below) and must not block the event loop.
+    def _load_snapshots() -> list[ImagerySnapshotRow] | None:
+        row = db.execute(
+            sa_text("SELECT id FROM parcels WHERE id = :id"),
+            {"id": str(parcel_id)},
+        ).first()
+        if not row:
+            return None
+        return imagery_service.get_imagery_snapshots(
+            db,
+            parcel_id=parcel_id,
+            source=source,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
-    snapshots = imagery_service.get_imagery_snapshots(
-        db,
-        parcel_id=parcel_id,
-        source=source,
-        start_date=start_date,
-        end_date=end_date,
-    )
+    snapshots = await run_in_threadpool(_load_snapshots)
+    if snapshots is None:
+        raise HTTPException(status_code=404, detail=f"Parcel {parcel_id} not found")
 
     # Sign COG URLs at response time (SAS tokens are short-lived).
     # Landsat cog_url is a STAC item link (public, no signing needed).
@@ -303,17 +307,31 @@ async def _fetch_titiler(
 
     # Return a transparent tile for out-of-bounds requests instead of 404,
     # so MapLibre doesn't log errors for edge tiles outside the COG extent.
+    # Short TTL: a 404 can also be transient upstream trouble (blob
+    # re-staging, expired token), and "immutable" would freeze the hole
+    # in browser caches for a day.
     if upstream.status_code == 404:
         return Response(
             content=_TRANSPARENT_PNG,
             status_code=200,
             media_type="image/png",
-            headers={"Cache-Control": "public, max-age=86400, immutable"},
+            headers={"Cache-Control": "public, max-age=3600"},
         )
+
+    # Other 4xx from Titiler (bad band index, malformed COG, ...) must not
+    # be passed through with cache headers — browsers would pin the error.
+    if upstream.status_code != 200:
+        logger.warning(
+            "Titiler returned %s for snapshot %s",
+            upstream.status_code,
+            snapshot_id,
+            extra={"titiler_body": upstream.text[:500]},
+        )
+        raise HTTPException(status_code=502, detail="Titiler upstream error")
 
     return Response(
         content=upstream.content,
-        status_code=upstream.status_code,
+        status_code=200,
         media_type=upstream.headers.get("content-type", "image/png"),
         headers={"Cache-Control": "public, max-age=86400, immutable"},
     )
@@ -410,7 +428,7 @@ async def proxy_imagery_tile(
     settings: Settings = Depends(get_settings),
 ) -> Response:
     """Dispatch to the correct Titiler endpoint based on imagery source."""
-    snap = imagery_service.get_snapshot_by_id(db, snapshot_id)
+    snap = await run_in_threadpool(imagery_service.get_snapshot_by_id, db, snapshot_id)
     if not snap:
         raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_id} not found")
 
@@ -445,7 +463,7 @@ async def get_signed_stac_item(
     db: Session = Depends(get_db),
 ) -> Response:
     """Serve a Landsat STAC item with freshly signed band URLs."""
-    snap = imagery_service.get_snapshot_by_id(db, snapshot_id)
+    snap = await run_in_threadpool(imagery_service.get_snapshot_by_id, db, snapshot_id)
     if not snap or snap.source != "landsat":
         raise HTTPException(status_code=404, detail="Not found or not a STAC-tile source")
 
@@ -454,13 +472,13 @@ async def get_signed_stac_item(
 
     # Try Redis cache for the raw (unsigned) STAC item JSON.
     # The item metadata is immutable; only band URLs need fresh signing.
-    from app.db import get_redis
+    from app.db import get_async_redis
 
     cache_key = f"stac:{snapshot_id}"
     stac_item = None
 
     try:
-        cached = get_redis().get(cache_key)
+        cached = await get_async_redis().get(cache_key)
         if cached:
             stac_item = json.loads(cached)
     except (RedisError, OSError) as exc:
@@ -478,7 +496,7 @@ async def get_signed_stac_item(
 
         # Cache the raw item (before signing) for 1 hour
         try:
-            get_redis().setex(cache_key, 3600, json.dumps(stac_item))
+            await get_async_redis().setex(cache_key, 3600, json.dumps(stac_item))
         except (RedisError, OSError) as exc:
             logger.debug("STAC item cache write failed: %s", exc)
 

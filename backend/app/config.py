@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     # ── Parcel deduplication ──────────────────────────────────────────────────
     parcel_dedup_radius_meters: float = 50.0
 
+    # ── Rate limiting ─────────────────────────────────────────────────────────
+    # Per-IP limits on the endpoints that fan out to external APIs and the
+    # Celery worker. Disabled in tests.
+    rate_limit_enabled: bool = True
+
     # ── Imagery / Titiler ─────────────────────────────────────────────────────
     titiler_url: str = "http://titiler:80"
     # Internal URL Titiler uses to call back to the API (for signed STAC items).

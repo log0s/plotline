@@ -73,7 +73,9 @@ export interface TimelineRequest {
   parcel_id: string | null;
   status: "queued" | "processing" | "complete" | "failed";
   tasks: TimelineRequestTask[];
+  created_at: string;
   completed_at: string | null;
+  error_message: string | null;
 }
 
 export interface ImageryListResponse {

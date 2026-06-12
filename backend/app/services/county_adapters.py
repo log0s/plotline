@@ -67,7 +67,12 @@ def safe_int(value: Any) -> int | None:
 
 @dataclass
 class PropertyEventData:
-    """Normalized property event from any county source."""
+    """Normalized property event from any county source.
+
+    ``situs_address`` is the record's street address in whatever field the
+    county uses — the timeline task fuzzy-matches it against the parcel
+    address to reject records the broad LIKE query pulled in.
+    """
 
     event_type: str
     event_date: date | None
@@ -79,6 +84,7 @@ class PropertyEventData:
     source: str
     source_record_id: str
     raw_data: dict[str, Any]
+    situs_address: str | None = None
 
 
 # ── Base adapter ──────────────────────────────────────────────────────────────
@@ -192,6 +198,7 @@ class DenverAdapter(CountyAdapter):
             source="denver_permits",
             source_record_id=row.get("PERMIT_NUM") or "",
             raw_data=row,
+            situs_address=row.get("ADDRESS"),
         )
 
     def _format_permit_description(self, row: dict[str, Any], ptype: str) -> str:
@@ -277,6 +284,7 @@ class AdamsCountyAdapter(CountyAdapter):
             source="adams_permits",
             source_record_id=row.get("RecordID_") or "",
             raw_data=row,
+            situs_address=row.get("CombinedAddress"),
         )
 
     def _format_permit_description(
@@ -333,7 +341,9 @@ class DCAdapter(CountyAdapter):
     ) -> list[PropertyEventData]:
         sn = _escape_sql_literal(street_number)
         sname = _escape_sql_literal(street_name)
-        where = f"upper(PROPERTY_ADDRESS) LIKE '%{sn} %{sname}%'"
+        # Anchored at the start — a leading wildcard would also match
+        # "1100 X" when searching for "100 X".
+        where = f"upper(PROPERTY_ADDRESS) LIKE '{sn} %{sname}%'"
         try:
             rows = await query_feature_service(
                 self.SALES_URL,
@@ -373,6 +383,7 @@ class DCAdapter(CountyAdapter):
             source="dc_sales",
             source_record_id=row.get("SSL") or "",
             raw_data=row,
+            situs_address=row.get("PROPERTY_ADDRESS"),
         )
 
     async def fetch_permits(
@@ -384,7 +395,7 @@ class DCAdapter(CountyAdapter):
     ) -> list[PropertyEventData]:
         sn = _escape_sql_literal(street_number)
         sname = _escape_sql_literal(street_name)
-        where = f"upper(FULL_ADDRESS) LIKE '%{sn} %{sname}%'"
+        where = f"upper(FULL_ADDRESS) LIKE '{sn} %{sname}%'"
 
         async def _query(layer_id: int, year_label: str) -> list[dict[str, Any]]:
             url = f"{self._PERMITS_BASE}/{layer_id}"
@@ -396,7 +407,9 @@ class DCAdapter(CountyAdapter):
                     result_record_count=50,
                 )
             except Exception as exc:
-                logger.warning("DC permits query failed", extra={"year_label": year_label}, exc_info=exc)
+                logger.warning(
+                    "DC permits query failed", extra={"year_label": year_label}, exc_info=exc
+                )
                 return []
 
         chunks = await asyncio.gather(*(_query(lid, label) for lid, label in self.PERMIT_LAYERS))
@@ -431,6 +444,7 @@ class DCAdapter(CountyAdapter):
             source="dc_permits",
             source_record_id=row.get("PERMIT_ID") or "",
             raw_data=row,
+            situs_address=row.get("FULL_ADDRESS"),
         )
 
 
@@ -489,16 +503,20 @@ class SantaClaraAdapter(CountyAdapter):
                     limit=100,
                 )
             except Exception as exc:
-                logger.warning("San Jose permits query failed", extra={"label": label}, exc_info=exc)
+                logger.warning(
+                    "San Jose permits query failed", extra={"label": label}, exc_info=exc
+                )
                 return []
 
         chunks = await asyncio.gather(*(_query(rid, label) for rid, label in self.PERMIT_RESOURCES))
-        # Filter to rows that actually match the address
+        # Filter to rows whose street number actually matches — a substring
+        # check would let "12" match "512 S 1ST ST".
         results: list[PropertyEventData] = []
         for chunk in chunks:
             for row in chunk:
                 location = (row.get("gx_location") or "").upper()
-                if street_number in location and street_name.upper() in location:
+                tokens = location.split()
+                if tokens and tokens[0] == street_number and street_name.upper() in location:
                     results.append(self._parse_permit(row))
         return results
 
@@ -529,6 +547,7 @@ class SantaClaraAdapter(CountyAdapter):
             source="san_jose_permits",
             source_record_id=row.get("FOLDERNUMBER") or "",
             raw_data=row,
+            situs_address=row.get("gx_location"),
         )
 
     @staticmethod
@@ -556,13 +575,19 @@ class NewYorkCountyAdapter(CountyAdapter):
     """Adapter for New York County (Manhattan) via NYC Open Data (Socrata).
 
     NYC publishes comprehensive property data on data.cityofnewyork.us:
-    - Sales: NYC Citywide Rolling Calendar Sales (usep-8jbt), filtered to
-      borough 1 (Manhattan).
+    - Sales: Annualized Calendar Sales (w2pb-icbu, 2016+ history) plus
+      Rolling Calendar Sales (usep-8jbt, trailing ~12 months — the only
+      source for the current year). Overlapping rows dedupe on the
+      block-lot-date record id at upsert time. Both filtered to borough 1
+      (Manhattan).
     - Permits: DOB Permit Issuance (ipu4-2q9a), filtered to borough MANHATTAN.
     """
 
     DOMAIN = "data.cityofnewyork.us"
-    SALES_RESOURCE = "usep-8jbt"
+    SALES_RESOURCES: list[tuple[str, str]] = [
+        ("w2pb-icbu", "annualized"),
+        ("usep-8jbt", "rolling"),
+    ]
     PERMITS_RESOURCE = "ipu4-2q9a"
 
     @property
@@ -578,20 +603,24 @@ class NewYorkCountyAdapter(CountyAdapter):
     ) -> list[PropertyEventData]:
         sn = _escape_sql_literal(street_number)
         sname = _escape_sql_literal(street_name)
-        where = f"borough='1' AND upper(address) LIKE '%{sn} {sname}%' AND sale_price > '0'"
-        try:
-            rows = await query_socrata(
-                self.DOMAIN,
-                self.SALES_RESOURCE,
-                where=where,
-                order="sale_date DESC",
-                limit=100,
-                app_token=app_token,
-            )
-        except Exception as exc:
-            logger.warning("NYC sales query failed", exc_info=exc)
-            return []
-        return [self._parse_sale(row) for row in rows]
+        where = f"borough='1' AND upper(address) LIKE '%{sn} {sname}%' AND sale_price > 0"
+
+        async def _query(resource_id: str, label: str) -> list[dict[str, Any]]:
+            try:
+                return await query_socrata(
+                    self.DOMAIN,
+                    resource_id,
+                    where=where,
+                    order="sale_date DESC",
+                    limit=200,
+                    app_token=app_token,
+                )
+            except Exception as exc:
+                logger.warning("NYC sales query failed", extra={"label": label}, exc_info=exc)
+                return []
+
+        chunks = await asyncio.gather(*(_query(rid, label) for rid, label in self.SALES_RESOURCES))
+        return [self._parse_sale(row) for chunk in chunks for row in chunk]
 
     def _parse_sale(self, row: dict[str, Any]) -> PropertyEventData:
         event_date = parse_date(row.get("sale_date"))
@@ -624,6 +653,7 @@ class NewYorkCountyAdapter(CountyAdapter):
             source="nyc_sales",
             source_record_id=source_id,
             raw_data=row,
+            situs_address=row.get("address"),
         )
 
     async def fetch_permits(
@@ -673,6 +703,10 @@ class NewYorkCountyAdapter(CountyAdapter):
         if filing and filing != "INITIAL":
             parts.append(f"({filing})")
 
+        house = (row.get("house__") or "").strip()
+        street = (row.get("street_name") or "").strip()
+        situs = f"{house} {street}".strip() or None
+
         return PropertyEventData(
             event_type=classify_permit(readable_type),
             event_date=event_date,
@@ -684,6 +718,7 @@ class NewYorkCountyAdapter(CountyAdapter):
             source="nyc_permits",
             source_record_id=row.get("job__") or "",
             raw_data=row,
+            situs_address=situs,
         )
 
     @staticmethod
@@ -727,6 +762,10 @@ def _parse_epoch_ms(value: Any) -> date | None:
 def classify_permit(raw_type: str) -> str:
     """Normalize a raw permit type string into our event_type enum."""
     raw = raw_type.upper()
+    # Before the keyword checks: "RENEWAL" contains "NEW" and would
+    # otherwise classify as a building permit.
+    if "RENEWAL" in raw:
+        return "permit_other"
     if "DEMO" in raw:
         return "permit_demolition"
     if "ELEC" in raw:

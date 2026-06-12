@@ -90,7 +90,7 @@ async def test_dc_permits_fans_out_across_seven_layers() -> None:
 
     assert mock_query.call_count == len(adapter.PERMIT_LAYERS) == 7
     where = mock_query.call_args_list[0].kwargs["where"]
-    assert where == "upper(FULL_ADDRESS) LIKE '%1300 %4TH%'"
+    assert where == "upper(FULL_ADDRESS) LIKE '1300 %4TH%'"
 
 
 @pytest.mark.asyncio
@@ -104,7 +104,7 @@ async def test_dc_sales_escapes_address() -> None:
         await adapter.fetch_sales("1600", "PENNSYLVANIA")
 
     where = mock_query.call_args_list[0].kwargs["where"]
-    assert where == "upper(PROPERTY_ADDRESS) LIKE '%1600 %PENNSYLVANIA%'"
+    assert where == "upper(PROPERTY_ADDRESS) LIKE '1600 %PENNSYLVANIA%'"
 
 
 # ── Adams adapter ─────────────────────────────────────────────────────────────
@@ -137,10 +137,14 @@ async def test_nyc_sales_includes_borough_and_escape() -> None:
     ) as mock_query:
         await adapter.fetch_sales("350", "5TH AVE")
 
+    # Both sales datasets are queried: annualized history + rolling year
+    assert mock_query.call_count == 2
+    queried = {c.args[1] for c in mock_query.call_args_list}
+    assert queried == {"w2pb-icbu", "usep-8jbt"}
     where = mock_query.call_args_list[0].kwargs["where"]
     assert "borough='1'" in where
     assert "350 5TH AVE" in where
-    assert "sale_price > '0'" in where
+    assert "sale_price > 0" in where
 
 
 @pytest.mark.asyncio

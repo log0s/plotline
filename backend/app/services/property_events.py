@@ -102,9 +102,7 @@ def count_property_events(
 ) -> int:
     """Return the total number of property events for a parcel."""
     row = db.execute(
-        sa_text(
-            "SELECT COUNT(*) FROM property_events WHERE parcel_id = :parcel_id"
-        ),
+        sa_text("SELECT COUNT(*) FROM property_events WHERE parcel_id = :parcel_id"),
         {"parcel_id": str(parcel_id)},
     ).scalar()
     return int(row or 0)

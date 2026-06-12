@@ -27,6 +27,13 @@ import type {
 } from "../types";
 
 const POLL_INTERVAL_MS = 2000;
+// Slower cadence while the status endpoint itself is erroring — a transient
+// network blip shouldn't permanently stop polling, but hammering a failing
+// endpoint at 2s helps nobody.
+const POLL_ERROR_INTERVAL_MS = 10_000;
+// Stop polling entirely once the request is far past the backend's 35-minute
+// hard time limit — at that point it will never reach a terminal status.
+const POLL_GIVE_UP_MS = 45 * 60 * 1000;
 
 function parcelResponseToGeocodeShape(data: {
   id: string;
@@ -86,8 +93,15 @@ export function useTimelineRequestQuery(requestId: string | null | undefined) {
     enabled: !!requestId,
     queryFn: () => getTimelineRequest(requestId as string),
     refetchInterval: (query) => {
-      if (query.state.status === "error") return false;
-      if (isTimelineTerminal(query.state.data?.status)) return false;
+      const data = query.state.data;
+      if (isTimelineTerminal(data?.status)) return false;
+      if (
+        data &&
+        Date.now() - new Date(data.created_at).getTime() > POLL_GIVE_UP_MS
+      ) {
+        return false;
+      }
+      if (query.state.status === "error") return POLL_ERROR_INTERVAL_MS;
       return POLL_INTERVAL_MS;
     },
     retry: 3,

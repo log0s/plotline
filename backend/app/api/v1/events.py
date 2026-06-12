@@ -67,7 +67,19 @@ def get_property_events(
         end_date=end_date,
     )
 
-    summary_data = property_events_service.compute_price_summary(events)
+    # Summaries always describe the full event set — computing them over a
+    # type-filtered subset would report "0 sales" while sales exist.
+    summary_events = (
+        events
+        if not event_types
+        else property_events_service.get_property_events(
+            db,
+            parcel_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    )
+    summary_data = property_events_service.compute_price_summary(summary_events)
 
     return PropertyEventsResponse(
         parcel_id=parcel_id,

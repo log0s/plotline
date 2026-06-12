@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,12 +23,27 @@ def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings)
 
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        logger.info(
+            "Plotline API starting",
+            extra={"env": settings.app_env, "log_level": settings.log_level},
+        )
+        yield
+        from app.db import close_async_redis
+        from app.services import stac as stac_service
+
+        await imagery.close_clients()
+        await stac_service.close_clients()
+        await close_async_redis()
+
     app = FastAPI(
         title="Plotline API",
         description="Geospatial Time Machine — explore how any US location has changed over time.",
         version="0.1.0",
         docs_url="/docs",
         redoc_url="/redoc",
+        lifespan=lifespan,
     )
 
     # ── Middleware ────────────────────────────────────────────────────────────
@@ -50,21 +67,6 @@ def create_app() -> FastAPI:
     # ── Static files ──────────────────────────────────────────────────────────
     os.makedirs(settings.static_dir, exist_ok=True)
     app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
-
-    @app.on_event("startup")
-    async def on_startup() -> None:
-        logger.info(
-            "Plotline API starting",
-            extra={"env": settings.app_env, "log_level": settings.log_level},
-        )
-
-    @app.on_event("shutdown")
-    async def on_shutdown() -> None:
-        from app.api.v1 import imagery
-        from app.services import stac as stac_service
-
-        await imagery.close_clients()
-        await stac_service.close_clients()
 
     return app
 

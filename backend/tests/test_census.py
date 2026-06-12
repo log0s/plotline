@@ -84,6 +84,14 @@ class TestToNumber:
     def test_not_available_sentinel(self) -> None:
         assert _to_number("-666666666") is None
 
+    def test_other_acs_annotation_values(self) -> None:
+        # ACS uses several large negative annotation values, not just one.
+        assert _to_number("-999999999") is None
+        assert _to_number("-888888888") is None
+        assert _to_number("-555555555") is None
+        assert _to_number("-222222222") is None
+        assert _to_number("-666666666.0") is None
+
     def test_none(self) -> None:
         assert _to_number(None) is None
 

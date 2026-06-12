@@ -11,6 +11,7 @@ import asyncio
 import logging
 import time
 import uuid
+from datetime import date
 from typing import Any, cast
 
 import httpx
@@ -40,7 +41,7 @@ _SOURCES: list[dict[str, Any]] = [
     {
         "source": "naip",
         "collection": "naip",
-        "datetime_range": "2003-01-01/2025-12-31",
+        "start_date": "2003-01-01",  # end resolved to the current year at fetch time
         "max_items": 50,
         "query": None,
         "selector": stac_service.select_naip_items,
@@ -52,7 +53,6 @@ _SOURCES: list[dict[str, Any]] = [
         "source": "landsat",
         "collection": "landsat-c2-l2",
         "start_year": 1984,
-        "end_year": 2025,
         "max_items_per_year": 20,
         "query": {"eo:cloud_cover": {"lt": 40}},
         "selector": stac_service.select_landsat_items,
@@ -64,7 +64,6 @@ _SOURCES: list[dict[str, Any]] = [
         "source": "sentinel2",
         "collection": "sentinel-2-l2a",
         "start_year": 2015,
-        "end_year": 2025,
         "max_items_per_year": 20,
         "query": {"eo:cloud_cover": {"lt": 40}},
         "selector": stac_service.select_sentinel_items,
@@ -121,6 +120,41 @@ async def _search_stac_with_retry(
     raise last_exc
 
 
+# ── Task-row status helper ────────────────────────────────────────────────────
+
+
+def _set_task_status(
+    timeline_request_id: uuid.UUID,
+    source: str,
+    status: str,
+    *,
+    items_found: int | None = None,
+    error_message: str | None = None,
+) -> None:
+    """Update a per-source task row in its own short-lived session."""
+    from sqlalchemy import select as sa_select
+
+    from app.db import SessionLocal
+    from app.models.parcels import TimelineRequestTask
+
+    with SessionLocal() as db:
+        task_row = (
+            db.execute(
+                sa_select(TimelineRequestTask)
+                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
+                .where(TimelineRequestTask.source == source)
+            )
+            .scalars()
+            .first()
+        )
+        if not task_row:
+            logger.warning("No task row found for source", extra={"source": source})
+            return
+        imagery_service.update_request_task(
+            db, task_row, status, items_found=items_found, error_message=error_message
+        )
+
+
 # ── Async implementation ───────────────────────────────────────────────────────
 
 
@@ -137,117 +171,104 @@ async def _fetch_source(
 
     ``search_bbox`` is the larger buffered bbox used for the STAC query.
     ``viewport_bbox`` is the smaller display viewport used for mosaic-coverage
-    selection.
+    selection. Any failure — search, selection, or persistence — marks the
+    task row failed so it can't be left at "processing" forever.
     """
+    source_name: str = source_cfg["source"]
+
+    logger.info("Starting STAC search", extra={"source": source_name})
+    _set_task_status(timeline_request_id, source_name, "processing")
+
+    try:
+        return await _search_and_persist_source(
+            source_cfg,
+            search_bbox,
+            viewport_bbox,
+            parcel_id,
+            timeline_request_id,
+            lat,
+            lng,
+        )
+    except Exception as exc:
+        logger.error("Imagery source failed", extra={"source": source_name}, exc_info=exc)
+        _set_task_status(timeline_request_id, source_name, "failed", error_message=str(exc))
+        return 0
+
+
+async def _search_and_persist_source(
+    source_cfg: dict[str, Any],
+    search_bbox: tuple[float, float, float, float],
+    viewport_bbox: tuple[float, float, float, float],
+    parcel_id: uuid.UUID,
+    timeline_request_id: uuid.UUID,
+    lat: float,
+    lng: float,
+) -> int:
     from app.db import SessionLocal
 
     source_name: str = source_cfg["source"]
     collection: str = source_cfg["collection"]
-
-    logger.info("Starting STAC search", extra={"source": source_name, "collection": collection})
     t0 = time.perf_counter()
 
-    with SessionLocal() as db:
-        # Find and update the task row
-        from sqlalchemy import select as sa_select
-
-        from app.models.parcels import TimelineRequest, TimelineRequestTask
-
-        request = (
-            db.execute(sa_select(TimelineRequest).where(TimelineRequest.id == timeline_request_id))
-            .scalars()
-            .first()
-        )
-        if not request:
-            logger.error("Timeline request not found", extra={"id": str(timeline_request_id)})
-            return 0
-
-        task_row = (
-            db.execute(
-                sa_select(TimelineRequestTask)
-                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                .where(TimelineRequestTask.source == source_name)
-            )
-            .scalars()
-            .first()
-        )
-        if not task_row:
-            logger.warning("No task row found for source", extra={"source": source_name})
-            return 0
-
-        imagery_service.update_request_task(db, task_row, "processing")
-
-    # Search STAC (async HTTP, outside the DB session).
+    # Search STAC (async HTTP, outside any DB session).
     # For sources with a wide historical range we chunk by year so the
     # default "newest first" ordering doesn't cap us at the most recent
     # 100 scenes and miss older years entirely.
-    try:
-        if source_cfg.get("chunk_by_year"):
-            start_year = int(source_cfg["start_year"])
-            end_year = int(source_cfg["end_year"])
-            per_year = int(source_cfg["max_items_per_year"])
-            raw_items: list[dict[str, object]] = []
-            # One bad year is a gap, not a wipeout: retries handle transient
-            # 429/5xx/network errors, and a year that still fails after
-            # retries is logged and skipped so the other 40 years still land.
-            for year in range(start_year, end_year + 1):
-                try:
-                    chunk = await _search_stac_with_retry(
-                        collection=collection,
-                        bbox=search_bbox,
-                        datetime_range=f"{year}-01-01/{year}-12-31",
-                        max_items=per_year,
-                        query=source_cfg.get("query"),
-                    )
-                except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                    logger.warning(
-                        "STAC year chunk failed after retries; skipping",
-                        extra={
-                            "source": source_name,
-                            "year": year,
-                            "error": str(exc),
-                        },
-                    )
-                    continue
-                raw_items.extend(chunk)
-        else:
-            raw_items = await _search_stac_with_retry(
-                collection=collection,
-                bbox=search_bbox,
-                datetime_range=source_cfg["datetime_range"],
-                max_items=source_cfg["max_items"],
-                query=source_cfg.get("query"),
-            )
-    except Exception as exc:
-        logger.error(
-            "STAC search failed",
-            extra={"source": source_name},
-            exc_info=exc,
-        )
-        with SessionLocal() as db:
-            from sqlalchemy import select as sa_select
-
-            from app.models.parcels import TimelineRequestTask
-
-            task_row = (
-                db.execute(
-                    sa_select(TimelineRequestTask)
-                    .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                    .where(TimelineRequestTask.source == source_name)
+    if source_cfg.get("chunk_by_year"):
+        start_year = int(source_cfg["start_year"])
+        end_year = int(source_cfg.get("end_year") or date.today().year)
+        per_year = int(source_cfg["max_items_per_year"])
+        raw_items: list[dict[str, object]] = []
+        # One bad year is a gap, not a wipeout: retries handle transient
+        # 429/5xx/network errors, and a year that still fails after
+        # retries is logged and skipped so the other 40 years still land.
+        # If *every* year fails the source as a whole has failed.
+        years = range(start_year, end_year + 1)
+        failed_years = 0
+        last_exc: Exception | None = None
+        for year in years:
+            try:
+                chunk = await _search_stac_with_retry(
+                    collection=collection,
+                    bbox=search_bbox,
+                    datetime_range=f"{year}-01-01/{year}-12-31",
+                    max_items=per_year,
+                    query=source_cfg.get("query"),
                 )
-                .scalars()
-                .first()
-            )
-            if task_row:
-                imagery_service.update_request_task(db, task_row, "failed", error_message=str(exc))
-        return 0
+            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+                failed_years += 1
+                last_exc = exc
+                logger.warning(
+                    "STAC year chunk failed after retries; skipping",
+                    extra={
+                        "source": source_name,
+                        "year": year,
+                        "error": str(exc),
+                    },
+                )
+                continue
+            raw_items.extend(chunk)
+        if len(years) > 0 and failed_years == len(years) and last_exc is not None:
+            raise last_exc
+    else:
+        datetime_range = (
+            source_cfg.get("datetime_range")
+            or f"{source_cfg['start_date']}/{date.today().year}-12-31"
+        )
+        raw_items = await _search_stac_with_retry(
+            collection=collection,
+            bbox=search_bbox,
+            datetime_range=datetime_range,
+            max_items=source_cfg["max_items"],
+            query=source_cfg.get("query"),
+        )
 
     # Spatial filter. NAIP uses the looser "intersects viewport" filter so
     # adjacent tiles can contribute to a mosaic; Landsat/S2 use strict
     # point-containment since their scenes already cover a huge area.
     if source_cfg.get("use_viewport_filter"):
         raw_items = stac_service.filter_items_intersecting_bbox(raw_items, viewport_bbox)
-    elif lat and lng:
+    elif lat is not None and lng is not None:
         raw_items = stac_service.filter_items_containing_point(raw_items, lat, lng)
 
     # Select representative items. NAIP selector accepts the viewport for
@@ -327,21 +348,7 @@ async def _fetch_source(
         # Use actual DB count — covers items from prior runs too
         total_items = imagery_service.count_imagery_snapshots(db, parcel_id, source_name)
 
-        from sqlalchemy import select as sa_select
-
-        from app.models.parcels import TimelineRequestTask
-
-        task_row = (
-            db.execute(
-                sa_select(TimelineRequestTask)
-                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                .where(TimelineRequestTask.source == source_name)
-            )
-            .scalars()
-            .first()
-        )
-        if task_row:
-            imagery_service.update_request_task(db, task_row, "complete", items_found=total_items)
+    _set_task_status(timeline_request_id, source_name, "complete", items_found=total_items)
 
     logger.info(
         "Imagery source done",
@@ -359,44 +366,28 @@ async def _fetch_usgs_topo(
 
     Uses the TNM API (not STAC). GeoTIFF URLs are public S3 — no signing.
     """
-    from sqlalchemy import select as sa_select
+    source_name = "usgs_topo"
 
+    _set_task_status(timeline_request_id, source_name, "processing")
+
+    try:
+        return await _search_and_persist_topo(search_bbox, parcel_id, timeline_request_id)
+    except Exception as exc:
+        logger.error("USGS topo fetch failed", exc_info=exc)
+        _set_task_status(timeline_request_id, source_name, "failed", error_message=str(exc))
+        return 0
+
+
+async def _search_and_persist_topo(
+    search_bbox: tuple[float, float, float, float],
+    parcel_id: uuid.UUID,
+    timeline_request_id: uuid.UUID,
+) -> int:
     from app.db import SessionLocal
-    from app.models.parcels import TimelineRequestTask
 
     source_name = "usgs_topo"
 
-    with SessionLocal() as db:
-        task_row = (
-            db.execute(
-                sa_select(TimelineRequestTask)
-                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                .where(TimelineRequestTask.source == source_name)
-            )
-            .scalars()
-            .first()
-        )
-        if task_row:
-            imagery_service.update_request_task(db, task_row, "processing")
-
-    try:
-        raw_items = await topo_service.search_usgs_topo(search_bbox)
-    except Exception as exc:
-        logger.error("USGS topo search failed", exc_info=exc)
-        with SessionLocal() as db:
-            task_row = (
-                db.execute(
-                    sa_select(TimelineRequestTask)
-                    .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                    .where(TimelineRequestTask.source == source_name)
-                )
-                .scalars()
-                .first()
-            )
-            if task_row:
-                imagery_service.update_request_task(db, task_row, "failed", error_message=str(exc))
-        return 0
-
+    raw_items = await topo_service.search_usgs_topo(search_bbox)
     selected = topo_service.select_topo_items(raw_items)
 
     logger.info(
@@ -428,17 +419,7 @@ async def _fetch_usgs_topo(
 
         total_items = imagery_service.count_imagery_snapshots(db, parcel_id, source_name)
 
-        task_row = (
-            db.execute(
-                sa_select(TimelineRequestTask)
-                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                .where(TimelineRequestTask.source == source_name)
-            )
-            .scalars()
-            .first()
-        )
-        if task_row:
-            imagery_service.update_request_task(db, task_row, "complete", items_found=total_items)
+    _set_task_status(timeline_request_id, source_name, "complete", items_found=total_items)
 
     logger.info("USGS topo done", extra={"items_saved": items_saved})
     return items_saved
@@ -455,45 +436,47 @@ async def _fetch_census(
 
     Returns the number of census snapshots saved.
     """
-    from sqlalchemy import select as sa_select
-
-    from app.db import SessionLocal
-    from app.models.parcels import TimelineRequestTask
-
     try:
         state_fips, county_fips, tract_code = parse_tract_fips(tract_fips)
     except ValueError as exc:
         logger.warning("Invalid tract FIPS", exc_info=exc)
-        with SessionLocal() as db:
-            task_row = (
-                db.execute(
-                    sa_select(TimelineRequestTask)
-                    .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                    .where(TimelineRequestTask.source == "census")
-                )
-                .scalars()
-                .first()
-            )
-            if task_row:
-                imagery_service.update_request_task(db, task_row, "skipped", error_message=str(exc))
+        _set_task_status(timeline_request_id, "census", "skipped", error_message=str(exc))
         return 0
 
-    # Mark task as processing
-    with SessionLocal() as db:
-        task_row = (
-            db.execute(
-                sa_select(TimelineRequestTask)
-                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                .where(TimelineRequestTask.source == "census")
-            )
-            .scalars()
-            .first()
+    _set_task_status(timeline_request_id, "census", "processing")
+
+    try:
+        return await _fetch_census_years(
+            parcel_id,
+            timeline_request_id,
+            tract_fips,
+            state_fips,
+            county_fips,
+            tract_code,
+            api_key,
+            timeout,
         )
-        if task_row:
-            imagery_service.update_request_task(db, task_row, "processing")
+    except Exception as exc:
+        logger.error("Census fetch failed", extra={"tract": tract_fips}, exc_info=exc)
+        _set_task_status(timeline_request_id, "census", "failed", error_message=str(exc))
+        return 0
+
+
+async def _fetch_census_years(
+    parcel_id: uuid.UUID,
+    timeline_request_id: uuid.UUID,
+    tract_fips: str,
+    state_fips: str,
+    county_fips: str,
+    tract_code: str,
+    api_key: str | None,
+    timeout: float,
+) -> int:
+    from app.db import SessionLocal
 
     fetcher = CensusFetcher(api_key=api_key, timeout=timeout)
     items_saved = 0
+    failed_requests = 0
 
     try:
         # Fetch decennial data
@@ -514,6 +497,7 @@ async def _fetch_census(
                         items_saved += 1
                     logger.info("Census decennial saved", extra={"year": year, "tract": tract_fips})
             except CensusApiError as exc:
+                failed_requests += 1
                 logger.warning("Census decennial failed", extra={"year": year}, exc_info=exc)
             # Be a good citizen — small delay between requests
             await asyncio.sleep(0.5)
@@ -536,26 +520,29 @@ async def _fetch_census(
                         items_saved += 1
                     logger.info("Census ACS5 saved", extra={"year": year, "tract": tract_fips})
             except CensusApiError as exc:
+                failed_requests += 1
                 logger.warning("Census ACS5 failed", extra={"year": year}, exc_info=exc)
             await asyncio.sleep(0.5)
 
     finally:
         await fetcher.close()
 
+    # Every single request erroring is an outage, not "tract has no data" —
+    # marking it complete-with-0 would permanently mask the gap because
+    # backfill only refetches missing or failed census tasks.
+    if failed_requests == len(DECENNIAL_YEARS) + len(ACS5_YEARS):
+        _set_task_status(
+            timeline_request_id,
+            "census",
+            "failed",
+            error_message="All Census API requests failed",
+        )
+        return 0
+
     with SessionLocal() as db:
         total_items = demographics_service.count_census_snapshots(db, parcel_id)
 
-        task_row = (
-            db.execute(
-                sa_select(TimelineRequestTask)
-                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                .where(TimelineRequestTask.source == "census")
-            )
-            .scalars()
-            .first()
-        )
-        if task_row:
-            imagery_service.update_request_task(db, task_row, "complete", items_found=total_items)
+    _set_task_status(timeline_request_id, "census", "complete", items_found=total_items)
 
     logger.info("Census fetch complete", extra={"items_saved": items_saved, "tract": tract_fips})
     return items_saved
@@ -572,69 +559,65 @@ async def _fetch_property(
 
     Returns the number of events saved.
     """
-    from sqlalchemy import select as sa_select
-
-    from app.db import SessionLocal
-    from app.models.parcels import TimelineRequestTask
-
     adapter = get_adapter_for_county(county)
-
-    # Mark task processing / skipped
-    with SessionLocal() as db:
-        task_row = (
-            db.execute(
-                sa_select(TimelineRequestTask)
-                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                .where(TimelineRequestTask.source == "property")
-            )
-            .scalars()
-            .first()
+    if not adapter:
+        logger.info(
+            "No property adapter for county",
+            extra={"county": county, "parcel_id": str(parcel_id)},
         )
+        _set_task_status(
+            timeline_request_id,
+            "property",
+            "skipped",
+            error_message=f"Property data not yet available for {county} County",
+        )
+        return 0
 
-        if not adapter:
-            logger.info(
-                "No property adapter for county",
-                extra={"county": county, "parcel_id": str(parcel_id)},
-            )
-            if task_row:
-                imagery_service.update_request_task(
-                    db,
-                    task_row,
-                    "skipped",
-                    error_message=f"Property data not yet available for {county} County",
-                )
-            return 0
-
-        if task_row:
-            imagery_service.update_request_task(db, task_row, "processing")
+    _set_task_status(timeline_request_id, "property", "processing")
 
     # Extract search terms from the normalized address
     street_number, street_name = extract_search_terms(normalized_address)
     if not street_number:
         logger.warning(
             "Could not extract search terms from address",
-            extra={
-                "address": normalized_address,
-            },
+            extra={"address": normalized_address},
         )
-        with SessionLocal() as db:
-            task_row = (
-                db.execute(
-                    sa_select(TimelineRequestTask)
-                    .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                    .where(TimelineRequestTask.source == "property")
-                )
-                .scalars()
-                .first()
-            )
-            if task_row:
-                imagery_service.update_request_task(
-                    db,
-                    task_row,
-                    "failed",
-                    error_message="Could not extract search terms from address",
-                )
+        _set_task_status(
+            timeline_request_id,
+            "property",
+            "failed",
+            error_message="Could not extract search terms from address",
+        )
         return 0
+
+    try:
+        return await _fetch_and_persist_property(
+            adapter,
+            parcel_id,
+            timeline_request_id,
+            county,
+            normalized_address,
+            street_number,
+            street_name,
+            app_token,
+        )
+    except Exception as exc:
+        logger.error("Property fetch failed", extra={"county": county}, exc_info=exc)
+        _set_task_status(timeline_request_id, "property", "failed", error_message=str(exc))
+        return 0
+
+
+async def _fetch_and_persist_property(
+    adapter: Any,
+    parcel_id: uuid.UUID,
+    timeline_request_id: uuid.UUID,
+    county: str,
+    normalized_address: str,
+    street_number: str,
+    street_name: str,
+    app_token: str | None,
+) -> int:
+    from app.db import SessionLocal
 
     logger.info(
         "Fetching property history",
@@ -645,42 +628,17 @@ async def _fetch_property(
         },
     )
 
-    # Fetch sales and permits in parallel
-    all_events = []
-    try:
-        sales, permits = await asyncio.gather(
-            adapter.fetch_sales(street_number, street_name, app_token=app_token),
-            adapter.fetch_permits(street_number, street_name, app_token=app_token),
-        )
-        all_events.extend(sales)
-        all_events.extend(permits)
-    except Exception as exc:
-        logger.error("Property fetch failed", extra={"county": county}, exc_info=exc)
-        with SessionLocal() as db:
-            task_row = (
-                db.execute(
-                    sa_select(TimelineRequestTask)
-                    .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                    .where(TimelineRequestTask.source == "property")
-                )
-                .scalars()
-                .first()
-            )
-            if task_row:
-                imagery_service.update_request_task(
-                    db,
-                    task_row,
-                    "failed",
-                    error_message=str(exc),
-                )
-        return 0
+    sales, permits = await asyncio.gather(
+        adapter.fetch_sales(street_number, street_name, app_token=app_token),
+        adapter.fetch_permits(street_number, street_name, app_token=app_token),
+    )
+    all_events = [*sales, *permits]
 
-    # Filter by fuzzy address match
+    # Filter by fuzzy address match — the LIKE queries are deliberately
+    # broad, so records for other properties must be rejected here.
     matched_events = []
     for event in all_events:
-        # Check if raw_data has an address field to compare
-        raw_addr = event.raw_data.get("address") or event.raw_data.get("situs_address") or ""
-        if raw_addr and not is_address_match(normalized_address, raw_addr):
+        if event.situs_address and not is_address_match(normalized_address, event.situs_address):
             continue
         matched_events.append(event)
 
@@ -693,7 +651,6 @@ async def _fetch_property(
         },
     )
 
-    # Persist events
     items_saved = 0
     with SessionLocal() as db:
         for event in matched_events:
@@ -717,22 +674,7 @@ async def _fetch_property(
 
         total_items = property_events_service.count_property_events(db, parcel_id)
 
-        task_row = (
-            db.execute(
-                sa_select(TimelineRequestTask)
-                .where(TimelineRequestTask.timeline_request_id == timeline_request_id)
-                .where(TimelineRequestTask.source == "property")
-            )
-            .scalars()
-            .first()
-        )
-        if task_row:
-            imagery_service.update_request_task(
-                db,
-                task_row,
-                "complete",
-                items_found=total_items,
-            )
+    _set_task_status(timeline_request_id, "property", "complete", items_found=total_items)
 
     logger.info(
         "Property history fetch complete",

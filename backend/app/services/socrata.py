@@ -79,7 +79,12 @@ async def query_socrata(
         if resp.status_code != 200:
             logger.error(
                 "Socrata error response",
-                extra={"domain": domain, "resource": resource_id, "status": resp.status_code, "body": resp.text[:500]},
+                extra={
+                    "domain": domain,
+                    "resource": resource_id,
+                    "status": resp.status_code,
+                    "body": resp.text[:500],
+                },
             )
             raise SocrataError(f"Socrata returned {resp.status_code} for {domain}/{resource_id}")
 

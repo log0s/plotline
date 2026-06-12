@@ -32,6 +32,134 @@ def _insert_parcel(db: Session, parcel_id: uuid.UUID, addr: str = "Test St") -> 
     db.commit()
 
 
+def test_get_or_create_reuses_inflight_request(db: Session) -> None:
+    """A queued/processing request is reused — no duplicate pipeline."""
+    from app.services.imagery import get_or_create_timeline_request
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+
+    first, created_first = get_or_create_timeline_request(db, parcel_id)
+    second, created_second = get_or_create_timeline_request(db, parcel_id)
+
+    assert created_first is True
+    assert created_second is False
+    assert second.id == first.id
+
+
+def test_get_or_create_reuses_complete_request(db: Session) -> None:
+    from app.services.imagery import (
+        get_or_create_timeline_request,
+        update_timeline_request_status,
+    )
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+
+    first, _ = get_or_create_timeline_request(db, parcel_id)
+    update_timeline_request_status(db, first, "complete")
+
+    second, created = get_or_create_timeline_request(db, parcel_id)
+    assert created is False
+    assert second.id == first.id
+
+
+def test_get_or_create_replaces_failed_request(db: Session) -> None:
+    from app.services.imagery import (
+        get_or_create_timeline_request,
+        update_timeline_request_status,
+    )
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+
+    first, _ = get_or_create_timeline_request(db, parcel_id)
+    update_timeline_request_status(db, first, "failed", error_message="boom")
+
+    second, created = get_or_create_timeline_request(db, parcel_id)
+    assert created is True
+    assert second.id != first.id
+
+
+def test_get_or_create_takes_over_stale_inflight(db: Session) -> None:
+    """An in-flight request untouched past the hard time limit is replaced."""
+    from sqlalchemy import text
+
+    from app.models.parcels import TimelineRequest
+    from app.services.imagery import get_or_create_timeline_request
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+
+    first, _ = get_or_create_timeline_request(db, parcel_id)
+    db.execute(
+        text("UPDATE timeline_requests SET updated_at = '2020-01-01 00:00:00' WHERE id = :id"),
+        {"id": first.id.hex},
+    )
+    db.commit()
+    db.expire_all()
+
+    second, created = get_or_create_timeline_request(db, parcel_id)
+    assert created is True
+    assert second.id != first.id
+
+    db.expire_all()
+    stale = db.get(TimelineRequest, first.id)
+    assert stale is not None
+    assert stale.status == "failed"
+
+
+def test_dispatch_timeline_task_marks_failed_when_broker_down(db: Session) -> None:
+    """A broker outage at dispatch must not leave the request 'queued'
+    forever — the client would poll it indefinitely."""
+    from kombu.exceptions import OperationalError
+
+    from app.services.imagery import (
+        dispatch_timeline_task,
+        get_or_create_timeline_request,
+    )
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    request, _ = get_or_create_timeline_request(db, parcel_id)
+
+    with patch("app.tasks.timeline.fetch_imagery_timeline") as mock_task:
+        mock_task.delay.side_effect = OperationalError("broker down")
+        queued = dispatch_timeline_task(db, request)
+
+    assert queued is False
+    assert request.status == "failed"
+
+
+def test_create_request_tasks_idempotent(db: Session) -> None:
+    """Re-running the orchestrator (Celery redelivery) must not duplicate
+    task rows — existing rows are reset to queued instead."""
+    from sqlalchemy import text
+
+    from app.services.imagery import (
+        create_request_tasks,
+        get_or_create_timeline_request,
+        update_request_task,
+    )
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    request, _ = get_or_create_timeline_request(db, parcel_id)
+
+    tasks = create_request_tasks(db, request.id, ["naip", "landsat"])
+    update_request_task(db, tasks[0], "failed", error_message="boom")
+
+    tasks_again = create_request_tasks(db, request.id, ["naip", "landsat"])
+
+    count = db.execute(
+        text("SELECT COUNT(*) FROM timeline_request_tasks WHERE timeline_request_id = :rid"),
+        {"rid": request.id.hex},
+    ).scalar()
+    assert count == 2
+    assert all(t.status == "queued" for t in tasks_again)
+    assert all(t.error_message is None for t in tasks_again)
+
+
 def test_upsert_imagery_snapshot_insert(db: Session) -> None:
     """upsert_imagery_snapshot returns True on successful insert."""
     from app.services.imagery import upsert_imagery_snapshot

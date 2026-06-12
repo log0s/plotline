@@ -45,10 +45,43 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+// AbortSignal.timeout (Safari 16+) and AbortSignal.any (Safari 17.4+) are
+// too new to rely on — without these fallbacks every fetch that carries a
+// signal throws a TypeError on older browsers.
+function makeTimeoutSignal(ms: number): AbortSignal {
+  if (typeof AbortSignal.timeout === "function") {
+    return AbortSignal.timeout(ms);
+  }
+  const controller = new AbortController();
+  setTimeout(
+    () => controller.abort(new DOMException("Request timed out", "TimeoutError")),
+    ms,
+  );
+  return controller.signal;
+}
+
+function combineSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any([a, b]);
+  }
+  const controller = new AbortController();
+  for (const signal of [a, b]) {
+    if (signal.aborted) {
+      controller.abort(signal.reason);
+      break;
+    }
+    signal.addEventListener("abort", () => controller.abort(signal.reason), {
+      once: true,
+      signal: controller.signal,
+    });
+  }
+  return controller.signal;
+}
+
 async function apiFetch(url: string, options?: RequestInit): Promise<Response> {
-  const timeoutSignal = AbortSignal.timeout(API_TIMEOUT_MS);
+  const timeoutSignal = makeTimeoutSignal(API_TIMEOUT_MS);
   const signal = options?.signal
-    ? AbortSignal.any([timeoutSignal, options.signal])
+    ? combineSignals(timeoutSignal, options.signal)
     : timeoutSignal;
 
   try {

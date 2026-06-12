@@ -7,6 +7,7 @@ Topographic Map Collection products. GeoTIFF files are hosted on public S3
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import defaultdict
 from datetime import date
@@ -33,26 +34,29 @@ _EXTENT_PRIORITY: dict[str, int] = {
     "2 x 1 degree": 10,
 }
 
-_tnm_client: httpx.AsyncClient | None = None
+# Keyed by event loop — see the matching comment in stac.py: each Celery
+# task runs in its own loop and httpx clients are loop-affine.
+_tnm_clients: dict[asyncio.AbstractEventLoop, httpx.AsyncClient] = {}
 
 
 def _get_tnm_client() -> httpx.AsyncClient:
-    """Return a shared httpx client for TNM API requests."""
-    global _tnm_client
-    if _tnm_client is None:
-        _tnm_client = httpx.AsyncClient(
+    """Return a pooled httpx client for TNM API requests (per event loop)."""
+    loop = asyncio.get_running_loop()
+    client = _tnm_clients.get(loop)
+    if client is None or client.is_closed:
+        client = httpx.AsyncClient(
             timeout=30,
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
         )
-    return _tnm_client
+        _tnm_clients[loop] = client
+    return client
 
 
 async def close_client() -> None:
-    """Close the shared TNM API client and release connections."""
-    global _tnm_client
-    if _tnm_client is not None:
-        await _tnm_client.aclose()
-        _tnm_client = None
+    """Close this event loop's TNM API client and release connections."""
+    client = _tnm_clients.pop(asyncio.get_running_loop(), None)
+    if client is not None:
+        await client.aclose()
 
 
 async def search_usgs_topo(

@@ -64,6 +64,26 @@ class TestNormalizeAddress:
     def test_extra_whitespace(self) -> None:
         assert normalize_address("  100   Main   Street  ") == "100 MAIN ST"
 
+    def test_strips_commas(self) -> None:
+        assert (
+            normalize_address("245 Park Avenue, New York, NY, 10167")
+            == "245 PARK AVE NEW YORK NY 10167"
+        )
+
+    def test_preserves_street_names_containing_unit_designators(self) -> None:
+        # APT/UNIT/STE appear inside many real street names — the unit
+        # stripper must only remove standalone designator tokens.
+        assert normalize_address("100 Webster St") == "100 WEBSTER ST"
+        assert normalize_address("200 Sterling Ave") == "200 STERLING AVE"
+        assert normalize_address("55 Western Ave") == "55 WESTERN AVE"
+        assert normalize_address("12 Amsterdam Ave") == "12 AMSTERDAM AVE"
+        assert normalize_address("77 Chester Rd") == "77 CHESTER RD"
+        assert normalize_address("30 Captain Dr") == "30 CAPTAIN DR"
+        assert normalize_address("1 United Nations Plaza") == "1 UNITED NATIONS PLAZA"
+
+    def test_strips_unit_with_period(self) -> None:
+        assert normalize_address("100 Webster St Apt. 4B") == "100 WEBSTER ST"
+
 
 class TestExtractSearchTerms:
     def test_basic_extraction(self) -> None:
@@ -122,6 +142,37 @@ class TestIsAddressMatch:
     def test_empty_address(self) -> None:
         assert not is_address_match("", "100 Main St")
         assert not is_address_match("100 Main St", "")
+
+    def test_census_format_parcel_vs_street_only_record(self) -> None:
+        # The parcel side is the Census geocoder's matchedAddress — full
+        # address with commas. County records carry only the street line.
+        assert is_address_match(
+            "245 PARK AVE, NEW YORK, NY, 10167",
+            "245 PARK AVENUE",
+        )
+        assert is_address_match(
+            "1600 PENNSYLVANIA AVE NW, WASHINGTON, DC, 20500",
+            "1600 PENNSYLVANIA AVE NW",
+        )
+
+    def test_record_with_unit_after_comma(self) -> None:
+        assert is_address_match(
+            "222 PARK AVE SOUTH, NEW YORK, NY, 10003",
+            "222 PARK AVENUE SOUTH, 8E",
+        )
+
+    def test_no_match_different_street_number(self) -> None:
+        assert not is_address_match(
+            "100 MARYLAND AVE, WASHINGTON, DC, 20002",
+            "1100 MARYLAND AVE",
+        )
+
+    def test_no_match_different_street_same_suffix(self) -> None:
+        assert not is_address_match("100 Stevens Ave", "100 Sterling Ave")
+        assert not is_address_match("100 Washington St", "100 Washington Ave")
+
+    def test_no_match_opposite_directional(self) -> None:
+        assert not is_address_match("100 N Bannock St", "100 S Bannock St")
 
 
 # ── Permit Classification ────────────────────────────────────────────────────
@@ -187,12 +238,10 @@ class TestAdapterRegistry:
 
 
 class TestDenverAdapterParsing:
-    def test_fetch_sales_returns_empty(self) -> None:
+    async def test_fetch_sales_returns_empty(self) -> None:
         """Denver sales data is no longer available via public API."""
-        import asyncio
-
         adapter = DenverAdapter()
-        result = asyncio.get_event_loop().run_until_complete(adapter.fetch_sales("123", "MAIN"))
+        result = await adapter.fetch_sales("123", "MAIN")
         assert result == []
 
     def test_parse_permit_building(self) -> None:

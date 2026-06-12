@@ -141,10 +141,10 @@ export function CompareView({ parcel }: CompareViewProps) {
   }, [parcel.latitude, parcel.longitude, syncMaps]);
 
   // Apply imagery to left map (snapshot A)
-  useApplySnapshot(leftMapRef, leftReadyRef, snapA, parcel);
+  useApplySnapshot(leftMapRef, leftReadyRef, snapA);
 
   // Apply imagery to right map (snapshot B)
-  useApplySnapshot(rightMapRef, rightReadyRef, snapB, parcel);
+  useApplySnapshot(rightMapRef, rightReadyRef, snapB);
 
   const handleRecenter = useCallback(() => {
     // Fly the left map; the sync handler mirrors camera onto the right map.
@@ -320,7 +320,6 @@ function useApplySnapshot(
   mapRef: React.RefObject<maplibregl.Map | null>,
   readyRef: React.RefObject<boolean>,
   snapshot: ImagerySnapshot | null,
-  parcel: GeocodeResponse,
 ) {
   useEffect(() => {
     const map = mapRef.current;
@@ -335,10 +334,7 @@ function useApplySnapshot(
         map.on("load", onLoad);
         return;
       }
-      applyImageryLayer(map, snapshot, {
-        lat: parcel.latitude,
-        lng: parcel.longitude,
-      });
+      applyImageryLayer(map, snapshot);
 
       // Landsat/Sentinel look bad when zoomed in too close — matches MapView
       const isLowRes =
@@ -349,5 +345,5 @@ function useApplySnapshot(
     };
 
     apply();
-  }, [mapRef, readyRef, snapshot, parcel.latitude, parcel.longitude]);
+  }, [mapRef, readyRef, snapshot]);
 }

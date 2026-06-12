@@ -10,7 +10,7 @@
  */
 import { AnimatePresence, motion } from "framer-motion";
 import { Map, SplitSquareHorizontal } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EVENT_TYPE_CONFIG, SOURCE_LABELS } from "../constants";
 import { usePropertyEventsQuery } from "../hooks/queries";
 import { useAppStore } from "../store";
@@ -131,41 +131,49 @@ export function Timeline({
   >(new Set(["sales", "building_permits"]));
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Build unified timeline
-  const visibleEventTypes = new Set<PropertyEventType>();
-  for (const key of activeEventFilters) {
-    for (const t of EVENT_FILTER_TYPES[key]) {
-      visibleEventTypes.add(t);
-    }
-  }
-
-  const items: TimelineItem[] = [];
-
-  // Add visible imagery snapshots
-  for (const snap of snapshots) {
-    if (!activeFilters.has(snap.source)) continue;
-    items.push({ kind: "imagery", data: snap, dateStr: snap.capture_date });
-  }
-
-  // Add visible property events (hidden in compare mode)
-  if (!compareMode && propertyEvents?.events) {
-    for (const evt of propertyEvents.events) {
-      if (!visibleEventTypes.has(evt.event_type)) continue;
-      if (evt.event_date) {
-        items.push({ kind: "event", data: evt, dateStr: evt.event_date });
+  // Build unified timeline — memoized: this component re-renders every
+  // poll tick while processing, and the cards are AnimatePresence children.
+  const items: TimelineItem[] = useMemo(() => {
+    const visibleEventTypes = new Set<PropertyEventType>();
+    for (const key of activeEventFilters) {
+      for (const t of EVENT_FILTER_TYPES[key]) {
+        visibleEventTypes.add(t);
       }
     }
-  }
 
-  // Sort chronologically
-  items.sort((a, b) => a.dateStr.localeCompare(b.dateStr));
+    const result: TimelineItem[] = [];
+
+    // Add visible imagery snapshots
+    for (const snap of snapshots) {
+      if (!activeFilters.has(snap.source)) continue;
+      result.push({ kind: "imagery", data: snap, dateStr: snap.capture_date });
+    }
+
+    // Add visible property events (hidden in compare mode)
+    if (!compareMode && propertyEvents?.events) {
+      for (const evt of propertyEvents.events) {
+        if (!visibleEventTypes.has(evt.event_type)) continue;
+        if (evt.event_date) {
+          result.push({ kind: "event", data: evt, dateStr: evt.event_date });
+        }
+      }
+    }
+
+    // Sort chronologically
+    result.sort((a, b) => a.dateStr.localeCompare(b.dateStr));
+    return result;
+  }, [snapshots, propertyEvents, activeFilters, activeEventFilters, compareMode]);
 
   // Imagery-only items for keyboard nav
-  const visibleSnapshots = items
-    .filter(
-      (i): i is TimelineItem & { kind: "imagery" } => i.kind === "imagery",
-    )
-    .map((i) => i.data);
+  const visibleSnapshots = useMemo(
+    () =>
+      items
+        .filter(
+          (i): i is TimelineItem & { kind: "imagery" } => i.kind === "imagery",
+        )
+        .map((i) => i.data),
+    [items],
+  );
 
   // Keyboard navigation (imagery only)
   const handleKeyDown = useCallback(
@@ -306,7 +314,8 @@ export function Timeline({
     timelineStatus?.status === "processing" ||
     (timelineRequestId != null && timelineStatus == null && snapshots.length === 0);
 
-  const isEmpty = !isProcessing && snapshots.length === 0;
+  const isFailed = timelineStatus?.status === "failed";
+  const isEmpty = !isProcessing && !isFailed && snapshots.length === 0;
 
   const hasEvents = (propertyEvents?.events?.length ?? 0) > 0;
 
@@ -457,6 +466,18 @@ export function Timeline({
             No historical imagery found for this location.
             <br />
             This can happen for very rural areas or outside the continental US.
+          </div>
+        )}
+
+        {isFailed && snapshots.length === 0 && (
+          <div className="flex items-center justify-center w-full py-4 text-xs text-red-400 text-center px-8">
+            We couldn't build the timeline for this location
+            {timelineStatus?.error_message
+              ? ` (${timelineStatus.error_message})`
+              : ""}
+            .
+            <br />
+            Refresh the page to try again.
           </div>
         )}
 

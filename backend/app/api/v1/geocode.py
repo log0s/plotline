@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
+from app.api.rate_limit import RateLimit
 from app.config import Settings, get_settings
 from app.db import get_db, get_redis
 from app.schemas.geocode import (
@@ -38,6 +42,7 @@ _AUTOCOMPLETE_CACHE_TTL = 300  # 5 minutes
         "Returns address suggestions for typeahead search, powered by "
         "Photon (OSM). Results are bounded to the continental US."
     ),
+    dependencies=[Depends(RateLimit(times=60, seconds=60))],
 )
 async def autocomplete(
     q: str = Query(..., min_length=3, max_length=200, description="Partial address query"),
@@ -161,8 +166,10 @@ async def autocomplete(
     ),
     responses={
         422: {"description": "Address could not be geocoded or validation failed"},
+        429: {"description": "Rate limit exceeded"},
         502: {"description": "Upstream Census Geocoder API is unavailable"},
     },
+    dependencies=[Depends(RateLimit(times=10, seconds=60))],
 )
 async def geocode_address(
     body: GeocodeRequest,
@@ -200,8 +207,12 @@ async def geocode_address(
             detail="Could not match this address. Please check the spelling and include city and state.",
         ) from exc
 
+    # Steps 2 and 3 are synchronous DB work — run them in the threadpool so
+    # they don't block the event loop of this async handler.
+
     # 2. Deduplicate / upsert parcel
-    parcel, is_new = parcels_service.get_or_create_parcel(
+    parcel, is_new = await run_in_threadpool(
+        parcels_service.get_or_create_parcel,
         db=db,
         address=body.address,
         geocode_result=geocode_result,
@@ -218,36 +229,37 @@ async def geocode_address(
         },
     )
 
-    # 3. Kick off imagery timeline fetch (idempotent — returns existing if done)
-    timeline_request_id = None
-    try:
-        timeline_req, is_new_request = imagery_service.get_or_create_timeline_request(db, parcel.id)
-        timeline_request_id = timeline_req.id
-
-        if not is_new_request:
-            refetch_req = imagery_service.maybe_refetch_for_backfill(
-                db,
-                parcel,
-                timeline_req,
+    # 3. Kick off imagery timeline fetch (idempotent — reuses an in-flight
+    #    or complete request when one exists). DB errors here are non-fatal:
+    #    the geocode result is still returned, just without a timeline id.
+    def _ensure_timeline_request() -> uuid.UUID | None:
+        try:
+            timeline_req, is_new_request = imagery_service.get_or_create_timeline_request(
+                db, parcel.id
             )
-            if refetch_req is not None:
-                timeline_request_id = refetch_req.id
-                is_new_request = True
 
-        if is_new_request:
-            from app.tasks.timeline import fetch_imagery_timeline
+            if not is_new_request:
+                refetch_req = imagery_service.maybe_refetch_for_backfill(
+                    db,
+                    parcel,
+                    timeline_req,
+                )
+                if refetch_req is not None:
+                    timeline_req = refetch_req
+                    is_new_request = True
 
-            fetch_imagery_timeline.delay(str(timeline_request_id))
-            logger.info(
-                "Imagery timeline task dispatched",
-                extra={"parcel_id": str(parcel.id), "request_id": str(timeline_request_id)},
+            if is_new_request:
+                imagery_service.dispatch_timeline_task(db, timeline_req)
+
+            return timeline_req.id
+        except SQLAlchemyError as exc:
+            logger.error(
+                "Failed to create timeline request",
+                extra={"parcel_id": str(parcel.id), "error": str(exc)},
             )
-    except Exception as exc:
-        # Non-fatal — geocode response is still returned
-        logger.warning(
-            "Failed to dispatch imagery timeline task",
-            extra={"parcel_id": str(parcel.id), "error": str(exc)},
-        )
+            return None
+
+    timeline_request_id = await run_in_threadpool(_ensure_timeline_request)
 
     return GeocodeResponse(
         parcel_id=parcel.id,

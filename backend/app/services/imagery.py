@@ -13,11 +13,12 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import Uuid, bindparam, select
 from sqlalchemy import text as sa_text
 from sqlalchemy.engine import RowMapping
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.parcels import Parcel, TimelineRequest, TimelineRequestTask
@@ -54,43 +55,129 @@ class ImagerySnapshotRow:
 # ── Timeline request helpers ───────────────────────────────────────────────────
 
 
-def get_or_create_timeline_request(
-    db: Session,
-    parcel_id: uuid.UUID,
-) -> tuple[TimelineRequest, bool]:
-    """Return (request, is_new).
+_INFLIGHT_STATUSES = ("queued", "processing")
 
-    If a 'complete' request already exists for this parcel, return it
-    (second visit is instant — no re-fetch needed).
-    Otherwise create a new queued request.
-    """
-    existing = (
+# Longer than the task's 35-minute hard time limit — an in-flight request
+# that hasn't been touched for this long was lost (worker killed before
+# acking, broker outage at dispatch, ...) and may be taken over.
+_STALE_INFLIGHT = timedelta(minutes=45)
+
+
+def _find_reusable_request(db: Session, parcel_id: uuid.UUID) -> TimelineRequest | None:
+    return (
         db.execute(
             select(TimelineRequest)
             .where(TimelineRequest.parcel_id == parcel_id)
-            .where(TimelineRequest.status == "complete")
+            .where(TimelineRequest.status.in_((*_INFLIGHT_STATUSES, "complete")))
             .order_by(TimelineRequest.created_at.desc())
             .limit(1)
         )
         .scalars()
         .first()
     )
-    if existing:
-        logger.debug(
-            "Returning existing complete timeline request",
-            extra={"parcel_id": str(parcel_id), "request_id": str(existing.id)},
-        )
-        return existing, False
 
+
+def _is_stale_inflight(request: TimelineRequest) -> bool:
+    if request.status not in _INFLIGHT_STATUSES:
+        return False
+    updated = request.updated_at
+    if updated is None:
+        return False
+    if updated.tzinfo is None:
+        updated = updated.replace(tzinfo=UTC)
+    return datetime.now(tz=UTC) - updated > _STALE_INFLIGHT
+
+
+def _create_queued_request(
+    db: Session,
+    parcel_id: uuid.UUID,
+) -> tuple[TimelineRequest, bool]:
+    """Insert a queued request; on losing the one-in-flight-per-parcel race,
+    return the winning request instead. Returns (request, created)."""
     request = TimelineRequest(parcel_id=parcel_id, status="queued")
     db.add(request)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        racing = _find_reusable_request(db, parcel_id)
+        if racing is not None and racing.status in _INFLIGHT_STATUSES:
+            logger.info(
+                "Lost request-creation race; reusing in-flight request",
+                extra={"parcel_id": str(parcel_id), "request_id": str(racing.id)},
+            )
+            return racing, False
+        raise
     db.refresh(request)
     logger.info(
         "Created new timeline request",
         extra={"parcel_id": str(parcel_id), "request_id": str(request.id)},
     )
     return request, True
+
+
+def get_or_create_timeline_request(
+    db: Session,
+    parcel_id: uuid.UUID,
+) -> tuple[TimelineRequest, bool]:
+    """Return (request, is_new).
+
+    Reuses an in-flight (queued/processing) request so concurrent visits
+    don't spawn duplicate pipelines, and a 'complete' one so a second visit
+    is instant. An in-flight request untouched for longer than the task's
+    hard time limit is considered lost: it's marked failed and replaced.
+    """
+    existing = _find_reusable_request(db, parcel_id)
+
+    if existing is not None and _is_stale_inflight(existing):
+        logger.warning(
+            "Taking over stale in-flight timeline request",
+            extra={"parcel_id": str(parcel_id), "request_id": str(existing.id)},
+        )
+        update_timeline_request_status(
+            db, existing, "failed", error_message="Worker never completed the request"
+        )
+        existing = None
+
+    if existing is not None:
+        logger.debug(
+            "Returning existing timeline request",
+            extra={
+                "parcel_id": str(parcel_id),
+                "request_id": str(existing.id),
+                "status": existing.status,
+            },
+        )
+        return existing, False
+
+    return _create_queued_request(db, parcel_id)
+
+
+def dispatch_timeline_task(db: Session, request: TimelineRequest) -> bool:
+    """Queue the Celery job for a request; mark it failed if the broker is down.
+
+    Without this, a broker outage at dispatch time leaves a request stuck at
+    'queued' forever while the client polls it. Returns True when queued.
+    """
+    from kombu.exceptions import OperationalError as KombuOperationalError
+    from redis.exceptions import RedisError
+
+    from app.tasks.timeline import fetch_imagery_timeline
+
+    try:
+        fetch_imagery_timeline.delay(str(request.id))
+    except (KombuOperationalError, RedisError, OSError) as exc:
+        logger.error(
+            "Failed to dispatch timeline task",
+            extra={"request_id": str(request.id), "error": str(exc)},
+        )
+        update_timeline_request_status(
+            db, request, "failed", error_message="Could not queue the timeline job"
+        )
+        return False
+
+    logger.info("Timeline task dispatched", extra={"request_id": str(request.id)})
+    return True
 
 
 def get_timeline_request(
@@ -110,20 +197,49 @@ def create_request_tasks(
     timeline_request_id: uuid.UUID,
     sources: list[str],
 ) -> list[TimelineRequestTask]:
-    """Create per-source task rows for a timeline request."""
-    tasks = [
-        TimelineRequestTask(
-            timeline_request_id=timeline_request_id,
-            source=source,
-            status="queued",
+    """Create (or reset) per-source task rows for a timeline request.
+
+    Idempotent: with acks_late a killed worker's task is redelivered and the
+    orchestrator runs again — a blind insert would duplicate the rows.
+    ON CONFLICT resets the existing row to queued instead.
+    """
+    # Typed bindparams so the UUIDs are rendered the same way the ORM
+    # renders them when querying these rows back (matters on SQLite).
+    sql = sa_text(
+        """
+        INSERT INTO timeline_request_tasks (id, timeline_request_id, source, status)
+        VALUES (:id, :timeline_request_id, :source, 'queued')
+        ON CONFLICT (timeline_request_id, source) DO UPDATE
+            SET status = 'queued',
+                items_found = 0,
+                started_at = NULL,
+                completed_at = NULL,
+                error_message = NULL
+        """
+    ).bindparams(
+        bindparam("id", type_=Uuid()),
+        bindparam("timeline_request_id", type_=Uuid()),
+    )
+    for source in sources:
+        db.execute(
+            sql,
+            {
+                "id": uuid.uuid4(),
+                "timeline_request_id": timeline_request_id,
+                "source": source,
+            },
         )
-        for source in sources
-    ]
-    db.add_all(tasks)
     db.commit()
-    for t in tasks:
-        db.refresh(t)
-    return tasks
+    tasks = (
+        db.execute(
+            select(TimelineRequestTask).where(
+                TimelineRequestTask.timeline_request_id == timeline_request_id
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return list(tasks)
 
 
 def update_request_task(
@@ -170,7 +286,8 @@ def maybe_refetch_for_backfill(
     we can now provide; otherwise None.
 
     Backfill triggers:
-      * Census tract FIPS is now available but no census snapshots exist.
+      * Census tract FIPS is now available but no census task ran, or the
+        previous census task failed (e.g. a Census API outage).
       * The parcel's county now has a property adapter, but the previous
         run's property task was missing or skipped.
       * No usgs_topo snapshots exist (source added after initial fetch).
@@ -193,10 +310,10 @@ def maybe_refetch_for_backfill(
             .scalars()
             .first()
         )
-        if not census_task:
+        if not census_task or census_task.status == "failed":
             needs_refetch = True
             logger.info(
-                "Census task missing — refetch needed",
+                "Census task missing or failed — refetch needed",
                 extra={"parcel_id": str(parcel.id)},
             )
 
@@ -239,10 +356,10 @@ def maybe_refetch_for_backfill(
     if not needs_refetch:
         return None
 
-    new_req = TimelineRequest(parcel_id=parcel.id, status="queued")
-    db.add(new_req)
-    db.commit()
-    db.refresh(new_req)
+    new_req, created = _create_queued_request(db, parcel.id)
+    if not created:
+        # Another request is already in flight — it will do the backfill.
+        return None
     logger.info(
         "Created new timeline request for backfill",
         extra={"parcel_id": str(parcel.id), "request_id": str(new_req.id)},

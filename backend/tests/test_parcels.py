@@ -6,6 +6,7 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from app.services.geocoder import GeocodeResult
 
@@ -82,6 +83,28 @@ def test_get_parcel_invalid_uuid(client: TestClient) -> None:
 
 
 # ── Deduplication logic ───────────────────────────────────────────────────────
+
+
+def test_lock_parcel_location_acquires_pg_advisory_lock() -> None:
+    """On Postgres, get-or-create serializes per geocoded location so two
+    concurrent first geocodes of the same address can't both insert."""
+    from app.services.parcels import _lock_parcel_location
+
+    mock_db = MagicMock()
+    mock_db.get_bind.return_value.dialect.name = "postgresql"
+
+    _lock_parcel_location(mock_db, 39.7391, -104.9847)
+
+    sql, params = mock_db.execute.call_args.args
+    assert "pg_advisory_xact_lock" in str(sql)
+    assert params == {"key": "parcel:-104.984700,39.739100"}
+
+
+def test_lock_parcel_location_noop_off_postgres(db: Session) -> None:
+    """SQLite has no advisory locks — the helper must be a no-op there."""
+    from app.services.parcels import _lock_parcel_location
+
+    _lock_parcel_location(db, 39.7391, -104.9847)
 
 
 def test_dedup_returns_existing_parcel_when_within_radius() -> None:

@@ -19,10 +19,16 @@ class GeocodeRequest(BaseModel):
     )
     lat: float | None = Field(
         default=None,
+        ge=-90,
+        le=90,
+        allow_inf_nan=False,
         description="Latitude from autocomplete — skips Census address lookup when provided with lon",
     )
     lon: float | None = Field(
         default=None,
+        ge=-180,
+        le=180,
+        allow_inf_nan=False,
         description="Longitude from autocomplete — skips Census address lookup when provided with lat",
     )
 

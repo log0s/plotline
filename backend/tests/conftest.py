@@ -26,6 +26,7 @@ os.environ["DATABASE_URL"] = "postgresql://test:test@localhost/test"
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("APP_ENV", "development")
 os.environ.setdefault("LOG_LEVEL", "WARNING")
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 # ── In-memory SQLite engine ───────────────────────────────────────────────────
 
@@ -55,8 +56,10 @@ def _create_test_tables() -> None:
                     id               TEXT PRIMARY KEY,
                     address          TEXT NOT NULL,
                     normalized_address TEXT,
-                    latitude         REAL NOT NULL,
-                    longitude        REAL NOT NULL,
+                    latitude         REAL NOT NULL
+                        CHECK (latitude >= -90 AND latitude <= 90),
+                    longitude        REAL NOT NULL
+                        CHECK (longitude >= -180 AND longitude <= 180),
                     point            TEXT,
                     census_tract_id  TEXT,
                     county           TEXT,
@@ -70,7 +73,8 @@ def _create_test_tables() -> None:
                 CREATE TABLE IF NOT EXISTS timeline_requests (
                     id            TEXT PRIMARY KEY,
                     parcel_id     TEXT REFERENCES parcels(id),
-                    status        TEXT NOT NULL DEFAULT 'queued',
+                    status        TEXT NOT NULL DEFAULT 'queued'
+                        CHECK (status IN ('queued', 'processing', 'complete', 'failed')),
                     created_at    TEXT DEFAULT (datetime('now')),
                     updated_at    TEXT DEFAULT (datetime('now')),
                     completed_at  TEXT,
@@ -80,15 +84,27 @@ def _create_test_tables() -> None:
         )
         conn.execute(
             text("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_timeline_requests_parcel_inflight
+                ON timeline_requests (parcel_id)
+                WHERE status IN ('queued', 'processing')
+            """)
+        )
+        conn.execute(
+            text("""
                 CREATE TABLE IF NOT EXISTS timeline_request_tasks (
                     id                   TEXT PRIMARY KEY,
                     timeline_request_id  TEXT REFERENCES timeline_requests(id),
-                    source               TEXT NOT NULL,
-                    status               TEXT NOT NULL DEFAULT 'queued',
+                    source               TEXT NOT NULL
+                        CHECK (source IN ('naip', 'landsat', 'sentinel2',
+                                          'census', 'property', 'usgs_topo')),
+                    status               TEXT NOT NULL DEFAULT 'queued'
+                        CHECK (status IN ('queued', 'processing', 'complete',
+                                          'failed', 'skipped')),
                     items_found          INTEGER NOT NULL DEFAULT 0,
                     started_at           TEXT,
                     completed_at         TEXT,
-                    error_message        TEXT
+                    error_message        TEXT,
+                    UNIQUE (timeline_request_id, source)
                 )
             """)
         )
@@ -97,7 +113,8 @@ def _create_test_tables() -> None:
                 CREATE TABLE IF NOT EXISTS imagery_snapshots (
                     id                    TEXT PRIMARY KEY,
                     parcel_id             TEXT NOT NULL REFERENCES parcels(id),
-                    source                TEXT NOT NULL,
+                    source                TEXT NOT NULL
+                        CHECK (source IN ('naip', 'landsat', 'sentinel2', 'usgs_topo')),
                     capture_date          TEXT NOT NULL,
                     stac_item_id          TEXT NOT NULL,
                     stac_collection       TEXT NOT NULL,
@@ -118,7 +135,8 @@ def _create_test_tables() -> None:
                     id                       TEXT PRIMARY KEY,
                     parcel_id                TEXT NOT NULL REFERENCES parcels(id),
                     tract_fips               TEXT NOT NULL,
-                    dataset                  TEXT NOT NULL,
+                    dataset                  TEXT NOT NULL
+                        CHECK (dataset IN ('decennial', 'acs5')),
                     year                     INTEGER NOT NULL,
                     total_population         INTEGER,
                     median_household_income   INTEGER,
@@ -142,7 +160,12 @@ def _create_test_tables() -> None:
                 CREATE TABLE IF NOT EXISTS property_events (
                     id                  TEXT PRIMARY KEY,
                     parcel_id           TEXT NOT NULL REFERENCES parcels(id),
-                    event_type          TEXT NOT NULL,
+                    event_type          TEXT NOT NULL
+                        CHECK (event_type IN ('sale', 'permit_building',
+                                              'permit_demolition', 'permit_electrical',
+                                              'permit_mechanical', 'permit_plumbing',
+                                              'permit_other', 'zoning_change',
+                                              'assessment')),
                     event_date          TEXT,
                     sale_price          INTEGER,
                     permit_type         TEXT,
@@ -155,6 +178,13 @@ def _create_test_tables() -> None:
                     created_at          TEXT DEFAULT (datetime('now')),
                     UNIQUE (parcel_id, source, source_record_id)
                 )
+            """)
+        )
+        conn.execute(
+            text("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_property_events_null_source_record
+                ON property_events (parcel_id, source, event_type, event_date)
+                WHERE source_record_id IS NULL
             """)
         )
         conn.commit()

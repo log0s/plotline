@@ -11,8 +11,9 @@ from __future__ import annotations
 import logging
 
 from geoalchemy2 import Geography
-from geoalchemy2.functions import ST_DWithin, ST_MakePoint
+from geoalchemy2.functions import ST_Distance, ST_DWithin, ST_MakePoint
 from sqlalchemy import cast
+from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from app.config import Settings
@@ -20,6 +21,24 @@ from app.models.parcels import Parcel
 from app.services.geocoder import GeocodeResult
 
 logger = logging.getLogger(__name__)
+
+
+def _lock_parcel_location(db: Session, latitude: float, longitude: float) -> None:
+    """Serialize concurrent get-or-create calls for one geocoded location.
+
+    "Within 50 m" dedup can't be expressed as a unique constraint, so two
+    concurrent first geocodes of the same address would both miss the
+    lookup and insert duplicate parcels. A transaction-scoped advisory
+    lock on the geocoded coordinates closes the window: it's released when
+    the insert commits, at which point the waiter's lookup sees the new
+    row. The same address always geocodes to the same point, so both
+    requests contend on the same key. No-op on SQLite (tests), which has
+    no advisory locks.
+    """
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    key = f"parcel:{longitude:.6f},{latitude:.6f}"
+    db.execute(sa_text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": key})
 
 
 def find_nearby_parcel(
@@ -52,6 +71,7 @@ def find_nearby_parcel(
                 radius_meters,
             )
         )
+        .order_by(ST_Distance(cast(Parcel.point, geography_type), query_point))
         .first()
     )
     return result
@@ -77,6 +97,8 @@ def get_or_create_parcel(
     Returns:
         A tuple of (Parcel, is_new) where is_new is True if a new row was inserted.
     """
+    _lock_parcel_location(db, geocode_result.latitude, geocode_result.longitude)
+
     existing = find_nearby_parcel(
         db=db,
         latitude=geocode_result.latitude,
@@ -85,17 +107,25 @@ def get_or_create_parcel(
     )
 
     if existing:
-        # Backfill census tract if the existing parcel is missing it
-        # (happens for parcels geocoded before the /geographies/ URL fix)
+        # Backfill census metadata the existing parcel is missing — each
+        # field independently, so a parcel with a tract but no county
+        # still heals.
+        changed = False
         if not existing.census_tract_id and geocode_result.census_tract_id:
             existing.census_tract_id = geocode_result.census_tract_id
-            existing.county = existing.county or geocode_result.county
-            existing.state_fips = existing.state_fips or geocode_result.state_fips
+            changed = True
+        if not existing.county and geocode_result.county:
+            existing.county = geocode_result.county
+            changed = True
+        if not existing.state_fips and geocode_result.state_fips:
+            existing.state_fips = geocode_result.state_fips
+            changed = True
+        if changed:
             db.commit()
             db.refresh(existing)
             logger.info(
-                "Backfilled census tract on existing parcel",
-                extra={"parcel_id": str(existing.id), "tract": geocode_result.census_tract_id},
+                "Backfilled census metadata on existing parcel",
+                extra={"parcel_id": str(existing.id), "tract": existing.census_tract_id},
             )
         logger.info(
             "Deduplication hit — returning existing parcel",

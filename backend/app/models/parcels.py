@@ -8,6 +8,7 @@ from typing import Any
 
 from geoalchemy2 import Geometry
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     Date,
     DateTime,
@@ -35,6 +36,7 @@ class Parcel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
+        default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     address: Mapped[str] = mapped_column(Text, nullable=False)
@@ -99,12 +101,13 @@ class TimelineRequest(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
+        default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
-    parcel_id: Mapped[uuid.UUID | None] = mapped_column(
+    parcel_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("parcels.id", ondelete="CASCADE"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
     status: Mapped[str] = mapped_column(
@@ -130,7 +133,7 @@ class TimelineRequest(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
-    parcel: Mapped[Parcel | None] = relationship(
+    parcel: Mapped[Parcel] = relationship(
         "Parcel",
         back_populates="timeline_requests",
     )
@@ -163,6 +166,7 @@ class TimelineRequestTask(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
+        default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     timeline_request_id: Mapped[uuid.UUID] = mapped_column(
@@ -203,6 +207,11 @@ class TimelineRequestTask(Base):
             "status IN ('queued', 'processing', 'complete', 'failed', 'skipped')",
             name="ck_trt_status",
         ),
+        UniqueConstraint(
+            "timeline_request_id",
+            "source",
+            name="uq_trt_request_source",
+        ),
     )
 
     def __repr__(self) -> str:
@@ -219,6 +228,7 @@ class ImagerySnapshot(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
+        default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     parcel_id: Mapped[uuid.UUID] = mapped_column(
@@ -285,6 +295,7 @@ class CensusSnapshot(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
+        default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     parcel_id: Mapped[uuid.UUID] = mapped_column(
@@ -361,6 +372,7 @@ class PropertyEvent(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
+        default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     parcel_id: Mapped[uuid.UUID] = mapped_column(
@@ -371,13 +383,13 @@ class PropertyEvent(Base):
     event_type: Mapped[str] = mapped_column(Text, nullable=False)
     event_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
-    # Sale-specific
-    sale_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Sale-specific — BigInteger: Manhattan records exceed int32 ($2.1B+ sales)
+    sale_price: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     # Permit-specific
     permit_type: Mapped[str | None] = mapped_column(Text, nullable=True)
     permit_description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    permit_valuation: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    permit_valuation: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     # General
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -429,6 +441,7 @@ class FeaturedLocation(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
+        default=uuid.uuid4,
         server_default=func.gen_random_uuid(),
     )
     parcel_id: Mapped[uuid.UUID] = mapped_column(

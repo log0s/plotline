@@ -212,7 +212,17 @@ export function ParcelInfo({
           <p className="data-label uppercase tracking-widest text-xs mb-2">
             Timeline
           </p>
-          {isTimelineProcessing ? (
+          {timelineStatus?.status === "failed" ? (
+            <div className="flex items-start gap-2">
+              <span className="inline-block w-2 h-2 mt-1 rounded-full bg-red-400 shrink-0" />
+              <span className="text-xs text-red-400">
+                Timeline failed
+                {timelineStatus.error_message
+                  ? ` — ${timelineStatus.error_message}`
+                  : ""}
+              </span>
+            </div>
+          ) : isTimelineProcessing ? (
             timelineStatus?.tasks?.length ? (
               <ul className="flex flex-col gap-1">
                 {timelineStatus.tasks.map((t) => (

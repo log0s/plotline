@@ -93,6 +93,9 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
     });
 
     map.on("error", () => setMapError(true));
+    // Clear the warning once the map settles again — tile errors are often
+    // transient, and a sticky banner outlives the problem.
+    map.on("idle", () => setMapError((prev) => (prev ? false : prev)));
 
     mapRef.current = map;
 
@@ -156,10 +159,7 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
         return;
       }
 
-      applyImageryLayer(map, snap, {
-        lat: parcel.latitude,
-        lng: parcel.longitude,
-      });
+      applyImageryLayer(map, snap);
       setInfoChip(snap);
       setTopoTooltip(false);
 

@@ -541,6 +541,56 @@ async def test_search_stac_follows_next_link() -> None:
 
 
 @pytest.mark.asyncio
+async def test_search_stac_reposts_post_next_link() -> None:
+    """Planetary Computer's next link is method=POST with the continuation
+    token in the body — it must be re-POSTed, not fetched with GET (which
+    would run an unfiltered default search)."""
+    from unittest.mock import MagicMock as SyncMock
+
+    page1 = {
+        "features": [{"id": "item-1"}],
+        "links": [
+            {
+                "rel": "next",
+                "method": "POST",
+                "href": "https://stac.example.com/search",
+                "body": {
+                    "collections": ["naip"],
+                    "limit": 10,
+                    "token": "next:naip:item-1",
+                },
+            }
+        ],
+    }
+    page2 = {"features": [{"id": "item-2"}], "links": []}
+    pages = iter([page1, page2])
+
+    def _make_resp(*args: object, **kwargs: object) -> SyncMock:
+        resp = SyncMock()
+        resp.raise_for_status = SyncMock()
+        resp.json = SyncMock(return_value=next(pages))
+        return resp
+
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(side_effect=_make_resp)
+    mock_client.get = AsyncMock()
+
+    with patch("app.services.stac._get_search_client", return_value=mock_client):
+        items = await search_stac(
+            collection="naip",
+            bbox=(-105.0, 39.7, -104.9, 39.8),
+            datetime_range="2020-01-01/2021-12-31",
+            max_items=10,
+        )
+
+    assert [i["id"] for i in items] == ["item-1", "item-2"]
+    mock_client.get.assert_not_called()
+    assert mock_client.post.call_count == 2
+    second_payload = mock_client.post.call_args_list[1].kwargs["json"]
+    assert second_payload["token"] == "next:naip:item-1"
+
+
+@pytest.mark.asyncio
 async def test_search_stac_caps_at_max_items() -> None:
     """search_stac should not return more items than max_items."""
     mock_client, _ = _make_httpx_mock_client(
@@ -704,20 +754,46 @@ async def test_validate_landsat_selection_drops_year_with_no_valid() -> None:
 
 @pytest.mark.asyncio
 async def test_close_clients() -> None:
+    import asyncio
+
     import app.services.stac as stac_mod
 
     mock_search = AsyncMock()
     mock_sign = AsyncMock()
 
-    stac_mod._search_client = mock_search
-    stac_mod._sign_client = mock_sign
+    loop = asyncio.get_running_loop()
+    stac_mod._search_clients[loop] = mock_search
+    stac_mod._sign_clients[loop] = mock_sign
 
     await stac_mod.close_clients()
 
     mock_search.aclose.assert_called_once()
     mock_sign.aclose.assert_called_once()
-    assert stac_mod._search_client is None
-    assert stac_mod._sign_client is None
+    assert loop not in stac_mod._search_clients
+    assert loop not in stac_mod._sign_clients
+
+
+def test_search_client_is_per_event_loop() -> None:
+    """Concurrent Celery tasks each run their own loop — they must never
+    share an httpx client, and closing one task's client must not touch
+    another's."""
+    import asyncio
+
+    import app.services.stac as stac_mod
+
+    async def grab() -> object:
+        return stac_mod._get_search_client()
+
+    c1 = asyncio.run(grab())
+    c2 = asyncio.run(grab())
+    assert c1 is not c2
+
+    async def cleanup() -> None:
+        await c1.aclose()
+        await c2.aclose()
+
+    asyncio.run(cleanup())
+    stac_mod._search_clients.clear()
 
 
 # ── Landsat LE07 deprioritization ────────────────────────────────────────────

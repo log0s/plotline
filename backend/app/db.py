@@ -65,6 +65,7 @@ def check_db_connection() -> bool:
 
 # ── Redis ────────────────────────────────────────────────────────────────────
 
+import asyncio  # noqa: E402
 import threading  # noqa: E402
 
 import redis as _redis_lib  # noqa: E402
@@ -73,7 +74,10 @@ import redis.asyncio as _redis_async_lib  # noqa: E402
 _redis_lock = threading.Lock()
 _async_redis_lock = threading.Lock()
 _redis_client: _redis_lib.Redis[bytes] | None = None
-_async_redis_client: _redis_async_lib.Redis[bytes] | None = None
+# Keyed by event loop: the Celery worker runs each task in its own
+# asyncio.run() loop, and redis.asyncio connections are loop-affine —
+# a single shared client breaks under concurrent tasks.
+_async_redis_clients: dict[asyncio.AbstractEventLoop, _redis_async_lib.Redis[bytes]] = {}
 
 
 def get_redis() -> _redis_lib.Redis[bytes]:
@@ -87,23 +91,25 @@ def get_redis() -> _redis_lib.Redis[bytes]:
 
 
 def get_async_redis() -> _redis_async_lib.Redis[bytes]:
-    """Return a shared asyncio Redis client for use inside async handlers."""
-    global _async_redis_client
-    if _async_redis_client is None:
+    """Return an asyncio Redis client bound to the running event loop."""
+    loop = asyncio.get_running_loop()
+    client = _async_redis_clients.get(loop)
+    if client is None:
         with _async_redis_lock:
-            if _async_redis_client is None:
-                _async_redis_client = _redis_async_lib.from_url(
-                    settings.redis_url, decode_responses=False
-                )
-    return _async_redis_client
+            client = _async_redis_clients.get(loop)
+            if client is None:
+                client = _redis_async_lib.from_url(settings.redis_url, decode_responses=False)
+                _async_redis_clients[loop] = client
+    return client
 
 
 async def close_async_redis() -> None:
-    """Close the shared async Redis client and release connections."""
-    global _async_redis_client
-    if _async_redis_client is not None:
-        await _async_redis_client.close()
-        _async_redis_client = None
+    """Close this event loop's async Redis client and release connections."""
+    client = _async_redis_clients.pop(asyncio.get_running_loop(), None)
+    if client is not None:
+        # type-ignore: types-redis stubs lag redis 5+, where aclose()
+        # replaces the deprecated close()
+        await client.aclose()  # type: ignore[attr-defined]
 
 
 def check_redis_connection() -> bool:

@@ -45,7 +45,6 @@ function collectManagedIds(
 export function applyImageryLayer(
   map: maplibregl.Map,
   snapshot: ImagerySnapshot | null,
-  parcelCoords: { lat: number; lng: number },
   opts?: ApplyImageryOptions,
 ): void {
   const sourceId = opts?.sourceId ?? DEFAULT_SOURCE_ID;
@@ -65,66 +64,34 @@ export function applyImageryLayer(
 
   const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 
-  // Build the list of (sourceId, layerId, tileUrl) entries — primary first,
-  // then one per additional_cog_url.
-  const entries: { src: string; layer: string; tileUrl: string }[] = [];
-  if (snapshot.id) {
-    entries.push({
+  // Build the list of source/layer entries — primary first, then one per
+  // additional_cog_url. The primary source gets the snapshot bbox as
+  // bounds so MapLibre doesn't request tiles outside the imagery extent;
+  // mosaic components cover different extents, so they stay unbounded.
+  const entries: {
+    src: string;
+    layer: string;
+    tileUrl: string;
+    bounds?: [number, number, number, number];
+  }[] = [
+    {
       src: sourceId,
       layer: layerId,
       tileUrl: `${apiBase}/api/v1/imagery/${snapshot.id}/tiles/{z}/{x}/{y}`,
+      bounds:
+        snapshot.bbox && snapshot.bbox.length === 4 ? snapshot.bbox : undefined,
+    },
+  ];
+  const extras = snapshot.additional_cog_urls ?? [];
+  extras.forEach((_url, idx) => {
+    // cog=1 → additional_cog_urls[0], cog=2 → additional_cog_urls[1], etc.
+    const cogIndex = idx + 1;
+    entries.push({
+      src: `${sourceId}-cog-${cogIndex}`,
+      layer: `${layerId}-cog-${cogIndex}`,
+      tileUrl: `${apiBase}/api/v1/imagery/${snapshot.id}/tiles/{z}/{x}/{y}?cog=${cogIndex}`,
     });
-    const extras = snapshot.additional_cog_urls ?? [];
-    extras.forEach((_url, idx) => {
-      // cog=1 → additional_cog_urls[0], cog=2 → additional_cog_urls[1], etc.
-      const cogIndex = idx + 1;
-      entries.push({
-        src: `${sourceId}-cog-${cogIndex}`,
-        layer: `${layerId}-cog-${cogIndex}`,
-        tileUrl: `${apiBase}/api/v1/imagery/${snapshot.id}/tiles/{z}/{x}/{y}?cog=${cogIndex}`,
-      });
-    });
-  } else if (snapshot.thumbnail_url) {
-    // Fallback: static preview image overlay centered on the parcel
-    const offset = 0.003; // ~300m
-    const { lat, lng } = parcelCoords;
-    map.addSource(sourceId, {
-      type: "image",
-      url: snapshot.thumbnail_url,
-      coordinates: [
-        [lng - offset, lat + offset],
-        [lng + offset, lat + offset],
-        [lng + offset, lat - offset],
-        [lng - offset, lat - offset],
-      ],
-    });
-    // Single image layer; no mosaic support for the fallback path.
-    const beforeLayer = map.getLayer("boundary_3")
-      ? "boundary_3"
-      : map.getLayer("building")
-        ? "building"
-        : undefined;
-    map.addLayer(
-      {
-        id: layerId,
-        type: "raster",
-        source: sourceId,
-        paint: { "raster-opacity": 0 },
-      },
-      beforeLayer,
-    );
-    map.setPaintProperty(layerId, "raster-opacity-transition", {
-      duration: 600,
-    });
-    requestAnimationFrame(() => {
-      if (map.getLayer(layerId)) {
-        map.setPaintProperty(layerId, "raster-opacity", targetOpacity);
-      }
-    });
-    return;
-  } else {
-    return;
-  }
+  });
 
   // Insert above water/landcover but below roads, buildings, and labels
   const beforeLayer = map.getLayer("boundary_3")
@@ -138,6 +105,7 @@ export function applyImageryLayer(
       type: "raster",
       tiles: [entry.tileUrl],
       tileSize: 256,
+      ...(entry.bounds ? { bounds: entry.bounds } : {}),
     });
     map.addLayer(
       {

@@ -70,7 +70,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4 --pool=threads
+    # Prefork to match production (fly.worker.toml): Celery time limits are
+    # silently ignored under the threads pool, and prefork keeps concurrent
+    # tasks in separate processes.
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
 
   titiler:
     image: ghcr.io/developmentseed/titiler:1.2.1

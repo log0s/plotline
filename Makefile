@@ -53,6 +53,7 @@ test-cov:
 
 lint:
 	docker compose exec api ruff check app/ tests/
+	docker compose exec api ruff format --check app/ tests/
 	docker compose exec api mypy app/
 
 fmt:

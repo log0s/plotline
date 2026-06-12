@@ -127,9 +127,7 @@ def count_census_snapshots(
 ) -> int:
     """Return the total number of census snapshots for a parcel."""
     row = db.execute(
-        sa_text(
-            "SELECT COUNT(*) FROM census_snapshots WHERE parcel_id = :parcel_id"
-        ),
+        sa_text("SELECT COUNT(*) FROM census_snapshots WHERE parcel_id = :parcel_id"),
         {"parcel_id": str(parcel_id)},
     ).scalar()
     return int(row or 0)

@@ -40,13 +40,17 @@ def normalize_address(address: str) -> str:
     """Normalize an address for fuzzy matching against county records.
 
     - Uppercases
+    - Strips punctuation that would otherwise stick to tokens ("AVE," vs "AVE")
     - Strips unit/apt/suite/# suffixes
     - Standardizes street type suffixes (AVENUE → AVE, etc.)
     - Collapses whitespace
     """
     addr = address.upper().strip()
-    # Remove unit/apt/suite designators and everything after them
-    addr = re.sub(r"\s*(APT|UNIT|STE|SUITE|#)\s*\S*", "", addr)
+    addr = addr.replace(",", " ").replace(".", " ")
+    # Remove unit/apt/suite designators and everything after them. The
+    # designator must be a standalone token — without the \b this regex
+    # eats street names like WEBSTER, STERLING, or CAPTAIN from the inside.
+    addr = re.sub(r"\s+(?:APT|UNIT|STE|SUITE)\b\s*\S*|\s*#\s*\S*", "", addr)
     # Standardize suffixes
     for long, short in SUFFIX_MAP.items():
         addr = re.sub(rf"\b{long}\b", short, addr)
@@ -74,18 +78,34 @@ def extract_search_terms(address: str) -> tuple[str, str]:
     return street_number, parts[idx] if idx < len(parts) else parts[1]
 
 
+def _street_line(address: str) -> str:
+    """The street portion of an address — everything before the first comma.
+
+    Geocoder addresses look like "245 PARK AVE, NEW YORK, NY, 10167" while
+    county records carry only the street line; comparing full-vs-street can
+    never score well, so both sides are reduced to the street line first.
+    """
+    return address.split(",", 1)[0]
+
+
 def is_address_match(
     parcel_address: str,
     record_address: str,
-    threshold: float = 0.85,
+    threshold: float = 0.7,
 ) -> bool:
-    """Check if a record's address matches the parcel address.
+    """Check if a record's address refers to the parcel's street address.
 
-    Uses token-set similarity (Jaccard-like) on normalized addresses.
+    The street number must match exactly. The remaining street-name tokens
+    are compared with an overlap coefficient (intersection / smaller set),
+    so a short form ("100 MAIN ST") matches a longer one ("100 N MAIN ST")
+    but "100 N MAIN ST" vs "100 S MAIN ST" (0.67) stays below the threshold.
     """
-    a = set(normalize_address(parcel_address).split())
-    b = set(normalize_address(record_address).split())
-    if not a or not b:
+    a_tokens = normalize_address(_street_line(parcel_address)).split()
+    b_tokens = normalize_address(_street_line(record_address)).split()
+    if len(a_tokens) < 2 or len(b_tokens) < 2:
         return False
-    intersection = a & b
-    return len(intersection) / max(len(a), len(b)) >= threshold
+    if a_tokens[0] != b_tokens[0]:
+        return False
+    a = set(a_tokens[1:])
+    b = set(b_tokens[1:])
+    return len(a & b) / min(len(a), len(b)) >= threshold
