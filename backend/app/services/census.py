@@ -76,12 +76,22 @@ class CensusApiError(Exception):
     """Raised when the Census API returns an unexpected error."""
 
 
+class CensusMissingKeyError(CensusApiError):
+    """Raised when the Census API rejects a request due to a missing or invalid key."""
+
+
 class CensusFetcher:
     """Async client for the US Census Bureau API."""
 
     BASE_URL = "https://api.census.gov/data"
 
     def __init__(self, api_key: str | None = None, timeout: float = 30.0) -> None:
+        if not api_key:
+            raise CensusMissingKeyError(
+                "Census API key is required. Get a free key at "
+                "https://api.census.gov/data/key_signup.html "
+                "and set CENSUS_API_KEY in your .env file."
+            )
         self.api_key = api_key
         self.client = httpx.AsyncClient(timeout=timeout)
 
@@ -170,6 +180,15 @@ class CensusFetcher:
         except httpx.HTTPError as exc:
             logger.error("Census API request failed", extra={"url": url}, exc_info=exc)
             raise CensusApiError(f"HTTP error: {exc}") from exc
+
+        if resp.status_code == 302:
+            location = resp.headers.get("location", "")
+            if "missing_key" in location or resp.headers.get("x-datawebapi-keyerror"):
+                raise CensusMissingKeyError(
+                    "Census API key is missing or invalid. Get a free key at "
+                    "https://api.census.gov/data/key_signup.html "
+                    "and set CENSUS_API_KEY in your .env file."
+                )
 
         if resp.status_code in (204, 404):
             logger.info(

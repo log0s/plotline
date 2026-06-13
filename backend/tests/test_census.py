@@ -10,6 +10,7 @@ import pytest
 
 from app.services.census import (
     CensusFetcher,
+    CensusMissingKeyError,
     _parse_response,
     _to_number,
     parse_tract_fips,
@@ -252,10 +253,31 @@ class TestCensusFetcher:
 
     @pytest.mark.asyncio
     async def test_close_calls_aclose(self) -> None:
-        fetcher = CensusFetcher()
+        fetcher = CensusFetcher(api_key="test-key")
         fetcher.client = AsyncMock()
         await fetcher.close()
         fetcher.client.aclose.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_init_without_key_raises(self) -> None:
+        with pytest.raises(CensusMissingKeyError, match="CENSUS_API_KEY"):
+            CensusFetcher()
+
+    @pytest.mark.asyncio
+    async def test_302_missing_key_redirect(self) -> None:
+        mock_response = MagicMock()
+        mock_response.status_code = 302
+        mock_response.headers = {
+            "location": "https://api.census.gov/data/missing_key.html",
+            "x-datawebapi-keyerror": "1",
+        }
+
+        fetcher = CensusFetcher(api_key="expired-key")
+        fetcher.client = AsyncMock()
+        fetcher.client.get = AsyncMock(return_value=mock_response)
+
+        with pytest.raises(CensusMissingKeyError, match="missing or invalid"):
+            await fetcher.fetch_acs5(2023, "08", "031", "006202")
 
     @pytest.mark.asyncio
     async def test_sentinel_value_handled(self) -> None:

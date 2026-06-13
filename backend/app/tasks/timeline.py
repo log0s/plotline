@@ -28,6 +28,7 @@ from app.services.census import (
     DECENNIAL_YEARS,
     CensusApiError,
     CensusFetcher,
+    CensusMissingKeyError,
     parse_tract_fips,
 )
 from app.services.county_adapters import get_adapter_for_county
@@ -499,6 +500,8 @@ async def _fetch_census_years(
             except CensusApiError as exc:
                 failed_requests += 1
                 logger.warning("Census decennial failed", extra={"year": year}, exc_info=exc)
+                if isinstance(exc, CensusMissingKeyError):
+                    raise
             # Be a good citizen — small delay between requests
             await asyncio.sleep(0.5)
 
@@ -522,6 +525,8 @@ async def _fetch_census_years(
             except CensusApiError as exc:
                 failed_requests += 1
                 logger.warning("Census ACS5 failed", extra={"year": year}, exc_info=exc)
+                if isinstance(exc, CensusMissingKeyError):
+                    raise
             await asyncio.sleep(0.5)
 
     finally:
