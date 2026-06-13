@@ -159,6 +159,13 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
         return;
       }
 
+      if (snap) {
+        const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
+        fetch(`${apiBase}/api/v1/imagery/${snap.id}/warmup`, {
+          method: "POST",
+        }).catch(() => {});
+      }
+
       applyImageryLayer(map, snap);
       setInfoChip(snap);
       setTopoTooltip(false);

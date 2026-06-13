@@ -82,6 +82,15 @@ services:
     environment:
       - WORKERS_PER_CORE=1
       - MAX_WORKERS=4
+      - GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
+      - VSI_CACHE=TRUE
+      - VSI_CACHE_SIZE=536870912
+      - GDAL_CACHEMAX=256
+      - CPL_VSIL_CURL_ALLOWED_EXTENSIONS=.tif,.tiff
+      - GDAL_HTTP_MERGE_CONSECUTIVE_RANGES=YES
+      - GDAL_HTTP_MULTIPLEX=YES
+      - GDAL_HTTP_MAX_RETRY=3
+      - GDAL_HTTP_RETRY_DELAY=1
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:80/healthz || exit 1"]
       interval: 15s

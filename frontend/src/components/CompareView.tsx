@@ -334,6 +334,13 @@ function useApplySnapshot(
         map.on("load", onLoad);
         return;
       }
+      if (snapshot) {
+        const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
+        fetch(`${apiBase}/api/v1/imagery/${snapshot.id}/warmup`, {
+          method: "POST",
+        }).catch(() => {});
+      }
+
       applyImageryLayer(map, snapshot);
 
       // Landsat/Sentinel look bad when zoomed in too close — matches MapView

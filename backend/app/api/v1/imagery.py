@@ -12,7 +12,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import uuid
+from collections import OrderedDict
 from datetime import date
 from typing import Any
 
@@ -232,6 +234,27 @@ async def list_imagery(
     return ImageryListResponse(parcel_id=parcel_id, snapshots=snapshot_responses)
 
 
+# ── Snapshot cache ────────────────────────────────────────────────────────────
+
+_snapshot_cache: OrderedDict[uuid.UUID, tuple[float, ImagerySnapshotRow]] = OrderedDict()
+_SNAPSHOT_CACHE_TTL = 300
+_SNAPSHOT_CACHE_MAX = 500
+
+
+def _get_cached_snapshot(snapshot_id: uuid.UUID) -> ImagerySnapshotRow | None:
+    entry = _snapshot_cache.get(snapshot_id)
+    if entry and time.monotonic() - entry[0] < _SNAPSHOT_CACHE_TTL:
+        return entry[1]
+    return None
+
+
+def _put_cached_snapshot(snapshot_id: uuid.UUID, snap: ImagerySnapshotRow) -> None:
+    _snapshot_cache[snapshot_id] = (time.monotonic(), snap)
+    _snapshot_cache.move_to_end(snapshot_id)
+    while len(_snapshot_cache) > _SNAPSHOT_CACHE_MAX:
+        _snapshot_cache.popitem(last=False)
+
+
 # ── Tile proxy helpers ────────────────────────────────────────────────────────
 
 _COG_PARAMS: dict[str, dict[str, object]] = {
@@ -428,13 +451,12 @@ async def proxy_imagery_tile(
     settings: Settings = Depends(get_settings),
 ) -> Response:
     """Dispatch to the correct Titiler endpoint based on imagery source."""
-    snap = await run_in_threadpool(imagery_service.get_snapshot_by_id, db, snapshot_id)
-    if not snap:
-        raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_id} not found")
-
-    # Close the DB session before the outbound HTTP call to Titiler so we
-    # don't hold a connection idle-in-transaction for the duration of the
-    # (potentially slow) upstream request.
+    snap = _get_cached_snapshot(snapshot_id)
+    if snap is None:
+        snap = await run_in_threadpool(imagery_service.get_snapshot_by_id, db, snapshot_id)
+        if not snap:
+            raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_id} not found")
+        _put_cached_snapshot(snapshot_id, snap)
     db.close()
 
     if snap.source == "landsat":
@@ -442,6 +464,57 @@ async def proxy_imagery_tile(
     if snap.source == "usgs_topo":
         return await _proxy_cog_tile(snap, z, x, y, settings, cog_index=cog, sign=False)
     return await _proxy_cog_tile(snap, z, x, y, settings, cog_index=cog)
+
+
+@router.post(
+    "/imagery/{snapshot_id}/warmup",
+    status_code=204,
+    summary="Pre-warm Titiler's GDAL cache for a COG",
+    description=(
+        "Fires a lightweight /cog/info request to Titiler so it reads the "
+        "COG header before tile requests arrive. Best-effort; failures are "
+        "silently ignored."
+    ),
+    responses={204: {"description": "Warmup initiated (or skipped)"}},
+)
+async def warmup_cog(
+    snapshot_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """Pre-warm Titiler's GDAL cache for faster first-tile rendering."""
+    snap = _get_cached_snapshot(snapshot_id)
+    if snap is None:
+        snap = await run_in_threadpool(imagery_service.get_snapshot_by_id, db, snapshot_id)
+        if snap:
+            _put_cached_snapshot(snapshot_id, snap)
+    db.close()
+
+    if not snap:
+        return Response(status_code=204)
+
+    try:
+        if snap.source == "landsat":
+            stac_url = f"{settings.api_internal_url}/api/v1/imagery/{snap.id}/stac"
+            await _get_titiler_client().get(
+                f"{settings.titiler_url}/stac/info",
+                params={"url": stac_url, "assets": ["red", "green", "blue"]},
+            )
+        else:
+            source_url = snap.cog_url
+            if snap.source != "usgs_topo":
+                try:
+                    source_url = await stac_service.sign_pc_url(source_url)
+                except (httpx.RequestError, httpx.HTTPStatusError):
+                    source_url = snap.cog_url
+            await _get_titiler_client().get(
+                f"{settings.titiler_url}/cog/info",
+                params={"url": source_url},
+            )
+    except (httpx.RequestError, httpx.HTTPStatusError):
+        pass
+
+    return Response(status_code=204)
 
 
 @router.get(
