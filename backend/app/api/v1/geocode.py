@@ -179,16 +179,31 @@ async def geocode_address(
     """Geocode an address and persist the result."""
     logger.info("Geocode request received", extra={"address": body.address})
 
-    # 1. Geocode — use reverse lookup when coordinates are already known
-    #    (e.g. from autocomplete selection), forward lookup otherwise.
+    # 1. Geocode — always try forward geocoding first for accurate
+    #    house-level coordinates.  When the frontend supplies coords from
+    #    autocomplete (Photon), those are often street-level only, so we
+    #    use them as a fallback via reverse geocoding.
     try:
         if body.lat is not None and body.lon is not None:
-            geocode_result = await geocoder_service.reverse_geocode(
-                latitude=body.lat,
-                longitude=body.lon,
-                address=body.address,
-                settings=settings,
-            )
+            try:
+                geocode_result = await geocoder_service.geocode_address(
+                    address=body.address,
+                    settings=settings,
+                )
+            except (
+                geocoder_service.AddressNotFoundError,
+                geocoder_service.GeocoderUnavailableError,
+            ) as exc:
+                logger.info(
+                    "Forward geocode failed, falling back to reverse",
+                    extra={"address": body.address, "reason": str(exc)},
+                )
+                geocode_result = await geocoder_service.reverse_geocode(
+                    latitude=body.lat,
+                    longitude=body.lon,
+                    address=body.address,
+                    settings=settings,
+                )
         else:
             geocode_result = await geocoder_service.geocode_address(
                 address=body.address,

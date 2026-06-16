@@ -172,6 +172,78 @@ def test_geocode_missing_address_field_returns_422(client: TestClient) -> None:
     assert response.status_code == 422
 
 
+def test_geocode_with_coords_tries_forward_first(client: TestClient) -> None:
+    """When coords are provided, forward geocoding is tried first."""
+    mock_parcel, _ = make_mock_parcel(is_new=True)
+    mock_req = _mock_timeline_request()
+
+    with (
+        patch(
+            "app.api.v1.geocode.geocoder_service.geocode_address",
+            new_callable=AsyncMock,
+            return_value=SAMPLE_GEOCODE_RESULT,
+        ) as mock_forward,
+        patch(
+            "app.api.v1.geocode.geocoder_service.reverse_geocode",
+            new_callable=AsyncMock,
+        ) as mock_reverse,
+        patch(
+            "app.api.v1.geocode.parcels_service.get_or_create_parcel",
+            return_value=(mock_parcel, True),
+        ),
+        patch(
+            "app.api.v1.geocode.imagery_service.get_or_create_timeline_request",
+            return_value=(mock_req, True),
+        ),
+        patch("app.tasks.timeline.fetch_imagery_timeline") as mock_task,
+    ):
+        mock_task.delay = MagicMock()
+        response = client.post(
+            "/api/v1/geocode",
+            json={"address": "7809 S Lemay Ave, Fort Collins, CO", "lat": 40.55, "lon": -105.06},
+        )
+
+    assert response.status_code == 200
+    mock_forward.assert_called_once()
+    mock_reverse.assert_not_called()
+
+
+def test_geocode_with_coords_falls_back_to_reverse(client: TestClient) -> None:
+    """When forward geocoding fails with coords present, falls back to reverse."""
+    mock_parcel, _ = make_mock_parcel(is_new=True)
+    mock_req = _mock_timeline_request()
+
+    with (
+        patch(
+            "app.api.v1.geocode.geocoder_service.geocode_address",
+            new_callable=AsyncMock,
+            side_effect=AddressNotFoundError("No match"),
+        ),
+        patch(
+            "app.api.v1.geocode.geocoder_service.reverse_geocode",
+            new_callable=AsyncMock,
+            return_value=SAMPLE_GEOCODE_RESULT,
+        ) as mock_reverse,
+        patch(
+            "app.api.v1.geocode.parcels_service.get_or_create_parcel",
+            return_value=(mock_parcel, True),
+        ),
+        patch(
+            "app.api.v1.geocode.imagery_service.get_or_create_timeline_request",
+            return_value=(mock_req, True),
+        ),
+        patch("app.tasks.timeline.fetch_imagery_timeline") as mock_task,
+    ):
+        mock_task.delay = MagicMock()
+        response = client.post(
+            "/api/v1/geocode",
+            json={"address": "South Lemay Avenue, Fort Collins, Colorado", "lat": 40.55, "lon": -105.06},
+        )
+
+    assert response.status_code == 200
+    mock_reverse.assert_called_once()
+
+
 # ── Service unit tests ────────────────────────────────────────────────────────
 
 

@@ -54,6 +54,14 @@ export function SearchBar({
     clear: clearSuggestions,
   } = useAddressAutocomplete();
 
+  const typedTrimmed = value.trim();
+  const showExactSearch =
+    /^\d+\s/.test(typedTrimmed) &&
+    typedTrimmed.length >= 5 &&
+    suggestions.length > 0;
+  const exactOffset = showExactSearch ? 1 : 0;
+  const totalItems = exactOffset + suggestions.length;
+
   // Sync autocomplete query with input value
   const handleChange = (text: string) => {
     setValue(text);
@@ -66,36 +74,44 @@ export function SearchBar({
     setValue(displayName);
     setShowSuggestions(false);
     clearSuggestions();
-    onSearch(displayName, { lat, lon });
+    const typed = value.trim();
+    const address = /^\d+\s/.test(typed) ? typed : displayName;
+    onSearch(address, { lat, lon });
   };
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (highlightIndex >= 0 && highlightIndex < suggestions.length) {
-      const s = suggestions[highlightIndex];
+    if (showExactSearch && highlightIndex === 0) {
+      setShowSuggestions(false);
+      clearSuggestions();
+      onSearch(typedTrimmed);
+      return;
+    }
+    const si = highlightIndex - exactOffset;
+    if (si >= 0 && si < suggestions.length) {
+      const s = suggestions[si];
       handleSelect(s.display_name, s.lat, s.lon);
       return;
     }
-    const trimmed = value.trim();
-    if (trimmed.length >= 5) {
+    if (typedTrimmed.length >= 5) {
       setShowSuggestions(false);
       clearSuggestions();
-      onSearch(trimmed);
+      onSearch(typedTrimmed);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!showSuggestions || suggestions.length === 0) return;
+    if (!showSuggestions || totalItems === 0) return;
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setHighlightIndex((prev) =>
-        prev < suggestions.length - 1 ? prev + 1 : 0,
+        prev < totalItems - 1 ? prev + 1 : 0,
       );
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setHighlightIndex((prev) =>
-        prev > 0 ? prev - 1 : suggestions.length - 1,
+        prev > 0 ? prev - 1 : totalItems - 1,
       );
     } else if (e.key === "Escape") {
       setShowSuggestions(false);
@@ -140,25 +156,59 @@ export function SearchBar({
         shadow-2xl shadow-black/40 overflow-hidden
       `}
     >
+      {showExactSearch && (
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            setShowSuggestions(false);
+            clearSuggestions();
+            onSearch(typedTrimmed);
+          }}
+          onMouseEnter={() => setHighlightIndex(0)}
+          className={`
+            w-full text-left px-4 py-3 md:py-2.5 flex items-center gap-3
+            transition-colors duration-75
+            ${highlightIndex === 0 ? "bg-navy-700" : "hover:bg-navy-700/50"}
+          `}
+        >
+          <svg
+            className="w-4 h-4 text-amber-400 mt-0.5 shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"
+            />
+          </svg>
+          <span className="text-sm text-amber-400 truncate">
+            Search for &ldquo;{typedTrimmed}&rdquo;
+          </span>
+        </button>
+      )}
       {suggestions.map((s, i) => {
-        // Show the first line (street/name) bolder, rest dimmer
         const parts = s.display_name.split(", ");
         const primary = parts[0];
         const secondary = parts.slice(1).join(", ");
+        const itemIndex = i + exactOffset;
         return (
           <button
             key={`${s.lat}-${s.lon}-${i}`}
             type="button"
             onMouseDown={(e) => {
-              e.preventDefault(); // prevent input blur
+              e.preventDefault();
               handleSelect(s.display_name, s.lat, s.lon);
             }}
-            onMouseEnter={() => setHighlightIndex(i)}
+            onMouseEnter={() => setHighlightIndex(itemIndex)}
             className={`
               w-full text-left px-4 py-3 md:py-2.5 flex items-start gap-3
               transition-colors duration-75
-              ${i === highlightIndex ? "bg-navy-700" : "hover:bg-navy-700/50"}
-              ${i > 0 ? "border-t border-navy-700/40" : ""}
+              ${itemIndex === highlightIndex ? "bg-navy-700" : "hover:bg-navy-700/50"}
+              ${i > 0 || exactOffset ? "border-t border-navy-700/40" : ""}
             `}
           >
             <svg

@@ -21,34 +21,51 @@ export function SearchInput({
   const [highlightIndex, setHighlightIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const typedTrimmed = value.trim();
+  const showExactSearch =
+    /^\d+\s/.test(typedTrimmed) &&
+    typedTrimmed.length >= 5 &&
+    suggestions.length > 0;
+  const exactOffset = showExactSearch ? 1 : 0;
+  const totalItems = exactOffset + suggestions.length;
+
   const handleSelect = (displayName: string, lat: number, lon: number) => {
+    const typed = value.trim();
+    const address = /^\d+\s/.test(typed) ? typed : displayName;
     setValue("");
     setShowSuggestions(false);
     clear();
-    onSearch(displayName, { lat, lon });
+    onSearch(address, { lat, lon });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (highlightIndex >= 0 && highlightIndex < suggestions.length) {
-      const s = suggestions[highlightIndex];
-      handleSelect(s.display_name, s.lat, s.lon);
-      return;
-    }
-    const addr = value.trim();
-    if (addr.length >= 5) {
+    if (showExactSearch && highlightIndex === 0) {
       setValue("");
       clear();
       setShowSuggestions(false);
-      onSearch(addr);
+      onSearch(typedTrimmed);
+      return;
+    }
+    const si = highlightIndex - exactOffset;
+    if (si >= 0 && si < suggestions.length) {
+      const s = suggestions[si];
+      handleSelect(s.display_name, s.lat, s.lon);
+      return;
+    }
+    if (typedTrimmed.length >= 5) {
+      setValue("");
+      clear();
+      setShowSuggestions(false);
+      onSearch(typedTrimmed);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!showSuggestions || suggestions.length === 0) return;
+    if (!showSuggestions || totalItems === 0) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setHighlightIndex((i) => Math.min(i + 1, suggestions.length - 1));
+      setHighlightIndex((i) => Math.min(i + 1, totalItems - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setHighlightIndex((i) => Math.max(i - 1, 0));
@@ -87,10 +104,46 @@ export function SearchInput({
           />
           {showSuggestions && suggestions.length > 0 && (
             <div className="absolute left-0 right-0 bottom-full mb-1 z-50 bg-navy-800 border border-navy-600 rounded-xl shadow-2xl shadow-black/40 overflow-hidden">
+              {showExactSearch && (
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setValue("");
+                    clear();
+                    setShowSuggestions(false);
+                    onSearch(typedTrimmed);
+                  }}
+                  onMouseEnter={() => setHighlightIndex(0)}
+                  className={`
+                    w-full text-left px-3 py-2 flex items-center gap-2
+                    transition-colors duration-75
+                    ${highlightIndex === 0 ? "bg-navy-700" : "hover:bg-navy-700/50"}
+                  `}
+                >
+                  <svg
+                    className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"
+                    />
+                  </svg>
+                  <span className="text-xs text-amber-400 truncate">
+                    Search for &ldquo;{typedTrimmed}&rdquo;
+                  </span>
+                </button>
+              )}
               {suggestions.map((s, i) => {
                 const parts = s.display_name.split(", ");
                 const primary = parts[0];
                 const secondary = parts.slice(1).join(", ");
+                const itemIndex = i + exactOffset;
                 return (
                   <button
                     key={`${s.lat}-${s.lon}-${i}`}
@@ -99,12 +152,12 @@ export function SearchInput({
                       e.preventDefault();
                       handleSelect(s.display_name, s.lat, s.lon);
                     }}
-                    onMouseEnter={() => setHighlightIndex(i)}
+                    onMouseEnter={() => setHighlightIndex(itemIndex)}
                     className={`
                     w-full text-left px-3 py-2 flex items-start gap-2
                     transition-colors duration-75
-                    ${i === highlightIndex ? "bg-navy-700" : "hover:bg-navy-700/50"}
-                    ${i > 0 ? "border-t border-navy-700/40" : ""}
+                    ${itemIndex === highlightIndex ? "bg-navy-700" : "hover:bg-navy-700/50"}
+                    ${i > 0 || exactOffset ? "border-t border-navy-700/40" : ""}
                   `}
                   >
                     <svg
