@@ -237,7 +237,11 @@ def test_geocode_with_coords_falls_back_to_reverse(client: TestClient) -> None:
         mock_task.delay = MagicMock()
         response = client.post(
             "/api/v1/geocode",
-            json={"address": "South Lemay Avenue, Fort Collins, Colorado", "lat": 40.55, "lon": -105.06},
+            json={
+                "address": "South Lemay Avenue, Fort Collins, Colorado",
+                "lat": 40.55,
+                "lon": -105.06,
+            },
         )
 
     assert response.status_code == 200

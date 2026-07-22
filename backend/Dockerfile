@@ -1,24 +1,26 @@
 FROM python:3.12-slim
 
-# System dependencies (GDAL for rasterio/GeoAlchemy2, curl for healthchecks)
+# System dependencies (gcc + libc/libpq headers for psycopg2, curl for healthchecks)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    libc6-dev \
     libpq-dev \
-    libgdal-dev \
-    libproj-dev \
-    proj-bin \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
+
 WORKDIR /app
 
-# Install Python dependencies first (layer-cache friendly)
-COPY pyproject.toml .
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -e ".[dev]"
+# Install locked Python dependencies first (layer-cache friendly)
+COPY pyproject.toml uv.lock ./
+RUN uv export --frozen --extra dev --no-emit-project -o /tmp/requirements.txt \
+    && uv pip install --system --no-cache -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
 
 # Copy app source (overridden in dev by volume mount)
 COPY . .
+RUN uv pip install --system --no-cache --no-deps -e .
 
 # Copy and set entrypoint for auto-migrations
 COPY entrypoint.sh /entrypoint.sh

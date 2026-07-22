@@ -14,7 +14,7 @@ Plotline turns a US address into a rich, scrollable timeline (decades of satelli
 
 ## What it does
 
-Enter any US address. Plotline geocodes it, then searches public archives for every piece of history it can find — aerial photos from NAIP going back to 2003, Landsat satellite imagery reaching into the 1980s, Census demographic data across four decades, and county property sales and building permits. It stitches all of it into a single interactive timeline synced to a zoomable map, so you can scrub through time and watch the landscape change while the data tells you who lived there, what they paid, and what they built.
+Enter any US address. Plotline geocodes it, then searches public archives for every piece of history it can find — aerial photos from NAIP going back to 2003, Landsat and Sentinel-2 satellite imagery reaching back into the 1980s, USGS historical topographic maps stretching back more than a century, Census demographic data across four decades, and county property sales and building permits. It stitches all of it into a single interactive timeline synced to a zoomable map, so you can scrub through time and watch the landscape change while the data tells you who lived there, what they paid, and what they built.
 
 
 ## Featured Examples
@@ -46,12 +46,13 @@ graph LR
     API --> Redis[(Redis)]
     Redis --> Worker[Celery Worker]
     Worker --> STAC[Planetary Computer<br/>NAIP · Landsat · Sentinel-2]
+    Worker --> TNM[USGS National Map<br/>Historical Topo Maps]
     Worker --> Census[Census Bureau API]
-    Worker --> Socrata[County Open Data<br/>Denver · Adams · and more]
+    Worker --> Counties[County Open Data<br/>ArcGIS · Socrata · CKAN]
     Worker --> DB
 ```
 
-A user enters an address. The API geocodes it via the Census Geocoder, stores the parcel in PostGIS, and kicks off a Celery task. The worker searches the Microsoft Planetary Computer STAC API for historical imagery, pulls demographic snapshots from the Census Bureau, and fetches property records from county open data portals. Titiler dynamically serves Cloud-Optimized GeoTIFF tiles so imagery is zoomable at full resolution. The frontend renders everything on a MapLibre map with a synchronized timeline, demographic charts, and property event cards.
+A user enters an address. The API geocodes it via the Census Geocoder, stores the parcel in PostGIS, and kicks off a Celery task. The worker searches the Microsoft Planetary Computer STAC API for historical imagery, pulls scanned topo maps from the USGS National Map, demographic snapshots from the Census Bureau, and property records from county open data portals. Titiler dynamically serves Cloud-Optimized GeoTIFF tiles so imagery is zoomable at full resolution. The frontend renders everything on a MapLibre map with a synchronized timeline, demographic charts, and property event cards.
 
 ## Tech Stack
 
@@ -67,7 +68,7 @@ A user enters an address. The API geocodes it via the Census Geocoder, stores th
 | **Migrations** | Alembic | Versioned schema changes, repeatable deployments |
 | **Task Queue** | Celery + Redis | Async imagery/census/property fetching with per-source progress tracking |
 | **Tile Server** | Titiler | Dynamic COG rendering — full-resolution zoom without downloading entire GeoTIFFs |
-| **Deployment** | Fly.io | Auto-stop machines for API, worker, and tile server |
+| **Deployment** | Fly.io + Cloudflare Pages | API, worker, and tile server on Fly.io; static frontend on Cloudflare Pages; deploys via GitHub Actions on push to main |
 
 ## Data Sources
 
@@ -76,9 +77,10 @@ A user enters an address. The API geocodes it via the Census Geocoder, stores th
 | [NAIP](https://planetarycomputer.microsoft.com/dataset/naip) via Planetary Computer | Aerial imagery, ~1m resolution | Continental US, 2003–present |
 | [Landsat](https://planetarycomputer.microsoft.com/dataset/landsat-c2-l2) via Planetary Computer | Satellite imagery, 30m resolution | Global, 1984–present |
 | [Sentinel-2](https://planetarycomputer.microsoft.com/dataset/sentinel-2-l2a) via Planetary Computer | Satellite imagery, 10m resolution | Global, 2015–present |
+| [USGS Historical Topographic Maps](https://www.usgs.gov/programs/national-geospatial-program/historical-topographic-maps-preserving-past) via The National Map | Scanned topo maps, one per decade | US, 1880s–2006 |
 | [US Census Bureau](https://www.census.gov/data/developers/data-sets.html) | Population, income, housing, demographics by tract | Nationwide, 1990–2023 |
 | [Census Geocoder](https://geocoding.geo.census.gov/geocoder/) | Address geocoding + census tract lookup | Nationwide |
-| County Open Data (Socrata) | Property sales, building permits | Denver metro — see [SUPPORTED_COUNTIES.md](SUPPORTED_COUNTIES.md) |
+| County Open Data (ArcGIS · Socrata · CKAN) | Property sales, building permits | Denver, Adams, DC, Santa Clara, and New York counties — see [SUPPORTED_COUNTIES.md](SUPPORTED_COUNTIES.md) |
 
 ---
 
@@ -106,8 +108,9 @@ docker compose up
 
 That's it. Open [http://localhost:5173](http://localhost:5173).
 
-> **Reproducible builds:** Python dependencies are pinned in `backend/uv.lock`. To update
-> deps, install [uv](https://docs.astral.sh/uv/) and run `uv lock` in the `backend/` directory.
+> **Reproducible builds:** Python dependencies are locked in `backend/uv.lock` and the Docker
+> images install from it. To update deps, install [uv](https://docs.astral.sh/uv/) and run
+> `uv lock` in the `backend/` directory.
 
 The first startup takes a minute or two while Docker pulls images and runs migrations. Subsequent starts are fast.
 
@@ -129,6 +132,7 @@ make migrate     # Run database migrations
 make test        # Run backend tests
 make lint        # Lint backend (ruff + mypy)
 make clean       # Stop services and remove volumes
+make prod        # Run with production overrides (nginx frontend, no reload)
 ```
 
 ---
@@ -138,9 +142,12 @@ make clean       # Stop services and remove volumes
 ```
 plotline/
 ├── docker-compose.yml          # Full local stack: PostGIS, Redis, API, Worker, Titiler, Frontend
+├── docker-compose.prod.yml     # Production overrides: nginx frontend, no mounts, multi-worker API
+├── Dockerfile.fly              # Backend image used by the Fly.io deploys
 ├── fly.toml                    # API deployment config
 ├── fly.worker.toml             # Worker deployment config
 ├── fly.titiler.toml            # Tile server deployment config
+├── .github/workflows/          # CI: backend tests + Fly.io deploys on push to main
 ├── Makefile
 ├── .env.example
 │
@@ -148,14 +155,15 @@ plotline/
 │   ├── Dockerfile
 │   ├── pyproject.toml
 │   ├── alembic/                # Database migrations
+│   ├── static_data/            # Pre-rendered featured-location preview images
 │   ├── app/
 │   │   ├── main.py             # FastAPI app factory
 │   │   ├── config.py           # Environment-based settings (pydantic-settings)
 │   │   ├── models/             # SQLAlchemy + GeoAlchemy2 models
 │   │   ├── schemas/            # Pydantic request/response schemas
-│   │   ├── api/v1/             # Route handlers: geocode, parcels, imagery, demographics, events
-│   │   ├── services/           # Business logic: geocoder, STAC client, Census client, county adapters
-│   │   └── tasks/              # Celery tasks: imagery fetch, census fetch, property fetch
+│   │   ├── api/v1/             # Route handlers: geocode, parcels, imagery, demographics, events, featured
+│   │   ├── services/           # Geocoder, STAC + USGS topo clients, Census client, county adapters (ArcGIS/Socrata/CKAN)
+│   │   └── tasks/              # Celery timeline task: imagery, census, and property fetching
 │   └── tests/
 │
 ├── frontend/
@@ -163,15 +171,18 @@ plotline/
 │   ├── package.json
 │   ├── vite.config.ts
 │   └── src/
+│       ├── pages/              # Landing, Explore, FeaturedRedirect, NotFound
 │       ├── components/         # SearchBar, MapView, Timeline, DemographicsPanel, CompareView
-│       ├── hooks/              # useTimeline, useGeocoder, useDemographics, usePropertyEvents
+│       ├── hooks/              # React Query hooks, address autocomplete, media queries
 │       ├── api/                # Typed API client
 │       └── types/
 │
 ├── scripts/
 │   ├── seed.py                 # Seed example parcels
-│   └── seed_featured.py        # Pre-compute featured location timelines
+│   ├── seed_featured.py        # Pre-compute featured location timelines
+│   └── revalidate_landsat.py   # Re-queue timelines to replace broken Landsat scenes
 │
+├── prompts/                    # Phase prompts used to build this (see DEVELOPMENT.md)
 ├── DEVELOPMENT.md              # Claude Code build process journal
 └── SUPPORTED_COUNTIES.md       # County data source documentation
 ```
@@ -180,13 +191,13 @@ plotline/
 
 ## Development
 
-This project was built using [Claude Code](https://docs.anthropic.com/en/docs/build-with-claude/claude-code) as the primary development tool — from initial scaffolding through deployment. See **[DEVELOPMENT.md](DEVELOPMENT.md)** for a detailed, honest account of the process: which prompts worked, where Claude Code excelled, where I had to intervene, and what I learned about AI-assisted development as a senior engineer.
+This project was built using [Claude Code](https://claude.com/claude-code) as the primary development tool — from initial scaffolding through deployment. See **[DEVELOPMENT.md](DEVELOPMENT.md)** for a detailed, honest account of the process: which prompts worked, where Claude Code excelled, where I had to intervene, and what I learned about AI-assisted development as a senior engineer.
 
 ---
 
 ## Known Limitations
 
-**County data coverage is limited.** Property sales and permits are currently available for Denver, Adams, DC, Santa Clara, and New York counties. The adapter architecture makes adding new counties straightforward, but each county's data portal has different schemas, field names, and API quirks that require manual integration work.
+**County data coverage is limited.** Building permits are currently available for Denver, Adams, DC, Santa Clara (San Jose), and New York (Manhattan) counties; property sales only for DC and New York — the other counties no longer publish a public sales API. The adapter architecture makes adding new counties straightforward, but each county's data portal has different schemas, field names, and API quirks that require manual integration work.
 
 **Address matching is imperfect.** County records use inconsistent address formats. The app normalizes and fuzzy-matches, but some parcels won't find their property history, especially condos with unit numbers or addresses with unusual formatting.
 
@@ -194,7 +205,7 @@ This project was built using [Claude Code](https://docs.anthropic.com/en/docs/bu
 
 **Income and home values are nominal dollars.** The demographic charts show dollar values as reported in each year's Census data, not adjusted for inflation. A median income of $40,000 in 1990 is not directly comparable to $75,000 in 2023. This is noted in the UI.
 
-**Imagery availability varies by location.** NAIP coverage starts around 2003 and is limited to the continental US. Landsat goes back to 1984 but at 30m resolution — you can see land use changes but not individual buildings. Very rural areas may have sparse NAIP coverage. Areas outside the US have no NAIP or Census data.
+**Imagery availability varies by location.** NAIP coverage starts around 2003 and is limited to the continental US. Landsat goes back to 1984 but at 30m resolution — you can see land use changes but not individual buildings. Historical topo maps exist for most of the US, but publication dates vary by quad — some areas have a sheet per decade, others long gaps. Very rural areas may have sparse NAIP coverage. Areas outside the US have no NAIP or Census data.
 
 **Cross-source comparison is imperfect.** Each imagery source has its own footprint, resolution, and acquisition geometry. A 1m NAIP tile and a 30m Landsat scene cover very different areas at very different detail, and successive NAIP acquisitions don't always cover the exact same extent. The timeline reprojects and crops to a shared bounding box, but comparing fine-grained change over a specific parcel across sources can still be difficult.
 

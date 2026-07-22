@@ -1,4 +1,12 @@
 # flyctl launch added from .gitignore
+# Git history — not needed in the image, keeps the build context small
+.git
+
+# Not part of the backend image
+media
+prompts
+.github
+
 # Python
 **/__pycache__
 **/*.py[cod]
