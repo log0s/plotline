@@ -8,16 +8,25 @@ const techStack: { name: string; url: string }[] = [
   { name: "React", url: "https://react.dev/" },
   { name: "MapLibre", url: "https://maplibre.org/" },
   { name: "Celery", url: "https://docs.celeryq.dev/" },
+  { name: "Titiler", url: "https://developmentseed.org/titiler/" },
 ];
 const dataSources: { name: string; url: string }[] = [
-  { name: "USGS / Landsat", url: "https://www.usgs.gov/landsat-missions" },
+  {
+    name: "Planetary Computer",
+    url: "https://planetarycomputer.microsoft.com/",
+  },
   { name: "NAIP", url: "https://naip-usdaonline.hub.arcgis.com/" },
   {
     name: "Sentinel-2",
     url: "https://dataspace.copernicus.eu/explore-data/data-collections/sentinel-data/sentinel-2",
   },
+  {
+    name: "USGS Topo",
+    url: "https://www.usgs.gov/programs/national-geospatial-program/topographic-maps",
+  },
   { name: "Census Bureau", url: "https://www.census.gov/data.html" },
   { name: "County Records", url: "https://data.gov" },
+  { name: "OpenStreetMap", url: "https://www.openstreetmap.org/copyright" },
 ];
 
 export function TechFooter() {
