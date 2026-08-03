@@ -6,6 +6,7 @@ Used by county adapters to fetch property sales, permits, and other records.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -88,7 +89,20 @@ async def query_socrata(
             )
             raise SocrataError(f"Socrata returned {resp.status_code} for {domain}/{resource_id}")
 
-        data = resp.json()
+        # A portal can answer 200 with an HTML error page or a truncated
+        # body. Wrapping the decode here keeps it a SocrataError, so the
+        # caller's per-query handler fails one query instead of the task.
+        try:
+            data = resp.json()
+        except json.JSONDecodeError as exc:
+            logger.error(
+                "Socrata returned non-JSON body",
+                extra={"domain": domain, "resource": resource_id, "body": resp.text[:200]},
+            )
+            raise SocrataError(
+                f"Socrata returned invalid JSON for {domain}/{resource_id}: {resp.text[:200]}"
+            ) from exc
+
         if not isinstance(data, list):
             raise SocrataError(f"Unexpected response type: {type(data).__name__}")
 

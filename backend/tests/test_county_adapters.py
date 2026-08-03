@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+import json
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -191,3 +192,111 @@ def test_adapter_registry_strips_county_suffix_and_lowercases() -> None:
     assert isinstance(get_adapter_for_county("denver"), DenverAdapter)
     assert isinstance(get_adapter_for_county("New York"), NewYorkCountyAdapter)
     assert get_adapter_for_county("Nonexistent") is None
+
+
+# ── Malformed portal responses ────────────────────────────────────────────────
+#
+# A portal answering 200 with an HTML error page used to raise a bare
+# JSONDecodeError out of resp.json(). That escaped the per-query handler
+# (which catches portal-failure types only) and failed the whole property
+# task, discarding other portals' successful queries with it.
+
+_HTML_BODY = (
+    "<html><head><title>502 Bad Gateway</title></head>"
+    "<body><h1>502 Bad Gateway</h1><p>nginx</p></body></html>"
+)
+
+
+def _html_200_response() -> MagicMock:
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.text = _HTML_BODY
+    resp.json.side_effect = json.JSONDecodeError("Expecting value", _HTML_BODY, 0)
+    return resp
+
+
+def _json_200_response(payload: object) -> MagicMock:
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.text = "{}"
+    resp.json.return_value = payload
+    return resp
+
+
+@pytest.mark.asyncio
+async def test_arcgis_html_body_raises_arcgis_error() -> None:
+    from app.services.arcgis import ArcGISError, query_feature_service
+
+    with (
+        patch(
+            "httpx.AsyncClient.get",
+            new_callable=AsyncMock,
+            return_value=_html_200_response(),
+        ),
+        pytest.raises(ArcGISError, match="invalid JSON"),
+    ):
+        await query_feature_service("https://example.com/FeatureServer/0")
+
+
+@pytest.mark.asyncio
+async def test_socrata_html_body_raises_socrata_error() -> None:
+    from app.services.socrata import SocrataError, query_socrata
+
+    with (
+        patch(
+            "httpx.AsyncClient.get",
+            new_callable=AsyncMock,
+            return_value=_html_200_response(),
+        ),
+        pytest.raises(SocrataError, match="invalid JSON"),
+    ):
+        await query_socrata("data.cityofnewyork.us", "ipu4-2q9a")
+
+
+@pytest.mark.asyncio
+async def test_ckan_html_body_raises_ckan_error() -> None:
+    from app.services.ckan import CKANError, query_ckan_datastore
+
+    with (
+        patch(
+            "httpx.AsyncClient.get",
+            new_callable=AsyncMock,
+            return_value=_html_200_response(),
+        ),
+        pytest.raises(CKANError, match="invalid JSON"),
+    ):
+        await query_ckan_datastore("data.sanjoseca.gov", "some-resource-id")
+
+
+@pytest.mark.asyncio
+async def test_one_malformed_query_does_not_discard_the_others() -> None:
+    """Denver fans out to two permit layers. One returning HTML costs one
+    query, not the whole fetch."""
+    adapter = DenverAdapter()
+    good = _json_200_response(
+        {
+            "features": [
+                {
+                    "attributes": {
+                        "PERMIT_NUM": "2024-BLD-001",
+                        "ADDRESS": "1437 N BANNOCK ST",
+                        "CLASS": "New Building",
+                        "DATE_ISSUED": 1700000000000,
+                    }
+                }
+            ]
+        }
+    )
+
+    with patch(
+        "httpx.AsyncClient.get",
+        new_callable=AsyncMock,
+        side_effect=[_html_200_response(), good],
+    ):
+        result = await adapter.fetch_permits("1437", "BANNOCK")
+
+    assert result.queries_attempted == 2
+    assert result.queries_failed == 1
+    assert not result.all_queries_failed
+    # The surviving layer's record is still here
+    assert [e.source_record_id for e in result.events] == ["2024-BLD-001"]

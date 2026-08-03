@@ -6,6 +6,7 @@ adapters for jurisdictions that publish data on CKAN (e.g. San Jose).
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, cast
 
@@ -54,8 +55,6 @@ async def query_ckan_datastore(
     if q:
         params["q"] = q
     if filters:
-        import json
-
         params["filters"] = json.dumps(filters)
 
     logger.info(
@@ -83,7 +82,23 @@ async def query_ckan_datastore(
             )
             raise CKANError(f"CKAN returned {resp.status_code} for {domain}/{resource_id}")
 
-        data = resp.json()
+        # A portal can answer 200 with an HTML error page or a truncated
+        # body. Wrapping the decode here keeps it a CKANError, so the
+        # caller's per-query handler fails one query instead of the task.
+        try:
+            data = resp.json()
+        except json.JSONDecodeError as exc:
+            logger.error(
+                "CKAN returned non-JSON body",
+                extra={"domain": domain, "resource": resource_id, "body": resp.text[:200]},
+            )
+            raise CKANError(
+                f"CKAN returned invalid JSON for {domain}/{resource_id}: {resp.text[:200]}"
+            ) from exc
+
+        if not isinstance(data, dict):
+            raise CKANError(f"Unexpected response type: {type(data).__name__}")
+
         if not data.get("success"):
             error = data.get("error", {})
             raise CKANError(f"CKAN query error: {error.get('message', error)}")

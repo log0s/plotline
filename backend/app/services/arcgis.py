@@ -6,6 +6,7 @@ county adapters after Denver migrated from Socrata to ArcGIS Hub.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -76,7 +77,22 @@ async def query_feature_service(
             )
             raise ArcGISError(f"ArcGIS returned {resp.status_code} for {service_url}")
 
-        data = resp.json()
+        # A portal can answer 200 with an HTML error page or a truncated
+        # body. Wrapping the decode here keeps it an ArcGISError, so the
+        # caller's per-query handler fails one query instead of the task.
+        try:
+            data = resp.json()
+        except json.JSONDecodeError as exc:
+            logger.error(
+                "ArcGIS returned non-JSON body",
+                extra={"url": service_url, "body": resp.text[:200]},
+            )
+            raise ArcGISError(
+                f"ArcGIS returned invalid JSON for {service_url}: {resp.text[:200]}"
+            ) from exc
+
+        if not isinstance(data, dict):
+            raise ArcGISError(f"Unexpected response type: {type(data).__name__}")
 
         if "error" in data:
             err = data["error"]
