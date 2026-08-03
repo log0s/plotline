@@ -377,3 +377,245 @@ def test_backfill_leaves_complete_property_task_alone(db: Session) -> None:
     parcel, req = _backfill_setup(db, "complete")
 
     assert maybe_refetch_for_backfill(db, parcel, req) is None
+
+
+# ── Snapshot reconciliation ───────────────────────────────────────────────────
+
+
+def _persist(db: Session, parcel_id: uuid.UUID, source: str, item_id: str, day: str) -> None:
+    from app.services.imagery import upsert_imagery_snapshot
+
+    upsert_imagery_snapshot(
+        db,
+        parcel_id=parcel_id,
+        source=source,
+        capture_date=date.fromisoformat(day),
+        stac_item_id=item_id,
+        stac_collection=source,
+        cog_url=f"https://example.com/{item_id}.tif",
+    )
+
+
+def _item_ids(db: Session, parcel_id: uuid.UUID, source: str) -> set[str]:
+    from sqlalchemy import text
+
+    rows = db.execute(
+        text("SELECT stac_item_id FROM imagery_snapshots WHERE parcel_id = :p AND source = :s"),
+        {"p": str(parcel_id), "s": source},
+    ).all()
+    return {r.stac_item_id for r in rows}
+
+
+def test_reconcile_replaces_a_revalidated_landsat_scene(db: Session) -> None:
+    """The scenario the maintenance script claimed the upsert handled: a
+    re-run picks a different scene for the same year."""
+    from app.services.imagery import reconcile_source_snapshots
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    _persist(db, parcel_id, "landsat", "LT05_A_1987", "1987-06-01")
+
+    # Re-run: validation rejects A's bands and selects B for 1987
+    _persist(db, parcel_id, "landsat", "LT05_B_1987", "1987-07-04")
+    deleted = reconcile_source_snapshots(
+        db, parcel_id, "landsat", [("LT05_B_1987", date(1987, 7, 4))]
+    )
+
+    assert deleted == 1
+    assert _item_ids(db, parcel_id, "landsat") == {"LT05_B_1987"}
+
+
+def test_reconcile_keeps_every_tile_of_a_naip_mosaic(db: Session) -> None:
+    """NAIP's greedy selector returns several items for one year. Deleting
+    on a one-row-per-year assumption would gut the mosaic."""
+    from app.services.imagery import reconcile_source_snapshots
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    tiles = ["naip_2020_nw", "naip_2020_ne", "naip_2020_sw"]
+    for tile in tiles:
+        _persist(db, parcel_id, "naip", tile, "2020-08-01")
+
+    deleted = reconcile_source_snapshots(
+        db,
+        parcel_id,
+        "naip",
+        [(tile, date(2020, 8, 1)) for tile in tiles],
+    )
+
+    assert deleted == 0
+    assert _item_ids(db, parcel_id, "naip") == set(tiles)
+
+
+def test_reconcile_leaves_years_this_run_did_not_select(db: Session) -> None:
+    """A chunk_by_year source skips years whose STAC search failed. Those
+    years are absent from the selection but their data is still good."""
+    from app.services.imagery import reconcile_source_snapshots
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    _persist(db, parcel_id, "landsat", "LT05_1987", "1987-06-01")
+    _persist(db, parcel_id, "landsat", "LC08_2015", "2015-06-01")
+
+    # Only 2015 came back this run
+    deleted = reconcile_source_snapshots(
+        db, parcel_id, "landsat", [("LC08_2015", date(2015, 6, 1))]
+    )
+
+    assert deleted == 0
+    assert _item_ids(db, parcel_id, "landsat") == {"LT05_1987", "LC08_2015"}
+
+
+def test_reconcile_with_empty_selection_deletes_nothing(db: Session) -> None:
+    """A search that returned nothing must not wipe the parcel."""
+    from app.services.imagery import reconcile_source_snapshots
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    _persist(db, parcel_id, "landsat", "LT05_1987", "1987-06-01")
+
+    assert reconcile_source_snapshots(db, parcel_id, "landsat", []) == 0
+    assert _item_ids(db, parcel_id, "landsat") == {"LT05_1987"}
+
+
+def test_reconcile_scopes_deletion_to_one_source(db: Session) -> None:
+    """A Landsat run must not touch the parcel's NAIP rows."""
+    from app.services.imagery import reconcile_source_snapshots
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    _persist(db, parcel_id, "naip", "naip_1987", "1987-08-01")
+    _persist(db, parcel_id, "landsat", "LT05_A_1987", "1987-06-01")
+    _persist(db, parcel_id, "landsat", "LT05_B_1987", "1987-07-04")
+
+    reconcile_source_snapshots(db, parcel_id, "landsat", [("LT05_B_1987", date(1987, 7, 4))])
+
+    assert _item_ids(db, parcel_id, "naip") == {"naip_1987"}
+    assert _item_ids(db, parcel_id, "landsat") == {"LT05_B_1987"}
+
+
+# ── Reconciliation scope: usgs_topo groups by decade, not year ───────────────
+
+
+def test_reconcile_topo_replaces_a_sheet_from_the_same_decade(db: Session) -> None:
+    """select_topo_items picks one sheet per decade, so a replacement can
+    carry a different publication year. Year-scoping would miss it."""
+    from app.services.imagery import reconcile_source_snapshots
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    _persist(db, parcel_id, "usgs_topo", "tnm-1954-sheet", "1954-01-01")
+
+    # Re-run selects a different 1950s sheet — same decade, different year
+    _persist(db, parcel_id, "usgs_topo", "tnm-1957-sheet", "1957-01-01")
+    deleted = reconcile_source_snapshots(
+        db,
+        parcel_id,
+        "usgs_topo",
+        [("tnm-1957-sheet", date(1957, 1, 1))],
+        scope="decade",
+    )
+
+    assert deleted == 1
+    assert _item_ids(db, parcel_id, "usgs_topo") == {"tnm-1957-sheet"}
+
+
+def test_reconcile_topo_leaves_decades_this_run_did_not_select(db: Session) -> None:
+    """A TNM search that came back without the 1900s must not delete them."""
+    from app.services.imagery import reconcile_source_snapshots
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    _persist(db, parcel_id, "usgs_topo", "tnm-1906-sheet", "1906-01-01")
+    _persist(db, parcel_id, "usgs_topo", "tnm-1965-sheet", "1965-01-01")
+
+    deleted = reconcile_source_snapshots(
+        db,
+        parcel_id,
+        "usgs_topo",
+        [("tnm-1965-sheet", date(1965, 1, 1))],
+        scope="decade",
+    )
+
+    assert deleted == 0
+    assert _item_ids(db, parcel_id, "usgs_topo") == {"tnm-1906-sheet", "tnm-1965-sheet"}
+
+
+def test_reconcile_topo_empty_selection_deletes_nothing(db: Session) -> None:
+    from app.services.imagery import reconcile_source_snapshots
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    _persist(db, parcel_id, "usgs_topo", "tnm-1954-sheet", "1954-01-01")
+
+    assert reconcile_source_snapshots(db, parcel_id, "usgs_topo", [], scope="decade") == 0
+    assert _item_ids(db, parcel_id, "usgs_topo") == {"tnm-1954-sheet"}
+
+
+def test_reconcile_topo_does_not_touch_other_sources(db: Session) -> None:
+    """A decade-wide delete is broad — it must still stop at the source."""
+    from app.services.imagery import reconcile_source_snapshots
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    _persist(db, parcel_id, "landsat", "LT05_1957", "1957-06-01")
+    _persist(db, parcel_id, "naip", "naip_1957", "1957-08-01")
+    _persist(db, parcel_id, "usgs_topo", "tnm-1954-sheet", "1954-01-01")
+    _persist(db, parcel_id, "usgs_topo", "tnm-1957-sheet", "1957-01-01")
+
+    reconcile_source_snapshots(
+        db,
+        parcel_id,
+        "usgs_topo",
+        [("tnm-1957-sheet", date(1957, 1, 1))],
+        scope="decade",
+    )
+
+    assert _item_ids(db, parcel_id, "usgs_topo") == {"tnm-1957-sheet"}
+    assert _item_ids(db, parcel_id, "landsat") == {"LT05_1957"}
+    assert _item_ids(db, parcel_id, "naip") == {"naip_1957"}
+
+
+def test_reconcile_year_scope_would_miss_a_cross_year_topo_replacement(db: Session) -> None:
+    """Guards the investigation's finding: scoping topo by year leaves the
+    superseded sheet in place, which is why scope has to match the selector."""
+    from app.services.imagery import reconcile_source_snapshots
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    _persist(db, parcel_id, "usgs_topo", "tnm-1954-sheet", "1954-01-01")
+    _persist(db, parcel_id, "usgs_topo", "tnm-1957-sheet", "1957-01-01")
+
+    deleted = reconcile_source_snapshots(
+        db,
+        parcel_id,
+        "usgs_topo",
+        [("tnm-1957-sheet", date(1957, 1, 1))],
+        scope="year",
+    )
+
+    assert deleted == 0
+    assert len(_item_ids(db, parcel_id, "usgs_topo")) == 2
+
+
+def test_reconcile_quarter_scope_keeps_other_quarters_of_the_year(db: Session) -> None:
+    """Sentinel-2 selects per quarter, so a Q3 replacement must not delete
+    the Q1 row that this run also selected — or the ones it didn't."""
+    from app.services.imagery import reconcile_source_snapshots
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    _persist(db, parcel_id, "sentinel2", "S2_2020Q1", "2020-02-10")
+    _persist(db, parcel_id, "sentinel2", "S2_2020Q3_old", "2020-08-10")
+    _persist(db, parcel_id, "sentinel2", "S2_2020Q3_new", "2020-09-02")
+
+    deleted = reconcile_source_snapshots(
+        db,
+        parcel_id,
+        "sentinel2",
+        [("S2_2020Q3_new", date(2020, 9, 2))],
+        scope="quarter",
+    )
+
+    assert deleted == 1
+    assert _item_ids(db, parcel_id, "sentinel2") == {"S2_2020Q1", "S2_2020Q3_new"}

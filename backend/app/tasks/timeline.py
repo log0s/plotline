@@ -46,6 +46,7 @@ _SOURCES: list[dict[str, Any]] = [
         "max_items": 50,
         "query": None,
         "selector": stac_service.select_naip_items,
+        "selection_scope": "year",
         "resolution_m": 1.0,
         "chunk_by_year": False,
         "use_viewport_filter": True,  # NAIP: mosaic multiple tiles per year
@@ -57,6 +58,7 @@ _SOURCES: list[dict[str, Any]] = [
         "max_items_per_year": 20,
         "query": {"eo:cloud_cover": {"lt": 40}},
         "selector": stac_service.select_landsat_items,
+        "selection_scope": "year",
         "resolution_m": 30.0,
         "chunk_by_year": True,
         "use_viewport_filter": False,
@@ -68,6 +70,7 @@ _SOURCES: list[dict[str, Any]] = [
         "max_items_per_year": 20,
         "query": {"eo:cloud_cover": {"lt": 40}},
         "selector": stac_service.select_sentinel_items,
+        "selection_scope": "quarter",
         "resolution_m": 10.0,
         "chunk_by_year": True,
         "use_viewport_filter": False,
@@ -305,6 +308,7 @@ async def _search_and_persist_source(
     # Persist snapshots — one row per group, with primary cog_url and
     # additional_cog_urls for mosaic components.
     items_saved = 0
+    selected_refs: list[tuple[str, date]] = []
     with SessionLocal() as db:
         for group in selected_groups:
             if not group:
@@ -345,6 +349,26 @@ async def _search_and_persist_source(
                 bbox_wkt=bbox_wkt,
             )
             items_saved += 1
+            selected_refs.append((str(primary["id"]), capture_date))
+
+        # Now that the fresh selection is persisted, drop the scenes it
+        # replaced — a re-validated Landsat year picks a different item id,
+        # which the upsert inserts alongside the broken row rather than
+        # over it.
+        #
+        # Reconciliation assumes every upsert above is already durable: the
+        # upsert commits per row, and this runs in the same task, after the
+        # loop. If persistence ever becomes batched or atomic, this call has
+        # to move inside that transaction. Ordering is the safety property —
+        # an interruption between persist and reconcile leaves duplicates,
+        # which the next run cleans up, never an empty source.
+        imagery_service.reconcile_source_snapshots(
+            db,
+            parcel_id,
+            source_name,
+            selected_refs,
+            scope=source_cfg["selection_scope"],
+        )
 
         # Use actual DB count — covers items from prior runs too
         total_items = imagery_service.count_imagery_snapshots(db, parcel_id, source_name)
@@ -397,18 +421,22 @@ async def _search_and_persist_topo(
     )
 
     items_saved = 0
+    selected_refs: list[tuple[str, date]] = []
     with SessionLocal() as db:
         for item in selected:
             cog_url = topo_service.extract_geotiff_url(item)
             if not cog_url:
                 continue
 
+            publication_date = topo_service.extract_publication_date(item)
+            source_id = topo_service.extract_source_id(item)
+
             imagery_service.upsert_imagery_snapshot(
                 db,
                 parcel_id=parcel_id,
                 source=source_name,
-                capture_date=topo_service.extract_publication_date(item),
-                stac_item_id=topo_service.extract_source_id(item),
+                capture_date=publication_date,
+                stac_item_id=source_id,
                 stac_collection="usgs-historical-topo",
                 cog_url=cog_url,
                 thumbnail_url=None,
@@ -417,6 +445,19 @@ async def _search_and_persist_topo(
                 bbox_wkt=topo_service.extract_bbox_wkt(item),
             )
             items_saved += 1
+            selected_refs.append((source_id, publication_date))
+
+        # Same persist-then-reconcile ordering as the STAC sources, scoped to
+        # the decade select_topo_items groups by: a later run that picks a
+        # different sheet for a decade supersedes the old row rather than
+        # stacking a second card on the same period.
+        imagery_service.reconcile_source_snapshots(
+            db,
+            parcel_id,
+            source_name,
+            selected_refs,
+            scope="decade",
+        )
 
         total_items = imagery_service.count_imagery_snapshots(db, parcel_id, source_name)
 

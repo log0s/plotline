@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
@@ -385,6 +386,121 @@ def count_imagery_snapshots(
         {"parcel_id": str(parcel_id), "source": source},
     ).scalar()
     return int(row or 0)
+
+
+def _capture_date(value: object) -> date | None:
+    """Parse a capture_date column, which SQLite hands back as text."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+# How each selector groups its picks. Reconciliation must bucket rows the
+# same way the selector did — see reconcile_source_snapshots.
+SELECTION_SCOPES: dict[str, Callable[[date], tuple[int, ...]]] = {
+    "year": lambda d: (d.year,),
+    "quarter": lambda d: (d.year, (d.month - 1) // 3 + 1),
+    "decade": lambda d: ((d.year // 10) * 10,),
+}
+
+
+def reconcile_source_snapshots(
+    db: Session,
+    parcel_id: uuid.UUID,
+    source: str,
+    selected: Iterable[tuple[str, date]],
+    *,
+    scope: str = "year",
+) -> int:
+    """Delete snapshots that this run's selection replaced.
+
+    The upsert can't do this itself: its conflict target is
+    (parcel_id, stac_item_id), so a re-run that picks a *different* scene
+    for a group — which is exactly what Landsat band re-validation does
+    when the original scene breaks — inserts alongside the old row instead
+    of replacing it, and the timeline shows the same period twice.
+
+    ``scope`` must name the unit the source's selector groups by, because
+    deletion is confined to the groups this run actually selected:
+
+        year     select_naip_items, select_landsat_items
+        quarter  select_sentinel_items
+        decade   select_topo_items
+
+    Get this wrong in one direction and superseded rows survive (a topo
+    map replaced by another map from the same decade but a different year
+    is invisible to year-scoping); get it wrong in the other and rows the
+    selector never reconsidered are deleted.
+
+    A group missing from the selection is ambiguous: it can mean the
+    source no longer offers it, but more often it means that chunk's
+    search failed and was skipped, and deleting on that basis would turn
+    a transient upstream error into permanent data loss. So absent groups
+    are always left alone.
+
+    Mosaics are safe because the comparison is against the full set of
+    selected item ids: NAIP's several tiles for one year are all in
+    ``selected``, so all of them are kept.
+
+    Returns the number of rows deleted. Call after persisting the new
+    selection, never before — an interruption then leaves duplicates,
+    which is recoverable, rather than an empty timeline, which isn't.
+    """
+    bucket = SELECTION_SCOPES[scope]
+
+    keep: set[str] = set()
+    groups: set[tuple[int, ...]] = set()
+    for stac_item_id, capture_date in selected:
+        keep.add(stac_item_id)
+        groups.add(bucket(capture_date))
+
+    if not keep:
+        return 0
+
+    rows = db.execute(
+        sa_text(
+            "SELECT id, stac_item_id, capture_date FROM imagery_snapshots"
+            " WHERE parcel_id = :parcel_id AND source = :source"
+        ),
+        {"parcel_id": str(parcel_id), "source": source},
+    ).all()
+
+    stale: list[object] = []
+    for row in rows:
+        if row.stac_item_id in keep:
+            continue
+        captured = _capture_date(row.capture_date)
+        if captured is not None and bucket(captured) in groups:
+            stale.append(row.id)
+
+    if not stale:
+        return 0
+
+    for snapshot_id in stale:
+        db.execute(
+            sa_text("DELETE FROM imagery_snapshots WHERE id = :id"),
+            {"id": str(snapshot_id)},
+        )
+    db.commit()
+
+    logger.info(
+        "Replaced superseded imagery snapshots",
+        extra={
+            "parcel_id": str(parcel_id),
+            "source": source,
+            "deleted": len(stale),
+            "scope": scope,
+            "groups": sorted(groups),
+        },
+    )
+    return len(stale)
 
 
 def upsert_imagery_snapshot(
