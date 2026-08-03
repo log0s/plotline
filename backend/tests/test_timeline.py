@@ -861,3 +861,63 @@ async def test_fetch_usgs_topo_error_marks_failed() -> None:
     statuses = [c[0][2] for c in update_calls]
     assert "processing" in statuses
     assert "failed" in statuses
+
+
+# ── Broker TLS configuration (audit finding M12) ──────────────────────────────
+
+
+def test_broker_url_requires_certificate_verification() -> None:
+    """A rediss:// broker URL gets certificate verification turned on, not off."""
+    from app.tasks.celery_app import _redis_url_with_ssl
+
+    url = _redis_url_with_ssl("rediss://default:pw@example.upstash.io:6379")
+
+    assert "ssl_cert_reqs=CERT_REQUIRED" in url
+    assert "CERT_NONE" not in url
+
+
+def test_broker_url_ssl_flag_resolves_to_verify_mode() -> None:
+    """kombu maps the flag we write to ssl.CERT_REQUIRED, not a bare string.
+
+    redis-py itself only accepts 'none'/'optional'/'required', so this asserts
+    the translation layer we actually depend on.
+    """
+    import ssl
+
+    from kombu import Connection
+
+    from app.tasks.celery_app import _redis_url_with_ssl
+
+    url = _redis_url_with_ssl("rediss://default:pw@example.upstash.io:6379")
+
+    assert Connection(url).ssl == {"ssl_cert_reqs": ssl.CERT_REQUIRED}
+
+
+def test_plain_redis_url_is_untouched() -> None:
+    """Non-TLS brokers (local docker-compose) get no ssl params appended."""
+    from app.tasks.celery_app import _redis_url_with_ssl
+
+    assert _redis_url_with_ssl("redis://redis:6379/0") == "redis://redis:6379/0"
+
+
+def test_existing_ssl_cert_reqs_is_not_overridden() -> None:
+    """An operator-supplied flag in the URL wins over the default."""
+    from app.tasks.celery_app import _redis_url_with_ssl
+
+    url = "rediss://example.upstash.io:6379?ssl_cert_reqs=required"
+    assert _redis_url_with_ssl(url) == url
+
+
+def test_task_results_are_not_stored() -> None:
+    """Nothing reads task results, so they must not be written."""
+    from app.tasks.celery_app import celery_app
+
+    assert celery_app.conf.task_ignore_result is True
+
+
+def test_time_limit_stays_under_broker_visibility_timeout() -> None:
+    """acks_late redelivers past visibility_timeout (3600s) — duplicate execution."""
+    from app.tasks.timeline import fetch_imagery_timeline
+
+    assert fetch_imagery_timeline.time_limit < 3600
+    assert fetch_imagery_timeline.soft_time_limit < fetch_imagery_timeline.time_limit

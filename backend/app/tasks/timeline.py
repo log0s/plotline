@@ -947,10 +947,13 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
 # ── Celery task ────────────────────────────────────────────────────────────────
 
 
+# time_limit is coupled to the broker's visibility timeout: with task_acks_late,
+# Redis redelivers a task another worker is still running once visibility_timeout
+# (default 3600s) elapses. 2100s leaves 25 minutes of margin — raising time_limit
+# past 3600 silently enables duplicate execution of the same request.
 @celery_app.task(
     bind=True,
     name="tasks.fetch_imagery_timeline",
-    max_retries=3,
     soft_time_limit=1800,
     time_limit=2100,
 )  # type: ignore[untyped-decorator]  # Celery task decorator lacks complete type stubs

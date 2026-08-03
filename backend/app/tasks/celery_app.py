@@ -20,10 +20,15 @@ settings = get_settings()
 
 
 def _redis_url_with_ssl(url: str) -> str:
-    """Upstash/Fly Redis use rediss://; redis-py requires ssl_cert_reqs in the URL."""
+    """Upstash/Fly Redis use rediss://; redis-py requires ssl_cert_reqs in the URL.
+
+    CERT_REQUIRED, not CERT_NONE: this URL carries the task queue, and db.py's
+    clients already verify certificates against the same server, so there is no
+    reason for the broker to be the one connection that doesn't.
+    """
     if url.startswith("rediss://") and "ssl_cert_reqs=" not in url:
         sep = "&" if "?" in url else "?"
-        return f"{url}{sep}ssl_cert_reqs=CERT_NONE"
+        return f"{url}{sep}ssl_cert_reqs=CERT_REQUIRED"
     return url
 
 
@@ -42,6 +47,10 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    # Nothing reads task results — imagery.py dispatches with .delay() and
+    # polls the timeline_requests table instead — so storing them just fills
+    # Redis for a day at a time.
+    task_ignore_result=True,
     # Retry policy defaults
     task_acks_late=True,
     task_reject_on_worker_lost=True,
