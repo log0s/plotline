@@ -155,6 +155,16 @@ class CountyAdapter(ABC):
         """Human-readable county name."""
         ...
 
+    @property
+    @abstractmethod
+    def display_name(self) -> str:
+        """Name shown to users, qualified by state (e.g. "Denver County, CO").
+
+        Abstract so a new adapter can't be registered without one — the API
+        serves these to the UI, which would otherwise silently drop it.
+        """
+        ...
+
     @abstractmethod
     async def fetch_sales(
         self,
@@ -196,6 +206,10 @@ class DenverAdapter(CountyAdapter):
     @property
     def county_name(self) -> str:
         return "Denver"
+
+    @property
+    def display_name(self) -> str:
+        return "Denver County, CO"
 
     async def fetch_sales(
         self,
@@ -291,6 +305,10 @@ class AdamsCountyAdapter(CountyAdapter):
     @property
     def county_name(self) -> str:
         return "Adams"
+
+    @property
+    def display_name(self) -> str:
+        return "Adams County, CO"
 
     async def fetch_sales(
         self,
@@ -388,6 +406,10 @@ class DCAdapter(CountyAdapter):
     @property
     def county_name(self) -> str:
         return "District of Columbia"
+
+    @property
+    def display_name(self) -> str:
+        return "Washington, DC"
 
     async def fetch_sales(
         self,
@@ -534,6 +556,10 @@ class SantaClaraAdapter(CountyAdapter):
     def county_name(self) -> str:
         return "Santa Clara"
 
+    @property
+    def display_name(self) -> str:
+        return "Santa Clara County, CA"
+
     async def fetch_sales(
         self,
         street_number: str,
@@ -654,6 +680,10 @@ class NewYorkCountyAdapter(CountyAdapter):
     @property
     def county_name(self) -> str:
         return "New York"
+
+    @property
+    def display_name(self) -> str:
+        return "New York County, NY"
 
     async def fetch_sales(
         self,
@@ -873,3 +903,8 @@ def get_adapter_for_county(county: str) -> CountyAdapter | None:
 def get_supported_counties() -> list[str]:
     """Return list of supported county names."""
     return [adapter.county_name for adapter in COUNTY_ADAPTERS.values()]
+
+
+def get_supported_county_display_names() -> list[str]:
+    """Return state-qualified county names for display in the UI."""
+    return [adapter.display_name for adapter in COUNTY_ADAPTERS.values()]

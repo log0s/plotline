@@ -2,11 +2,22 @@ import { motion } from "framer-motion";
 
 interface UnsupportedCountyBannerProps {
   county: string | null;
+  supportedCounties?: string[];
+}
+
+function formatList(names: string[]): string {
+  if (names.length === 1) return names[0];
+  return `${names.slice(0, -1).join("; ")}; and ${names[names.length - 1]}`;
 }
 
 export function UnsupportedCountyBanner({
   county,
+  supportedCounties,
 }: UnsupportedCountyBannerProps) {
+  const supported = supportedCounties?.length
+    ? ` Currently supported: ${formatList(supportedCounties)}.`
+    : "";
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -18,7 +29,7 @@ export function UnsupportedCountyBanner({
         <span className="text-slate-300 font-medium">
           {county ?? "this"} County
         </span>
-        . Currently supported: Denver, Adams counties.
+        .{supported}
       </p>
     </motion.div>
   );

@@ -167,6 +167,9 @@ To add support for a new county:
      `socrata.query_socrata`, or `ckan.query_ckan_datastore`
    - Map raw field names to `PropertyEventData`, and set `situs_address` so
      the fuzzy post-filter can reject near-miss records
+   - Set `display_name` to the state-qualified name (e.g. "Denver County,
+     CO") — the API serves these to the unsupported-county empty state, so
+     the new county shows up in the UI automatically
 6. Register the adapter in the `COUNTY_ADAPTERS` dict. Lookup keys are
    lowercase with any trailing " county" stripped — "New York County"
    resolves to "new york".

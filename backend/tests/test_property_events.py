@@ -18,10 +18,12 @@ from app.services.address_normalizer import (
     normalize_address,
 )
 from app.services.county_adapters import (
+    COUNTY_ADAPTERS,
     DenverAdapter,
     classify_permit,
     get_adapter_for_county,
     get_supported_counties,
+    get_supported_county_display_names,
 )
 from app.services.property_events import (
     PropertyEventRow,
@@ -229,6 +231,11 @@ class TestAdapterRegistry:
         counties = get_supported_counties()
         assert "Denver" in counties
         assert "Adams" in counties
+
+    def test_every_adapter_has_a_display_name(self) -> None:
+        names = get_supported_county_display_names()
+        assert len(names) == len(COUNTY_ADAPTERS)
+        assert all(name.strip() for name in names)
 
 
 # ── Denver Adapter Parsing ────────────────────────────────────────────────────
@@ -617,3 +624,6 @@ class TestEventsEndpoint:
         assert data["supported"] is False
         assert data["county"] == "El Paso"
         assert len(data["events"]) == 0
+        # The UI enumerates this list, so it has to track the registry exactly.
+        assert data["supported_counties"] == [a.display_name for a in COUNTY_ADAPTERS.values()]
+        assert len(data["supported_counties"]) == len(COUNTY_ADAPTERS)

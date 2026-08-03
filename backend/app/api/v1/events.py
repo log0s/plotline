@@ -20,7 +20,10 @@ from app.schemas.property_events import (
     PropertyEventsResponse,
 )
 from app.services import property_events as property_events_service
-from app.services.county_adapters import get_adapter_for_county
+from app.services.county_adapters import (
+    get_adapter_for_county,
+    get_supported_county_display_names,
+)
 
 router = APIRouter()
 
@@ -90,6 +93,7 @@ def get_property_events(
         parcel_id=parcel_id,
         county=county,
         supported=supported,
+        supported_counties=get_supported_county_display_names(),
         events=[
             PropertyEventResponse(
                 id=e.id,

@@ -151,6 +151,7 @@ export interface PropertyEventsResponse {
   parcel_id: string;
   county: string | null;
   supported: boolean;
+  supported_counties?: string[];
   events: PropertyEvent[];
   summary: EventsSummary;
 }

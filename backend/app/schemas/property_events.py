@@ -47,5 +47,6 @@ class PropertyEventsResponse(BaseModel):
     parcel_id: uuid.UUID
     county: str | None
     supported: bool
+    supported_counties: list[str]
     events: list[PropertyEventResponse]
     summary: EventsSummary

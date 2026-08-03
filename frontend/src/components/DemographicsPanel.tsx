@@ -185,7 +185,10 @@ export function DemographicsPanel({
       )}
 
       {showUnsupported && !hasPropertyData && (
-        <UnsupportedCountyBanner county={propertyEvents?.county ?? null} />
+        <UnsupportedCountyBanner
+          county={propertyEvents?.county ?? null}
+          supportedCounties={propertyEvents?.supported_counties}
+        />
       )}
 
       {hasDemo && (
