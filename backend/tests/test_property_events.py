@@ -92,16 +92,13 @@ class TestExtractSearchTerms:
         assert name == "PENNSYLVANIA"
 
     def test_directional_prefix(self) -> None:
+        # An address with no house number: parts[0] is taken as the street
+        # number whatever it is, so the directional lands there.
         num, name = extract_search_terms("E 49th Ave")
-        assert num == "E"  # directional at position 0 isn't a street number
-        # Actually let's check what happens — "E" is position 0
-        # extract_search_terms normalizes then splits: "E 49TH AVE"
-        # parts[0] = "E", parts[1] = "49TH" which is a directional? No.
-        # Directionals are: N, S, E, W, etc. — "E" is in DIRECTIONALS
-        # But parts[0] is the street_number, then parts[1] is checked.
-        # "E" at index 0 is treated as street_number.
-        # parts[1] = "49TH" — not in DIRECTIONALS, so name = "49TH"
-        assert name == "49TH"
+        assert num == "E"
+        # Ordinal suffix dropped — counties that store "49" would return
+        # nothing for a "49TH" search term.
+        assert name == "49"
 
     def test_with_leading_directional(self) -> None:
         num, name = extract_search_terms("123 E Colfax Ave")

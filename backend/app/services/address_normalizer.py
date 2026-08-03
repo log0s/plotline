@@ -32,8 +32,26 @@ SUFFIX_MAP = {
     "CROSSING": "XING",
 }
 
-# Two-letter directional abbreviations
-DIRECTIONALS = {"NORTH", "SOUTH", "EAST", "WEST", "N", "S", "E", "W", "NE", "NW", "SE", "SW"}
+# Spelled-out directionals → their abbreviation. Counties disagree here:
+# the Census geocoder emits "E 17TH ST" while NYC DOB emits "EAST 17 STREET".
+DIRECTIONAL_MAP = {
+    "NORTH": "N",
+    "SOUTH": "S",
+    "EAST": "E",
+    "WEST": "W",
+    "NORTHEAST": "NE",
+    "NORTHWEST": "NW",
+    "SOUTHEAST": "SE",
+    "SOUTHWEST": "SW",
+}
+
+# Two-letter directional abbreviations, plus the spelled-out forms
+DIRECTIONALS = set(DIRECTIONAL_MAP) | set(DIRECTIONAL_MAP.values())
+
+# 17TH → 17, 1ST → 1. Numeric tokens only: a bare "ST" is a street suffix
+# and "MAIN" isn't an ordinal, so anchoring on leading digits is the whole
+# guard we need.
+_ORDINAL_RE = re.compile(r"^(\d+)(?:ST|ND|RD|TH)$")
 
 
 def normalize_address(address: str) -> str:
@@ -43,20 +61,30 @@ def normalize_address(address: str) -> str:
     - Strips punctuation that would otherwise stick to tokens ("AVE," vs "AVE")
     - Strips unit/apt/suite/# suffixes
     - Standardizes street type suffixes (AVENUE → AVE, etc.)
+    - Abbreviates directionals (EAST → E)
+    - Drops ordinal suffixes from numbered streets (17TH → 17)
     - Collapses whitespace
+
+    Substitutions apply to whole tokens only. Replacing substrings would
+    turn "EASTON ST" into "E ON ST" and "1ST AVE" into "1 AVE" for the
+    wrong reason.
     """
     addr = address.upper().strip()
-    addr = addr.replace(",", " ").replace(".", " ")
+    # Periods are dropped rather than spaced: "N.W." has to survive as one
+    # token, or the quadrant splits into {N, W} and stops matching "NW".
+    addr = addr.replace(",", " ").replace(".", "")
     # Remove unit/apt/suite designators and everything after them. The
     # designator must be a standalone token — without the \b this regex
     # eats street names like WEBSTER, STERLING, or CAPTAIN from the inside.
     addr = re.sub(r"\s+(?:APT|UNIT|STE|SUITE)\b\s*\S*|\s*#\s*\S*", "", addr)
-    # Standardize suffixes
-    for long, short in SUFFIX_MAP.items():
-        addr = re.sub(rf"\b{long}\b", short, addr)
-    # Remove extra whitespace
-    addr = re.sub(r"\s+", " ", addr).strip()
-    return addr
+
+    tokens: list[str] = []
+    for raw in addr.split():
+        token = SUFFIX_MAP.get(raw, raw)
+        token = DIRECTIONAL_MAP.get(token, token)
+        ordinal = _ORDINAL_RE.match(token)
+        tokens.append(ordinal.group(1) if ordinal else token)
+    return " ".join(tokens)
 
 
 def extract_search_terms(address: str) -> tuple[str, str]:
@@ -97,8 +125,19 @@ def is_address_match(
 
     The street number must match exactly. The remaining street-name tokens
     are compared with an overlap coefficient (intersection / smaller set),
-    so a short form ("100 MAIN ST") matches a longer one ("100 N MAIN ST")
-    but "100 N MAIN ST" vs "100 S MAIN ST" (0.67) stays below the threshold.
+    so a short form ("100 MAIN ST") matches a longer one ("100 N MAIN ST").
+
+    Normalization is what makes the threshold meaningful. It folds the
+    formatting counties disagree on — EAST/E, 17TH/17, STREET/ST — so a
+    spelling variant of the same street scores 1.0, while a genuinely
+    different street differs by a real token: "100 N MAIN ST" vs
+    "100 S MAIN ST" scores 0.67 and is rejected. Before normalization both
+    landed at 0.67 and the threshold could not tell them apart.
+
+    The subset behavior is deliberate but blunt: a record that simply omits
+    a directional ("1600 PENNSYLVANIA AVE") still matches one that has it
+    ("1600 PENNSYLVANIA AVE NW"), because the shorter set is the
+    denominator.
     """
     a_tokens = normalize_address(_street_line(parcel_address)).split()
     b_tokens = normalize_address(_street_line(record_address)).split()
