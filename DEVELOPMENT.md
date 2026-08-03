@@ -70,7 +70,7 @@ None of that required writing code. All of it required knowing the system well e
 
 **Put whole-system reads on the calendar.** Not triggered by a bug. Periodic, adversarial, and aimed at the files nothing has touched in months, because nothing else routes attention there.
 
-**Instrument the silences.** The deepest problem here wasn't any single bug. It was a consistent reflex to turn upstream failure into a smaller success: a county API outage recorded as "complete, 0 records," an unmatched address silently dropped, a partially-failed census marked complete with permanent gaps. Each is defensible alone. Together they meant the system couldn't distinguish "this parcel has no permits" from "the integration has been broken for a month" — and neither could I, because the logging that would have told me was itself silently dropping every field.
+**Instrument the silences.** The deepest problem here wasn't any single bug. It was a consistent reflex to turn upstream failure into a smaller success: a county API outage recorded as "complete, 0 records," an unmatched address silently dropped, a partially-failed census marked complete with permanent gaps. Each is defensible alone. Together they meant the system couldn't distinguish "this parcel has no permits" from "the integration has been broken for a month" — and neither could I, because the logging that would have told me was itself silently dropping every field. (The property path was closed after this was written — `256ed32` — which is worth noting mainly because a document arguing for its own correction, and getting it, is the process working.)
 
 ## Build Log
 
