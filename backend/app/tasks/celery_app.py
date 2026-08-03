@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from celery import Celery
-from celery.signals import setup_logging
+from celery.signals import setup_logging, worker_process_init
 
 from app.config import get_settings
 from app.logging_config import configure_logging
@@ -68,5 +68,22 @@ def configure_worker_logging(**kwargs: object) -> None:
     configure_logging(get_settings())
 
 
-# Connected as a call rather than a decorator: Celery's connect() is untyped.
+def dispose_inherited_engine(**kwargs: object) -> None:
+    """Drop connections inherited across the prefork boundary.
+
+    ``app.db.engine`` is created at import time in the worker parent and
+    inherited by every forked child, so a connection the parent opened
+    would be shared by several processes at once. Nothing in the parent
+    uses it before the fork today — this makes that safe by construction
+    rather than by accident. ``close=False`` abandons the file
+    descriptors instead of closing them, which would disconnect the
+    parent's copy too.
+    """
+    from app.db import engine
+
+    engine.dispose(close=False)
+
+
+# Connected as calls rather than decorators: Celery's connect() is untyped.
 setup_logging.connect(configure_worker_logging)
+worker_process_init.connect(dispose_inherited_engine)

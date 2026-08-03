@@ -71,6 +71,13 @@ import threading  # noqa: E402
 import redis as _redis_lib  # noqa: E402
 import redis.asyncio as _redis_async_lib  # noqa: E402
 
+# Without these, a Redis whose TCP connection is up but which has stopped
+# answering blocks forever: the health probe, every rate-limit check, and
+# the SAS cache all wait on a reply that never comes, and the fail-open
+# `except (RedisError, OSError)` never gets the chance to fire. Matches the
+# 2-second statement_timeout the DB probe above uses for the same reason.
+_REDIS_TIMEOUT = 2
+
 _redis_lock = threading.Lock()
 _async_redis_lock = threading.Lock()
 _redis_client: _redis_lib.Redis[bytes] | None = None
@@ -86,7 +93,12 @@ def get_redis() -> _redis_lib.Redis[bytes]:
     if _redis_client is None:
         with _redis_lock:
             if _redis_client is None:
-                _redis_client = _redis_lib.from_url(settings.redis_url, decode_responses=False)
+                _redis_client = _redis_lib.from_url(
+                    settings.redis_url,
+                    decode_responses=False,
+                    socket_timeout=_REDIS_TIMEOUT,
+                    socket_connect_timeout=_REDIS_TIMEOUT,
+                )
     return _redis_client
 
 
@@ -98,7 +110,12 @@ def get_async_redis() -> _redis_async_lib.Redis[bytes]:
         with _async_redis_lock:
             client = _async_redis_clients.get(loop)
             if client is None:
-                client = _redis_async_lib.from_url(settings.redis_url, decode_responses=False)
+                client = _redis_async_lib.from_url(
+                    settings.redis_url,
+                    decode_responses=False,
+                    socket_timeout=_REDIS_TIMEOUT,
+                    socket_connect_timeout=_REDIS_TIMEOUT,
+                )
                 _async_redis_clients[loop] = client
     return client
 

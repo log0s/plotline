@@ -51,3 +51,27 @@ def test_health_redis_down(client: TestClient) -> None:
     assert body["status"] == "degraded"
     assert body["db"] == "connected"
     assert body["redis"] == "error"
+
+
+def test_redis_clients_have_socket_timeouts() -> None:
+    """Both Redis clients bound socket waits.
+
+    A half-dead Redis — TCP up, no replies — would otherwise hang the
+    health probe, every rate-limit check, and the SAS cache forever, and
+    the fail-open handlers would never run.
+    """
+    import asyncio
+
+    from app.db import get_async_redis, get_redis
+
+    sync_kwargs = get_redis().connection_pool.connection_kwargs
+    assert sync_kwargs["socket_timeout"] == 2
+    assert sync_kwargs["socket_connect_timeout"] == 2
+
+    async def _async_kwargs() -> dict[str, object]:
+        kwargs: dict[str, object] = get_async_redis().connection_pool.connection_kwargs
+        return kwargs
+
+    async_kwargs = asyncio.run(_async_kwargs())
+    assert async_kwargs["socket_timeout"] == 2
+    assert async_kwargs["socket_connect_timeout"] == 2

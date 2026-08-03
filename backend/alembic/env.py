@@ -6,7 +6,7 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 
 # Import all models so Alembic can detect schema changes for autogenerate
 from app.models.parcels import Base  # noqa: F401
@@ -22,6 +22,10 @@ if config.config_file_name is not None:
 
 # Metadata for 'autogenerate' support
 target_metadata = Base.metadata
+
+# Arbitrary but fixed: every process running migrations against this database
+# must use the same key for the lock to mean anything.
+_MIGRATION_LOCK_KEY = 8675309
 
 
 def get_url() -> str:
@@ -79,14 +83,30 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-        )
+        # entrypoint.sh runs `alembic upgrade head` on every API boot, so two
+        # machines booting together (a scale-up, or a deploy that briefly
+        # overlaps old and new) would both read the same alembic_version and
+        # both apply the same migration — one of them crash-looping on
+        # duplicate DDL. The advisory lock serializes them: the second waits,
+        # then finds itself already at head and does nothing.
+        #
+        # Session-scoped, not transaction-scoped: each migration runs in its
+        # own transaction, so a transaction-scoped lock would be released
+        # after the first one.
+        connection.execute(text("SELECT pg_advisory_lock(:key)"), {"key": _MIGRATION_LOCK_KEY})
+        try:
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+                compare_type=True,
+            )
 
-        with context.begin_transaction():
-            context.run_migrations()
+            with context.begin_transaction():
+                context.run_migrations()
+        finally:
+            connection.execute(
+                text("SELECT pg_advisory_unlock(:key)"), {"key": _MIGRATION_LOCK_KEY}
+            )
 
 
 if context.is_offline_mode():
