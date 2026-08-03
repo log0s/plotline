@@ -514,3 +514,181 @@ async def test_reverse_geocode_no_tracts_returns_none_fields() -> None:
 
     assert result.census_tract_id is None
     assert result.county is None
+
+
+# ── 200-with-HTML and malformed-payload guards (audit finding M1) ─────────────
+
+_MAINTENANCE_HTML = (
+    "<html><head><title>Service Unavailable</title></head>"
+    "<body><h1>The geocoder is temporarily down for maintenance.</h1></body></html>"
+)
+
+
+@pytest.mark.asyncio
+async def test_geocoder_service_raises_on_html_200() -> None:
+    """A 200 carrying the HTML maintenance page is an outage, not a decode crash."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import geocode_address
+
+    settings = get_settings()
+
+    with respx.mock:
+        respx.get(settings.census_geocoder_url).mock(
+            return_value=httpx.Response(
+                200, text=_MAINTENANCE_HTML, headers={"content-type": "text/html"}
+            )
+        )
+        with pytest.raises(GeocoderUnavailableError) as exc_info:
+            await geocode_address("1600 Pennsylvania Ave NW", settings)
+
+    # The body has to reach the message, or the logs say nothing about what came back.
+    assert "maintenance" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_geocoder_service_raises_on_non_object_json() -> None:
+    """A 200 whose body decodes to a non-object is an outage, not an AttributeError."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import geocode_address
+
+    settings = get_settings()
+
+    with respx.mock:
+        respx.get(settings.census_geocoder_url).mock(
+            return_value=httpx.Response(200, json=["unexpected", "list"])
+        )
+        with pytest.raises(GeocoderUnavailableError):
+            await geocode_address("1600 Pennsylvania Ave NW", settings)
+
+
+@pytest.mark.asyncio
+async def test_geocoder_service_raises_on_missing_coordinates() -> None:
+    """Valid JSON with a match but no coordinates raises rather than KeyError."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import geocode_address
+
+    settings = get_settings()
+
+    mock_response = {
+        "result": {
+            "addressMatches": [
+                {
+                    "matchedAddress": "1600 PENNSYLVANIA AVE NW, WASHINGTON, DC, 20500",
+                    "geographies": {},
+                }
+            ]
+        }
+    }
+
+    with respx.mock:
+        respx.get(settings.census_geocoder_url).mock(
+            return_value=httpx.Response(200, json=mock_response)
+        )
+        with pytest.raises(GeocoderUnavailableError):
+            await geocode_address("1600 Pennsylvania Ave NW", settings)
+
+
+@pytest.mark.asyncio
+async def test_geocoder_service_raises_on_non_numeric_coordinates() -> None:
+    """Coordinates that aren't numbers raise GeocoderUnavailableError, not ValueError."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import geocode_address
+
+    settings = get_settings()
+
+    mock_response = {
+        "result": {
+            "addressMatches": [
+                {
+                    "matchedAddress": "1600 PENNSYLVANIA AVE NW",
+                    "coordinates": {"x": "not-a-number", "y": None},
+                    "geographies": {},
+                }
+            ]
+        }
+    }
+
+    with respx.mock:
+        respx.get(settings.census_geocoder_url).mock(
+            return_value=httpx.Response(200, json=mock_response)
+        )
+        with pytest.raises(GeocoderUnavailableError):
+            await geocode_address("1600 Pennsylvania Ave NW", settings)
+
+
+@pytest.mark.asyncio
+async def test_reverse_geocoder_raises_on_html_200() -> None:
+    """The reverse path has the same guard — the twin of the forward one."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import reverse_geocode
+
+    settings = get_settings()
+
+    with respx.mock:
+        respx.get("https://geocoding.geo.census.gov/geocoder/geographies/coordinates").mock(
+            return_value=httpx.Response(
+                200, text=_MAINTENANCE_HTML, headers={"content-type": "text/html"}
+            )
+        )
+        with pytest.raises(GeocoderUnavailableError):
+            await reverse_geocode(
+                latitude=39.7392,
+                longitude=-104.9903,
+                address="123 Main St",
+                settings=settings,
+            )
+
+
+def test_geocode_endpoint_html_200_returns_502(client: TestClient) -> None:
+    """End to end: an HTML maintenance page reaches the client as 502, not 500."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+
+    settings = get_settings()
+
+    with respx.mock:
+        respx.get(settings.census_geocoder_url).mock(
+            return_value=httpx.Response(
+                200, text=_MAINTENANCE_HTML, headers={"content-type": "text/html"}
+            )
+        )
+        response = client.post("/api/v1/geocode", json={"address": "1600 Pennsylvania Ave NW"})
+
+    assert response.status_code == 502
+
+
+def test_geocode_endpoint_missing_coordinates_returns_502(client: TestClient) -> None:
+    """A structurally wrong 200 payload also surfaces as 502, not 500."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+
+    settings = get_settings()
+
+    mock_response = {"result": {"addressMatches": [{"matchedAddress": "1600 PENNSYLVANIA AVE NW"}]}}
+
+    with respx.mock:
+        respx.get(settings.census_geocoder_url).mock(
+            return_value=httpx.Response(200, json=mock_response)
+        )
+        response = client.post("/api/v1/geocode", json={"address": "1600 Pennsylvania Ave NW"})
+
+    assert response.status_code == 502
