@@ -3,6 +3,15 @@ name: Deploy
 on:
   push:
     branches: [main]
+  # Escape hatch: path filters only see the commits in a single push, so a
+  # failed run followed by a push that touches no filtered path leaves main
+  # ahead of prod with CI green. Dispatch redeploys from the current main.
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: "Deploy API and worker regardless of changed paths"
+        type: boolean
+        default: true
 
 jobs:
   changes:
@@ -14,19 +23,28 @@ jobs:
       titiler: ${{ steps.filter.outputs.titiler }}
     steps:
       - uses: actions/checkout@v6
+      # Only meaningful for a push diff; on dispatch it is skipped and the
+      # outputs come back empty, so the deploy jobs fall through to their
+      # workflow_dispatch condition.
       - uses: dorny/paths-filter@v4
         id: filter
+        if: github.event_name == 'push'
         with:
+          # scripts/ is copied into the image by Dockerfile.fly, so a
+          # scripts-only change must rebuild or it never reaches prod.
           filters: |
             backend:
               - 'backend/**'
+              - 'scripts/**'
               - 'Dockerfile.fly'
             api:
               - 'backend/**'
+              - 'scripts/**'
               - 'Dockerfile.fly'
               - 'fly.toml'
             worker:
               - 'backend/**'
+              - 'scripts/**'
               - 'Dockerfile.fly'
               - 'fly.worker.toml'
             titiler:
@@ -34,7 +52,7 @@ jobs:
 
   test:
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -51,7 +69,7 @@ jobs:
 
   deploy-api:
     needs: [changes, test]
-    if: needs.changes.outputs.api == 'true'
+    if: needs.changes.outputs.api == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_deploy)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -62,7 +80,7 @@ jobs:
 
   deploy-worker:
     needs: [changes, test]
-    if: needs.changes.outputs.worker == 'true'
+    if: needs.changes.outputs.worker == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_deploy)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
