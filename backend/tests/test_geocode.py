@@ -363,6 +363,89 @@ async def test_geocoder_service_parses_census_tract() -> None:
 
 
 @pytest.mark.asyncio
+async def test_geocoder_county_is_none_without_counties_layer() -> None:
+    """A missing Counties layer yields None, never the tract's name.
+
+    The old fallback stored "Census Tract 62.02" as the county — truthy,
+    so the only-if-empty backfill never healed it, and adapter lookup
+    failed for that parcel forever.
+    """
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import geocode_address
+
+    settings = get_settings()
+
+    mock_response = {
+        "result": {
+            "addressMatches": [
+                {
+                    "matchedAddress": "123 MAIN ST, DENVER, CO, 80202",
+                    "coordinates": {"x": -104.9903, "y": 39.7392},
+                    "geographies": {
+                        "Census Tracts": [
+                            {
+                                "STATE": "08",
+                                "COUNTY": "031",
+                                "TRACT": "006202",
+                                "NAME": "Census Tract 62.02",
+                            }
+                        ],
+                    },
+                }
+            ]
+        }
+    }
+
+    with respx.mock:
+        respx.get(settings.census_geocoder_url).mock(
+            return_value=httpx.Response(200, json=mock_response)
+        )
+        result = await geocode_address("123 Main St, Denver CO", settings)
+
+    assert result.census_tract_id == "08031006202"
+    assert result.county is None
+
+
+@pytest.mark.asyncio
+async def test_reverse_geocoder_county_is_none_without_counties_layer() -> None:
+    """Same guarantee on the reverse-geocode path."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import reverse_geocode
+
+    settings = get_settings()
+
+    mock_response = {
+        "result": {
+            "geographies": {
+                "Census Tracts": [
+                    {
+                        "STATE": "08",
+                        "COUNTY": "031",
+                        "TRACT": "006202",
+                        "NAME": "Census Tract 62.02",
+                    }
+                ],
+            }
+        }
+    }
+
+    with respx.mock:
+        respx.get("https://geocoding.geo.census.gov/geocoder/geographies/coordinates").mock(
+            return_value=httpx.Response(200, json=mock_response)
+        )
+        result = await reverse_geocode(39.7392, -104.9903, "123 Main St", settings)
+
+    assert result.census_tract_id == "08031006202"
+    assert result.county is None
+
+
+@pytest.mark.asyncio
 async def test_geocoder_raises_on_http_error() -> None:
     """Non-timeout HTTP errors should raise GeocoderUnavailableError."""
     import httpx

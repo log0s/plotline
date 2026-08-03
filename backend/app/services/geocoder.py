@@ -185,12 +185,14 @@ async def geocode_address(address: str, settings: Settings) -> GeocodeResult:
                     if state_fips and county_fips and tract_fips:
                         census_tract_id = f"{state_fips}{county_fips}{tract_fips}"
 
-                # County name comes from the Counties geography, not the tract
+                # County name comes from the Counties geography, not the tract.
+                # No fallback to the tract's NAME: that yields "Census Tract
+                # 62.02", which is truthy, so parcels.py's only-if-empty
+                # backfill never heals it and county adapter lookup fails for
+                # that parcel forever. None is recoverable; garbage isn't.
                 counties = geographies.get("Counties", [])
                 if counties:
                     county = counties[0].get("BASENAME")
-                elif census_tracts:
-                    county = census_tracts[0].get("NAME", "").split(",")[0].strip() or None
 
                 normalized_address = match.get("matchedAddress", address)
             except _SHAPE_ERRORS as exc:
@@ -296,11 +298,11 @@ async def reverse_geocode(
                     if state_fips and county_fips and tract_fips:
                         census_tract_id = f"{state_fips}{county_fips}{tract_fips}"
 
+                # See geocode_address: no tract-NAME fallback, for the same
+                # reason — an unhealable wrong county is worse than none.
                 counties = geographies.get("Counties", [])
                 if counties:
                     county = counties[0].get("BASENAME")
-                elif census_tracts:
-                    county = census_tracts[0].get("NAME", "").split(",")[0].strip() or None
             except _SHAPE_ERRORS as exc:
                 raise _shape_error("Census reverse geocoder", exc) from exc
 
