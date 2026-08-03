@@ -25,7 +25,7 @@ DEVELOPMENT.md analysis section survived intact and is reproduced here.*
 
 **(unstamped)** — 2026-03-16 → 08-03, 34 commits (other 31, fix 2, ci 1). CLAUDE.md and phase prompts, DEVELOPMENT.md journal entries, README/[fragment lost], GitHub CI setup and CI fixes — plus 3 of the 4 commits dated 2026-08-03.
 
-*(Post-analysis note from the project owner: the unstamped August commits were authored by Claude Opus 4.5-era tooling running the remediation; the audit that produced the findings was run by Claude Fable 5. Recorded here because the trailers don't capture it.)*
+*(Post-analysis note from the project owner: the unstamped August commits were authored by Claude Opus 5 running the remediation; the audit that produced the findings was run by Claude Fable 5. Recorded here because the trailers don't capture it.)*
 
 ## 2. Bug provenance
 
