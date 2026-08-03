@@ -191,13 +191,13 @@ plotline/
 
 ## Development
 
-This project was built using [Claude Code](https://claude.com/claude-code) as the primary development tool — from initial scaffolding through deployment. See **[DEVELOPMENT.md](DEVELOPMENT.md)** for a detailed, honest account of the process: which prompts worked, where Claude Code excelled, where I had to intervene, and what I learned about AI-assisted development as a senior engineer.
+This project was built using [Claude Code](https://claude.com/claude-code) as the primary development tool — from initial scaffolding through deployment. **[DEVELOPMENT.md](DEVELOPMENT.md)** documents the process, including what 110 commits of history revealed about why bugs survive in agent-written code: the High-severity findings in my final audit had all sat unread for 130+ days.
 
 ---
 
 ## Known Limitations
 
-**County data coverage is limited.** Building permits are currently available for Denver, Adams, DC, Santa Clara (San Jose), and New York (Manhattan) counties; property sales only for DC and New York — the other counties no longer publish a public sales API. The adapter architecture makes adding new counties straightforward, but each county's data portal has different schemas, field names, and API quirks that require manual integration work.
+**County data coverage is limited.** Building permits are currently available for Denver, Adams, DC, Santa Clara (San Jose), and New York (Manhattan) counties; property sales only for DC and New York — the other three don't expose a public sales API (Denver's and Adams' were retired in their moves to ArcGIS Hub; San Jose never had one), and DC's source holds only each property's most recent sale rather than a full history. The adapter architecture makes adding new counties straightforward, but each county's data portal has different schemas, field names, and API quirks that require manual integration work.
 
 **Address matching is imperfect.** County records use inconsistent address formats. The app normalizes and fuzzy-matches, but some parcels won't find their property history, especially condos with unit numbers or addresses with unusual formatting.
 
