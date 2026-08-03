@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -31,12 +31,17 @@ router = APIRouter()
 )
 def get_property_events(
     parcel_id: uuid.UUID,
+    response: Response,
     type: str | None = Query(None, description="Comma-separated event types to filter"),
     start_date: date | None = Query(None),
     end_date: date | None = Query(None),
     db: Session = Depends(get_db),
 ) -> PropertyEventsResponse:
     """Return all property events for a parcel, sorted by event_date ascending."""
+    # Events arrive asynchronously from the county fetch task; without an
+    # explicit header the browser may heuristically cache an empty response.
+    response.headers["Cache-Control"] = "no-cache"
+
     from sqlalchemy import text as sa_text
 
     # Look up parcel (raw SQL to avoid GeoAlchemy2 issues in tests)

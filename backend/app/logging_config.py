@@ -22,6 +22,10 @@ def configure_logging(settings: Settings) -> None:
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
+        # Carries extra={...} from stdlib logging calls into the event dict.
+        # Without it, every `logger.info(msg, extra={"parcel_id": ...})` in the
+        # codebase renders as the bare message.
+        structlog.stdlib.ExtraAdder(),
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
     ]

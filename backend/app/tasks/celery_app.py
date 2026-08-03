@@ -9,8 +9,10 @@ from __future__ import annotations
 import logging
 
 from celery import Celery
+from celery.signals import setup_logging
 
 from app.config import get_settings
+from app.logging_config import configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -45,3 +47,17 @@ celery_app.conf.update(
     task_reject_on_worker_lost=True,
     worker_prefetch_multiplier=1,
 )
+
+
+def configure_worker_logging(**kwargs: object) -> None:
+    """Route worker logs through structlog.
+
+    Connecting to this signal disables Celery's own logging setup, so the
+    worker emits the same JSON/console format as the API instead of Celery's
+    default text formatter.
+    """
+    configure_logging(get_settings())
+
+
+# Connected as a call rather than a decorator: Celery's connect() is untyped.
+setup_logging.connect(configure_worker_logging)

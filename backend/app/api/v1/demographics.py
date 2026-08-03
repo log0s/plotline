@@ -31,7 +31,10 @@ def get_demographics(
     db: Session = Depends(get_db),
 ) -> DemographicsResponse:
     """Return all census snapshots for a parcel, sorted by year ascending."""
-    response.headers["Cache-Control"] = "public, max-age=3600"
+    # no-cache (not max-age): census rows can land minutes after the first
+    # request via backfill, and a cached empty snapshot list would keep the
+    # panel saying "no data" until the TTL expired. Matches list_imagery.
+    response.headers["Cache-Control"] = "no-cache"
     from sqlalchemy import text as sa_text
 
     # Use raw SQL to avoid GeoAlchemy2 AsEWKB incompatibility with SQLite tests
