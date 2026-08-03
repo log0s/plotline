@@ -106,54 +106,85 @@ class TestToNumber:
 
 # ── CensusFetcher ─────────────────────────────────────────────────────────────
 
+# Captured verbatim from the live API: 2023 ACS5, tract 36061007600.
+# Internally consistent the way real responses are — owner + renter ==
+# occupied (345 + 1080 == 1425) and occupied + vacant == total
+# (1425 + 201 == 1626) — which hand-built fixtures rarely are.
+_LIVE_ACS5_2023 = {
+    "B01003_001E": "2455",
+    "B19013_001E": "164188",
+    "B25077_001E": "2000001",
+    "B25035_001E": "1938",
+    "B25001_001E": "1626",
+    "B25002_003E": "201",
+    "B25003_001E": "1425",
+    "B25003_002E": "345",
+    "B25003_003E": "1080",
+    "B01002_001E": "34.4",
+    "B25064_001E": "2840",
+}
+
+
+def _acs5_api_response(overrides: dict[str, str] | None = None) -> list[list[str]]:
+    """Build a response covering exactly the variables we currently request.
+
+    The header is driven off _ACS5_VARIABLES so the fixture cannot drift from
+    the real request the way a hardcoded header row can, and it is checked
+    against _LIVE_ACS5_2023 — a fixed capture of a real response, and the only
+    thing here that is *not* derived from _ACS5_VARIABLES. Comparing the two
+    is what makes a variable added to or dropped from the request fail: a
+    check of _ACS5_VARIABLES against itself would pass either way.
+
+    Both directions are hard failures, including additions: there is no
+    honest value to invent for a new variable, so a new one must be captured
+    from the live API before these tests can pass.
+
+    `overrides` replaces the captured value for a variable (e.g. with an
+    unavailable-data sentinel).
+    """
+    overrides = overrides or {}
+    stale = [v for v in overrides if v not in _ACS5_VARIABLES]
+    assert not stale, f"Override for variable we no longer request: {stale}"
+
+    variables = list(_ACS5_VARIABLES.keys())
+    missing = [v for v in variables if v not in _LIVE_ACS5_2023]
+    dropped = [v for v in _LIVE_ACS5_2023 if v not in _ACS5_VARIABLES]
+    assert not missing, f"Requested but not captured: {missing}; capture from the live API"
+    assert not dropped, (
+        f"Captured but no longer requested: {dropped}; "
+        "drop it from _LIVE_ACS5_2023 if the removal was intended"
+    )
+
+    values = {**_LIVE_ACS5_2023, **overrides}
+    return [
+        [*variables, "state", "county", "tract"],
+        [*(values[v] for v in variables), "36", "061", "007600"],
+    ]
+
 
 class TestCensusFetcher:
     @pytest.mark.asyncio
     async def test_fetch_acs5_success(self) -> None:
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = [
-            [
-                "B01003_001E",
-                "B19013_001E",
-                "B25077_001E",
-                "B25035_001E",
-                "B25003_001E",
-                "B25003_002E",
-                "B25003_003E",
-                "B01002_001E",
-                "B25064_001E",
-                "state",
-                "county",
-                "tract",
-            ],
-            [
-                "4523",
-                "52340",
-                "215000",
-                "1978",
-                "1764",
-                "1102",
-                "662",
-                "34.2",
-                "1150",
-                "08",
-                "031",
-                "006202",
-            ],
-        ]
+        mock_response.json.return_value = _acs5_api_response()
 
         fetcher = CensusFetcher(api_key="test-key")
         fetcher.client = AsyncMock()
         fetcher.client.get = AsyncMock(return_value=mock_response)
 
-        result = await fetcher.fetch_acs5(2023, "08", "031", "006202")
+        result = await fetcher.fetch_acs5(2023, "36", "061", "007600")
 
-        assert result["total_population"] == 4523
-        assert result["median_household_income"] == 52340
-        assert result["median_home_value"] == 215000
-        assert result["median_age"] == 34.2
-        assert result["median_gross_rent"] == 1150
+        # Every requested variable survives the round trip — a sampled
+        # assertion would miss one silently dropped by _normalize. The
+        # request itself is pinned against the live capture in the helper.
+        assert set(result) == set(_ACS5_VARIABLES.values())
+
+        assert result["total_population"] == 2455
+        assert result["median_household_income"] == 164188
+        assert result["median_home_value"] == 2000001
+        assert result["median_age"] == 34.4
+        assert result["median_gross_rent"] == 2840
 
     @pytest.mark.asyncio
     async def test_fetch_decennial_2020(self) -> None:
@@ -285,83 +316,32 @@ class TestCensusFetcher:
         """Census API returns -666666666 for unavailable data."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = [
-            [
-                "B01003_001E",
-                "B19013_001E",
-                "B25077_001E",
-                "B25035_001E",
-                "B25003_001E",
-                "B25003_002E",
-                "B25003_003E",
-                "B01002_001E",
-                "B25064_001E",
-                "state",
-                "county",
-                "tract",
-            ],
-            [
-                "4523",
-                "-666666666",
-                "-666666666",
-                "1978",
-                "1764",
-                "1102",
-                "662",
-                "34.2",
-                "-666666666",
-                "08",
-                "031",
-                "006202",
-            ],
-        ]
+        mock_response.json.return_value = _acs5_api_response(
+            {
+                "B19013_001E": "-666666666",
+                "B25077_001E": "-666666666",
+                "B25064_001E": "-666666666",
+            }
+        )
 
         fetcher = CensusFetcher(api_key="test-key")
         fetcher.client = AsyncMock()
         fetcher.client.get = AsyncMock(return_value=mock_response)
 
-        result = await fetcher.fetch_acs5(2009, "08", "031", "006202")
-        assert result["total_population"] == 4523
+        result = await fetcher.fetch_acs5(2009, "36", "061", "007600")
+
+        # A sentinel nulls the value but must not drop the field, so the key
+        # set still tracks _ACS5_VARIABLES exactly.
+        assert set(result) == set(_ACS5_VARIABLES.values())
+
+        assert result["total_population"] == 2455
         assert result["median_household_income"] is None
         assert result["median_home_value"] is None
         assert result["median_gross_rent"] is None
-        assert result["median_year_built"] == 1978
+        assert result["median_year_built"] == 1938
 
 
 # ── Housing pipeline (fetch → persist) ───────────────────────────────────────
-
-# Captured verbatim from the live API: 2023 ACS5, tract 36061007600.
-# Internally consistent the way real responses are — owner + renter ==
-# occupied (345 + 1080 == 1425) and occupied + vacant == total
-# (1425 + 201 == 1626) — which hand-built fixtures rarely are.
-_LIVE_ACS5_2023 = {
-    "B01003_001E": "2455",
-    "B19013_001E": "164188",
-    "B25077_001E": "2000001",
-    "B25035_001E": "1938",
-    "B25001_001E": "1626",
-    "B25002_003E": "201",
-    "B25003_001E": "1425",
-    "B25003_002E": "345",
-    "B25003_003E": "1080",
-    "B01002_001E": "34.4",
-    "B25064_001E": "2840",
-}
-
-
-def _acs5_api_response() -> list[list[str]]:
-    """Build a response covering exactly the variables we currently request.
-
-    Driven off _ACS5_VARIABLES so the fixture cannot drift from the real
-    request the way a hardcoded header row can.
-    """
-    variables = list(_ACS5_VARIABLES.keys())
-    missing = [v for v in variables if v not in _LIVE_ACS5_2023]
-    assert not missing, f"No captured value for {missing}; refresh from the live API"
-    return [
-        [*variables, "state", "county", "tract"],
-        [*(_LIVE_ACS5_2023[v] for v in variables), "36", "061", "007600"],
-    ]
 
 
 class TestHousingPipeline:
@@ -503,8 +483,15 @@ class TestHousingPipeline:
 
 
 class TestDemographicsService:
-    def test_upsert_and_query(self, db) -> None:
-        """Insert a census snapshot and read it back."""
+    def test_vacancy_rate_computation(self, db) -> None:
+        """Exercise the vacancy_rate formula in isolation.
+
+        The input is deliberately not a shape the real pipeline can produce:
+        occupied/total are set with no owner/renter split, purely to pin the
+        (total - occupied) / total arithmetic. The real fetch → upsert path is
+        covered by
+        TestHousingPipeline::test_acs5_row_satisfies_housing_chart_filter.
+        """
         from sqlalchemy import text
 
         parcel_id = str(uuid.uuid4())
