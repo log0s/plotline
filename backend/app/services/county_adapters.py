@@ -14,15 +14,30 @@ from __future__ import annotations
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, date
 from typing import Any
 
-from app.services.arcgis import query_feature_service
-from app.services.ckan import query_ckan_datastore
-from app.services.socrata import query_socrata
+import httpx
+
+from app.services.arcgis import ArcGISError, query_feature_service
+from app.services.ckan import CKANError, query_ckan_datastore
+from app.services.socrata import SocrataError, query_socrata
 
 logger = logging.getLogger(__name__)
+
+# Errors that mean "this portal didn't answer" rather than a bug in our code.
+# The clients wrap their httpx failures into these, but the httpx types are
+# listed too so a direct-transport failure can't escape as an unexpected error.
+QUERY_ERRORS = (
+    ArcGISError,
+    SocrataError,
+    CKANError,
+    httpx.HTTPStatusError,
+    httpx.TimeoutException,
+    httpx.TransportError,
+)
 
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
@@ -87,6 +102,47 @@ class PropertyEventData:
     situs_address: str | None = None
 
 
+@dataclass
+class SourceFetchResult:
+    """Events from one adapter method, plus how many queries actually ran.
+
+    A county portal outage and "this address has no records" both produce an
+    empty ``events`` list, so the caller needs the query counts to tell them
+    apart. Adapters with no public API for a source return zero attempts —
+    that's neither success nor failure, just nothing to ask.
+    """
+
+    events: list[PropertyEventData] = field(default_factory=list)
+    queries_attempted: int = 0
+    queries_failed: int = 0
+
+    @property
+    def all_queries_failed(self) -> bool:
+        return self.queries_attempted > 0 and self.queries_failed == self.queries_attempted
+
+
+def _collect(
+    chunks: Sequence[list[dict[str, Any]] | None],
+    parse_row: Callable[[dict[str, Any]], PropertyEventData | None],
+) -> SourceFetchResult:
+    """Parse query results into events, counting ``None`` chunks as failures."""
+    events: list[PropertyEventData] = []
+    failed = 0
+    for chunk in chunks:
+        if chunk is None:
+            failed += 1
+            continue
+        for row in chunk:
+            event = parse_row(row)
+            if event is not None:
+                events.append(event)
+    return SourceFetchResult(
+        events=events,
+        queries_attempted=len(chunks),
+        queries_failed=failed,
+    )
+
+
 # ── Base adapter ──────────────────────────────────────────────────────────────
 
 
@@ -106,7 +162,7 @@ class CountyAdapter(ABC):
         street_name: str,
         *,
         app_token: str | None = None,
-    ) -> list[PropertyEventData]:
+    ) -> SourceFetchResult:
         """Fetch property sale records matching the address."""
         ...
 
@@ -117,7 +173,7 @@ class CountyAdapter(ABC):
         street_name: str,
         *,
         app_token: str | None = None,
-    ) -> list[PropertyEventData]:
+    ) -> SourceFetchResult:
         """Fetch building permit records matching the address."""
         ...
 
@@ -147,10 +203,10 @@ class DenverAdapter(CountyAdapter):
         street_name: str,
         *,
         app_token: str | None = None,
-    ) -> list[PropertyEventData]:
+    ) -> SourceFetchResult:
         # Denver property sales are no longer available via public API
         # (Socrata dataset hmrh-5s3x was retired when Denver moved to ArcGIS Hub)
-        return []
+        return SourceFetchResult()
 
     async def fetch_permits(
         self,
@@ -158,14 +214,14 @@ class DenverAdapter(CountyAdapter):
         street_name: str,
         *,
         app_token: str | None = None,
-    ) -> list[PropertyEventData]:
+    ) -> SourceFetchResult:
         # Use the full ADDRESS field with LIKE — handles directional prefixes
         # (e.g. "1437 N BANNOCK ST") and case variations reliably.
         sn = _escape_sql_literal(street_number)
         sname = _escape_sql_literal(street_name)
         where = f"upper(ADDRESS) LIKE '{sn} %{sname}%'"
 
-        async def _query(url: str, label: str) -> list[dict[str, Any]]:
+        async def _query(url: str, label: str) -> list[dict[str, Any]] | None:
             try:
                 return await query_feature_service(
                     url,
@@ -173,15 +229,15 @@ class DenverAdapter(CountyAdapter):
                     order_by="DATE_ISSUED DESC",
                     result_record_count=100,
                 )
-            except Exception as exc:
+            except QUERY_ERRORS as exc:
                 logger.warning("Denver permits query failed", extra={"label": label}, exc_info=exc)
-                return []
+                return None
 
         chunks = await asyncio.gather(
             _query(self.RESIDENTIAL_PERMITS_URL, "residential"),
             _query(self.COMMERCIAL_PERMITS_URL, "commercial"),
         )
-        return [self._parse_permit(row) for chunk in chunks for row in chunk]
+        return _collect(chunks, self._parse_permit)
 
     def _parse_permit(self, row: dict[str, Any]) -> PropertyEventData:
         event_date = _parse_epoch_ms(row.get("DATE_ISSUED"))
@@ -242,9 +298,9 @@ class AdamsCountyAdapter(CountyAdapter):
         street_name: str,
         *,
         app_token: str | None = None,
-    ) -> list[PropertyEventData]:
+    ) -> SourceFetchResult:
         # Adams County property sales are not available via public API
-        return []
+        return SourceFetchResult()
 
     async def fetch_permits(
         self,
@@ -252,10 +308,11 @@ class AdamsCountyAdapter(CountyAdapter):
         street_name: str,
         *,
         app_token: str | None = None,
-    ) -> list[PropertyEventData]:
+    ) -> SourceFetchResult:
         sn = _escape_sql_literal(street_number)
         sname = _escape_sql_literal(street_name)
         where = f"upper(CombinedAddress) LIKE '{sn} %{sname}%'"
+        rows: list[dict[str, Any]] | None
         try:
             rows = await query_feature_service(
                 self.PERMITS_URL,
@@ -263,10 +320,10 @@ class AdamsCountyAdapter(CountyAdapter):
                 order_by="CaseOpened DESC",
                 result_record_count=100,
             )
-        except Exception as exc:
+        except QUERY_ERRORS as exc:
             logger.warning("Adams County permits query failed", exc_info=exc)
-            return []
-        return [self._parse_permit(row) for row in rows]
+            rows = None
+        return _collect([rows], self._parse_permit)
 
     def _parse_permit(self, row: dict[str, Any]) -> PropertyEventData:
         event_date = _parse_epoch_ms(row.get("CaseOpened"))
@@ -338,12 +395,13 @@ class DCAdapter(CountyAdapter):
         street_name: str,
         *,
         app_token: str | None = None,
-    ) -> list[PropertyEventData]:
+    ) -> SourceFetchResult:
         sn = _escape_sql_literal(street_number)
         sname = _escape_sql_literal(street_name)
         # Anchored at the start — a leading wildcard would also match
         # "1100 X" when searching for "100 X".
         where = f"upper(PROPERTY_ADDRESS) LIKE '{sn} %{sname}%'"
+        rows: list[dict[str, Any]] | None
         try:
             rows = await query_feature_service(
                 self.SALES_URL,
@@ -355,12 +413,14 @@ class DCAdapter(CountyAdapter):
                 ),
                 result_record_count=20,
             )
-        except Exception as exc:
+        except QUERY_ERRORS as exc:
             logger.warning("DC sales query failed", exc_info=exc)
-            return []
-        return [self._parse_sale(row) for row in rows if row.get("LAST_SALE_PRICE")]
+            rows = None
+        return _collect([rows], self._parse_sale)
 
-    def _parse_sale(self, row: dict[str, Any]) -> PropertyEventData:
+    def _parse_sale(self, row: dict[str, Any]) -> PropertyEventData | None:
+        if not row.get("LAST_SALE_PRICE"):
+            return None
         raw_date = row.get("LAST_SALE_DATE") or row.get("DEED_DATE")
         event_date = _parse_epoch_ms(raw_date)
         price = safe_int(row.get("LAST_SALE_PRICE"))
@@ -392,12 +452,12 @@ class DCAdapter(CountyAdapter):
         street_name: str,
         *,
         app_token: str | None = None,
-    ) -> list[PropertyEventData]:
+    ) -> SourceFetchResult:
         sn = _escape_sql_literal(street_number)
         sname = _escape_sql_literal(street_name)
         where = f"upper(FULL_ADDRESS) LIKE '{sn} %{sname}%'"
 
-        async def _query(layer_id: int, year_label: str) -> list[dict[str, Any]]:
+        async def _query(layer_id: int, year_label: str) -> list[dict[str, Any]] | None:
             url = f"{self._PERMITS_BASE}/{layer_id}"
             try:
                 return await query_feature_service(
@@ -406,14 +466,14 @@ class DCAdapter(CountyAdapter):
                     order_by="ISSUE_DATE DESC",
                     result_record_count=50,
                 )
-            except Exception as exc:
+            except QUERY_ERRORS as exc:
                 logger.warning(
                     "DC permits query failed", extra={"year_label": year_label}, exc_info=exc
                 )
-                return []
+                return None
 
         chunks = await asyncio.gather(*(_query(lid, label) for lid, label in self.PERMIT_LAYERS))
-        return [self._parse_permit(row) for chunk in chunks for row in chunk]
+        return _collect(chunks, self._parse_permit)
 
     def _parse_permit(self, row: dict[str, Any]) -> PropertyEventData:
         event_date = _parse_epoch_ms(row.get("ISSUE_DATE"))
@@ -480,9 +540,9 @@ class SantaClaraAdapter(CountyAdapter):
         street_name: str,
         *,
         app_token: str | None = None,
-    ) -> list[PropertyEventData]:
+    ) -> SourceFetchResult:
         # Santa Clara County property sales are not available via public API
-        return []
+        return SourceFetchResult()
 
     async def fetch_permits(
         self,
@@ -490,11 +550,11 @@ class SantaClaraAdapter(CountyAdapter):
         street_name: str,
         *,
         app_token: str | None = None,
-    ) -> list[PropertyEventData]:
+    ) -> SourceFetchResult:
         # CKAN full-text search across gx_location field
         search_term = f"{street_number} {street_name}"
 
-        async def _query(resource_id: str, label: str) -> list[dict[str, Any]]:
+        async def _query(resource_id: str, label: str) -> list[dict[str, Any]] | None:
             try:
                 return await query_ckan_datastore(
                     self.DOMAIN,
@@ -502,23 +562,24 @@ class SantaClaraAdapter(CountyAdapter):
                     q=search_term,
                     limit=100,
                 )
-            except Exception as exc:
+            except QUERY_ERRORS as exc:
                 logger.warning(
                     "San Jose permits query failed", extra={"label": label}, exc_info=exc
                 )
-                return []
+                return None
 
         chunks = await asyncio.gather(*(_query(rid, label) for rid, label in self.PERMIT_RESOURCES))
+
         # Filter to rows whose street number actually matches — a substring
         # check would let "12" match "512 S 1ST ST".
-        results: list[PropertyEventData] = []
-        for chunk in chunks:
-            for row in chunk:
-                location = (row.get("gx_location") or "").upper()
-                tokens = location.split()
-                if tokens and tokens[0] == street_number and street_name.upper() in location:
-                    results.append(self._parse_permit(row))
-        return results
+        def parse_row(row: dict[str, Any]) -> PropertyEventData | None:
+            location = (row.get("gx_location") or "").upper()
+            tokens = location.split()
+            if not tokens or tokens[0] != street_number or street_name.upper() not in location:
+                return None
+            return self._parse_permit(row)
+
+        return _collect(chunks, parse_row)
 
     def _parse_permit(self, row: dict[str, Any]) -> PropertyEventData:
         event_date = self._parse_sj_date(row.get("ISSUEDATE"))
@@ -600,12 +661,12 @@ class NewYorkCountyAdapter(CountyAdapter):
         street_name: str,
         *,
         app_token: str | None = None,
-    ) -> list[PropertyEventData]:
+    ) -> SourceFetchResult:
         sn = _escape_sql_literal(street_number)
         sname = _escape_sql_literal(street_name)
         where = f"borough='1' AND upper(address) LIKE '%{sn} {sname}%' AND sale_price > 0"
 
-        async def _query(resource_id: str, label: str) -> list[dict[str, Any]]:
+        async def _query(resource_id: str, label: str) -> list[dict[str, Any]] | None:
             try:
                 return await query_socrata(
                     self.DOMAIN,
@@ -615,12 +676,12 @@ class NewYorkCountyAdapter(CountyAdapter):
                     limit=200,
                     app_token=app_token,
                 )
-            except Exception as exc:
+            except QUERY_ERRORS as exc:
                 logger.warning("NYC sales query failed", extra={"label": label}, exc_info=exc)
-                return []
+                return None
 
         chunks = await asyncio.gather(*(_query(rid, label) for rid, label in self.SALES_RESOURCES))
-        return [self._parse_sale(row) for chunk in chunks for row in chunk]
+        return _collect(chunks, self._parse_sale)
 
     def _parse_sale(self, row: dict[str, Any]) -> PropertyEventData:
         event_date = parse_date(row.get("sale_date"))
@@ -662,10 +723,11 @@ class NewYorkCountyAdapter(CountyAdapter):
         street_name: str,
         *,
         app_token: str | None = None,
-    ) -> list[PropertyEventData]:
+    ) -> SourceFetchResult:
         sn = _escape_sql_literal(street_number)
         sname = _escape_sql_literal(street_name)
         where = f"borough='MANHATTAN' AND house__='{sn}' AND upper(street_name) LIKE '%{sname}%'"
+        rows: list[dict[str, Any]] | None
         try:
             rows = await query_socrata(
                 self.DOMAIN,
@@ -675,10 +737,10 @@ class NewYorkCountyAdapter(CountyAdapter):
                 limit=100,
                 app_token=app_token,
             )
-        except Exception as exc:
+        except QUERY_ERRORS as exc:
             logger.warning("NYC permits query failed", exc_info=exc)
-            return []
-        return [self._parse_permit(row) for row in rows]
+            rows = None
+        return _collect([rows], self._parse_permit)
 
     def _parse_permit(self, row: dict[str, Any]) -> PropertyEventData:
         event_date = self._parse_nyc_date(row.get("issuance_date"))

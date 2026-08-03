@@ -553,7 +553,7 @@ async def test_fetch_census_all_years_failed_marks_task_failed() -> None:
 @pytest.mark.asyncio
 async def test_fetch_property_filters_other_addresses() -> None:
     """Records the broad LIKE pulled in for other buildings are rejected."""
-    from app.services.county_adapters import PropertyEventData
+    from app.services.county_adapters import PropertyEventData, SourceFetchResult
     from app.tasks.timeline import _fetch_property
 
     parcel_id = uuid.uuid4()
@@ -579,8 +579,13 @@ async def test_fetch_property_filters_other_addresses() -> None:
     no_situs = make_event("ssl-3", "")
 
     mock_adapter = MagicMock()
-    mock_adapter.fetch_sales = AsyncMock(return_value=[matching, wrong_number, no_situs])
-    mock_adapter.fetch_permits = AsyncMock(return_value=[])
+    mock_adapter.fetch_sales = AsyncMock(
+        return_value=SourceFetchResult(
+            events=[matching, wrong_number, no_situs],
+            queries_attempted=1,
+        )
+    )
+    mock_adapter.fetch_permits = AsyncMock(return_value=SourceFetchResult(queries_attempted=1))
 
     mock_task_row = MagicMock()
     mock_db = MagicMock()
@@ -610,6 +615,138 @@ async def test_fetch_property_filters_other_addresses() -> None:
     assert "ssl-2" not in saved_ids
     # Records without a situs address can't be verified — they're kept.
     assert "ssl-3" in saved_ids
+
+
+@pytest.mark.asyncio
+async def test_fetch_property_all_queries_failed_marks_task_failed() -> None:
+    """A county portal outage is a failure, not 'complete with 0 items' —
+    complete-with-0 reads as 'no records at this address' forever."""
+    from app.services.county_adapters import SourceFetchResult
+    from app.tasks.timeline import _fetch_property
+
+    mock_adapter = MagicMock()
+    mock_adapter.fetch_sales = AsyncMock(
+        return_value=SourceFetchResult(queries_attempted=1, queries_failed=1)
+    )
+    mock_adapter.fetch_permits = AsyncMock(
+        return_value=SourceFetchResult(queries_attempted=2, queries_failed=2)
+    )
+
+    mock_db = MagicMock()
+    mock_db.__enter__ = MagicMock(return_value=mock_db)
+    mock_db.__exit__ = MagicMock(return_value=False)
+    mock_db.execute.return_value.scalars.return_value.first.return_value = MagicMock()
+
+    with (
+        patch("app.db.SessionLocal", return_value=mock_db),
+        patch("app.tasks.timeline.get_adapter_for_county", return_value=mock_adapter),
+        patch("app.tasks.timeline.imagery_service.update_request_task") as mock_update,
+    ):
+        count = await _fetch_property(
+            uuid.uuid4(),
+            uuid.uuid4(),
+            "Denver",
+            "1437 BANNOCK ST, DENVER, CO, 80202",
+        )
+
+    assert count == 0
+    statuses = [c[0][2] for c in mock_update.call_args_list]
+    assert statuses[-1] == "failed"
+    assert "complete" not in statuses
+
+
+@pytest.mark.asyncio
+async def test_fetch_property_zero_rows_marks_task_complete() -> None:
+    """Queries that ran fine and found nothing are 'no records here' —
+    that must stay complete, not become an error."""
+    from app.services.county_adapters import SourceFetchResult
+    from app.tasks.timeline import _fetch_property
+
+    mock_adapter = MagicMock()
+    mock_adapter.fetch_sales = AsyncMock(return_value=SourceFetchResult(queries_attempted=1))
+    mock_adapter.fetch_permits = AsyncMock(return_value=SourceFetchResult(queries_attempted=2))
+
+    mock_db = MagicMock()
+    mock_db.__enter__ = MagicMock(return_value=mock_db)
+    mock_db.__exit__ = MagicMock(return_value=False)
+    mock_db.execute.return_value.scalars.return_value.first.return_value = MagicMock()
+
+    with (
+        patch("app.db.SessionLocal", return_value=mock_db),
+        patch("app.tasks.timeline.get_adapter_for_county", return_value=mock_adapter),
+        patch(
+            "app.tasks.timeline.property_events_service.count_property_events",
+            return_value=0,
+        ),
+        patch("app.tasks.timeline.imagery_service.update_request_task") as mock_update,
+    ):
+        count = await _fetch_property(
+            uuid.uuid4(),
+            uuid.uuid4(),
+            "Denver",
+            "1437 BANNOCK ST, DENVER, CO, 80202",
+        )
+
+    assert count == 0
+    statuses = [c[0][2] for c in mock_update.call_args_list]
+    assert statuses[-1] == "complete"
+    assert "failed" not in statuses
+
+
+@pytest.mark.asyncio
+async def test_fetch_property_partial_failure_still_completes() -> None:
+    """One dead dataset among several shouldn't discard the records the
+    others returned."""
+    from app.services.county_adapters import PropertyEventData, SourceFetchResult
+    from app.tasks.timeline import _fetch_property
+
+    event = PropertyEventData(
+        event_type="permit_building",
+        event_date=None,
+        sale_price=None,
+        permit_type="Building",
+        permit_description=None,
+        permit_valuation=None,
+        description="Building permit",
+        source="denver_permits",
+        source_record_id="permit-1",
+        raw_data={},
+        situs_address=None,
+    )
+
+    mock_adapter = MagicMock()
+    mock_adapter.fetch_sales = AsyncMock(
+        return_value=SourceFetchResult(queries_attempted=1, queries_failed=1)
+    )
+    mock_adapter.fetch_permits = AsyncMock(
+        return_value=SourceFetchResult(events=[event], queries_attempted=1)
+    )
+
+    mock_db = MagicMock()
+    mock_db.__enter__ = MagicMock(return_value=mock_db)
+    mock_db.__exit__ = MagicMock(return_value=False)
+    mock_db.execute.return_value.scalars.return_value.first.return_value = MagicMock()
+
+    with (
+        patch("app.db.SessionLocal", return_value=mock_db),
+        patch("app.tasks.timeline.get_adapter_for_county", return_value=mock_adapter),
+        patch("app.tasks.timeline.property_events_service.upsert_property_event"),
+        patch(
+            "app.tasks.timeline.property_events_service.count_property_events",
+            return_value=1,
+        ),
+        patch("app.tasks.timeline.imagery_service.update_request_task") as mock_update,
+    ):
+        count = await _fetch_property(
+            uuid.uuid4(),
+            uuid.uuid4(),
+            "Denver",
+            "1437 BANNOCK ST, DENVER, CO, 80202",
+        )
+
+    assert count == 1
+    statuses = [c[0][2] for c in mock_update.call_args_list]
+    assert statuses[-1] == "complete"
 
 
 # ── _run_timeline_inner orchestration ─────────────────────────────────────────

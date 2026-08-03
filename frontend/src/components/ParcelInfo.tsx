@@ -11,13 +11,10 @@ import type {
   GeocodeResponse,
   ImagerySnapshot,
   TimelineRequest,
+  TimelineRequestTask,
 } from "../types";
 
-function TaskRow({
-  task,
-}: {
-  task: { source: string; status: string; items_found: number };
-}) {
+function TaskRow({ task }: { task: TimelineRequestTask }) {
   const label = SOURCE_LABELS[task.source] ?? task.source;
   const isDone = task.status === "complete";
   const isProcessing = task.status === "processing";
@@ -51,6 +48,23 @@ function TaskRow({
         <span className="text-slate-300 truncate">{label}</span>
       </span>
       <span className="text-slate-500 font-mono shrink-0">{statusText}</span>
+    </li>
+  );
+}
+
+/** A source that ended without data — shown after the timeline finishes, so
+ * an empty section is never mistaken for "there's nothing here". */
+function SourceIssueRow({ task }: { task: TimelineRequestTask }) {
+  const label = SOURCE_LABELS[task.source] ?? task.source;
+  const message =
+    task.status === "failed"
+      ? `${label} data unavailable — we'll retry on your next visit.`
+      : (task.error_message ?? `${label} data isn't available here.`);
+
+  return (
+    <li className="flex items-start gap-2 text-xs text-slate-400">
+      <span className="inline-block w-1.5 h-1.5 mt-1.5 rounded-full bg-amber-400/60 shrink-0" />
+      <span className="leading-snug">{message}</span>
     </li>
   );
 }
@@ -97,7 +111,9 @@ export function ParcelInfo({
     imageryLoading ||
     timelineStatus?.status === "queued" ||
     timelineStatus?.status === "processing" ||
-    (timelineRequestId != null && timelineStatus == null && snapshots.length === 0);
+    (timelineRequestId != null &&
+      timelineStatus == null &&
+      snapshots.length === 0);
 
   const handleReset = () => {
     useAppStore.getState().reset();
@@ -110,6 +126,13 @@ export function ParcelInfo({
   ) => {
     geocodeMutation.mutate({ address, navigate, ...coords });
   };
+
+  const tasks = timelineStatus?.tasks ?? [];
+  const unavailableSources = tasks.filter(
+    (t) => t.status === "failed" || t.status === "skipped",
+  );
+  const taskStatus = (source: string) =>
+    tasks.find((t) => t.source === source)?.status;
 
   const isLoading = geocodeMutation.isPending;
   const error = geocodeMutation.error?.message ?? null;
@@ -238,9 +261,18 @@ export function ParcelInfo({
               </div>
             )
           ) : (
-            <p className="text-sm text-white">
-              {snapshots.length} item{snapshots.length !== 1 ? "s" : ""}
-            </p>
+            <>
+              <p className="text-sm text-white">
+                {snapshots.length} item{snapshots.length !== 1 ? "s" : ""}
+              </p>
+              {unavailableSources.length > 0 && (
+                <ul className="mt-2 flex flex-col gap-1.5">
+                  {unavailableSources.map((t) => (
+                    <SourceIssueRow key={t.source} task={t} />
+                  ))}
+                </ul>
+              )}
+            </>
           )}
         </div>
 
@@ -252,6 +284,8 @@ export function ParcelInfo({
               timelineStatus?.status === "complete" ||
               (timelineRequestId == null && snapshots.length > 0)
             }
+            censusStatus={taskStatus("census")}
+            propertyStatus={taskStatus("property")}
             compact={isMobile}
           />
         </div>

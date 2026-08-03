@@ -637,7 +637,26 @@ async def _fetch_and_persist_property(
         adapter.fetch_sales(street_number, street_name, app_token=app_token),
         adapter.fetch_permits(street_number, street_name, app_token=app_token),
     )
-    all_events = [*sales, *permits]
+
+    # Every query erroring is a portal outage, not "this address has no
+    # records" — marking it complete-with-0 would permanently mask the gap
+    # because backfill only refetches missing, skipped, or failed tasks.
+    queries_attempted = sales.queries_attempted + permits.queries_attempted
+    queries_failed = sales.queries_failed + permits.queries_failed
+    if queries_attempted > 0 and queries_failed == queries_attempted:
+        logger.warning(
+            "All property queries failed",
+            extra={"county": county, "queries": queries_attempted},
+        )
+        _set_task_status(
+            timeline_request_id,
+            "property",
+            "failed",
+            error_message=f"All {county} County property queries failed",
+        )
+        return 0
+
+    all_events = [*sales.events, *permits.events]
 
     # Filter by fuzzy address match — the LIKE queries are deliberately
     # broad, so records for other properties must be rejected here.

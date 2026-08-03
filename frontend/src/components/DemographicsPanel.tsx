@@ -8,15 +8,28 @@ import { PopulationChart } from "./demographics/PopulationChart";
 import { PriceHistoryChart } from "./demographics/PriceHistoryChart";
 import { UnsupportedCountyBanner } from "./demographics/UnsupportedCountyBanner";
 
+import type { TimelineRequestTask } from "../types";
+
+type TaskStatus = TimelineRequestTask["status"];
+
 interface DemographicsPanelProps {
   parcelId: string;
   enabled: boolean;
+  /** Per-source task status, when the timeline reported one. Undefined means
+   * there's no run to wait on — treat it as settled, not pending. */
+  censusStatus?: TaskStatus;
+  propertyStatus?: TaskStatus;
   compact?: boolean;
 }
+
+const isPending = (status?: TaskStatus) =>
+  status === "queued" || status === "processing";
 
 export function DemographicsPanel({
   parcelId,
   enabled,
+  censusStatus,
+  propertyStatus,
   compact,
 }: DemographicsPanelProps) {
   const selectedYear = useAppStore((s) => s.selectedYear);
@@ -62,12 +75,35 @@ export function DemographicsPanel({
     !demoFailed &&
     !eventsFailed
   ) {
+    const stillProcessing =
+      isPending(censusStatus) || isPending(propertyStatus);
+    const sourcesFailed =
+      censusStatus === "failed" || propertyStatus === "failed";
+
     return (
       <div className="flex items-center justify-center p-6 text-center">
         <p className="text-xs text-slate-500">
-          No census or property data available yet.
-          <br />
-          Data will appear once the timeline finishes processing.
+          {stillProcessing ? (
+            <>
+              No census or property data available yet.
+              <br />
+              Data will appear once the timeline finishes processing.
+            </>
+          ) : sourcesFailed ? (
+            <>
+              Couldn&rsquo;t load{" "}
+              {censusStatus === "failed" && propertyStatus === "failed"
+                ? "census or property records"
+                : censusStatus === "failed"
+                  ? "census records"
+                  : "property records"}
+              .
+              <br />
+              We&rsquo;ll retry on your next visit.
+            </>
+          ) : (
+            <>No census or property records found for this address.</>
+          )}
         </p>
       </div>
     );
@@ -103,6 +139,24 @@ export function DemographicsPanel({
           <span>
             Could not load property data:{" "}
             {eventsError?.message ?? "unknown error"}
+          </span>
+        </div>
+      )}
+      {/* Source fetched and failed — the data isn't coming, but the rest of
+          the panel is fine, so keep this informative rather than alarming. */}
+      {censusStatus === "failed" && !demoFailed && (
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400/60 shrink-0" />
+          <span>
+            Census data unavailable — we&rsquo;ll retry on your next visit.
+          </span>
+        </div>
+      )}
+      {propertyStatus === "failed" && !eventsFailed && (
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400/60 shrink-0" />
+          <span>
+            Property records unavailable — we&rsquo;ll retry on your next visit.
           </span>
         </div>
       )}

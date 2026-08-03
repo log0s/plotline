@@ -289,7 +289,8 @@ def maybe_refetch_for_backfill(
       * Census tract FIPS is now available but no census task ran, or the
         previous census task failed (e.g. a Census API outage).
       * The parcel's county now has a property adapter, but the previous
-        run's property task was missing or skipped.
+        run's property task was missing, skipped, or failed (e.g. a county
+        portal outage).
       * No usgs_topo snapshots exist (source added after initial fetch).
 
     Caller is responsible for dispatching the Celery task on the returned
@@ -330,10 +331,10 @@ def maybe_refetch_for_backfill(
                 .scalars()
                 .first()
             )
-            if not prop_task or prop_task.status == "skipped":
+            if not prop_task or prop_task.status in ("skipped", "failed"):
                 needs_refetch = True
                 logger.info(
-                    "Property task missing/skipped — refetch needed",
+                    "Property task missing/skipped/failed — refetch needed",
                     extra={"parcel_id": str(parcel.id), "county": parcel.county},
                 )
 

@@ -242,7 +242,10 @@ class TestDenverAdapterParsing:
         """Denver sales data is no longer available via public API."""
         adapter = DenverAdapter()
         result = await adapter.fetch_sales("123", "MAIN")
-        assert result == []
+        assert result.events == []
+        # Nothing was asked, so this is not an outage
+        assert result.queries_attempted == 0
+        assert not result.all_queries_failed
 
     def test_parse_permit_building(self) -> None:
         adapter = DenverAdapter()

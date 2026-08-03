@@ -322,3 +322,58 @@ def test_list_imagery_empty_returns_empty_list(client: TestClient, db: Session) 
     data = resp.json()
     assert data["parcel_id"] == str(parcel_id)
     assert data["snapshots"] == []
+
+
+# ── Backfill eligibility ──────────────────────────────────────────────────────
+
+
+def _backfill_setup(db: Session, property_status: str) -> tuple[object, object]:
+    """Insert a completed request whose property task has the given status.
+
+    The parcel is a stand-in rather than an ORM load — the real model selects
+    its PostGIS geometry column, which SQLite can't evaluate.
+    """
+    from types import SimpleNamespace
+
+    from app.models.parcels import TimelineRequest, TimelineRequestTask
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id, "1437 Bannock St")
+
+    # Inserted through the ORM so the UUID columns are bound the same way the
+    # service's lookups bind them.
+    req = TimelineRequest(id=uuid.uuid4(), parcel_id=parcel_id, status="complete")
+    db.add(req)
+    for source, status in (("property", property_status), ("usgs_topo", "complete")):
+        db.add(
+            TimelineRequestTask(
+                id=uuid.uuid4(),
+                timeline_request_id=req.id,
+                source=source,
+                status=status,
+                items_found=0,
+            )
+        )
+    db.commit()
+
+    parcel = SimpleNamespace(id=parcel_id, census_tract_id=None, county="Denver")
+    return parcel, req
+
+
+def test_backfill_retries_failed_property_task(db: Session) -> None:
+    """A property task left failed by a county portal outage must be retried
+    on the next visit — otherwise the outage is permanent for that parcel."""
+    from app.services.imagery import maybe_refetch_for_backfill
+
+    parcel, req = _backfill_setup(db, "failed")
+
+    assert maybe_refetch_for_backfill(db, parcel, req) is not None
+
+
+def test_backfill_leaves_complete_property_task_alone(db: Session) -> None:
+    """A genuine 'no records at this address' result is not refetched."""
+    from app.services.imagery import maybe_refetch_for_backfill
+
+    parcel, req = _backfill_setup(db, "complete")
+
+    assert maybe_refetch_for_backfill(db, parcel, req) is None
