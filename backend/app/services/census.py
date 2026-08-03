@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, cast
 
 import httpx
@@ -60,6 +61,8 @@ _ACS5_VARIABLES: dict[str, str] = {
     "B19013_001E": "median_household_income",
     "B25077_001E": "median_home_value",
     "B25035_001E": "median_year_built",
+    "B25001_001E": "total_housing_units",
+    "B25002_003E": "vacant_housing_units",
     "B25003_001E": "occupied_housing_units",
     "B25003_002E": "owner_occupied_units",
     "B25003_003E": "renter_occupied_units",
@@ -78,6 +81,23 @@ class CensusApiError(Exception):
 
 class CensusMissingKeyError(CensusApiError):
     """Raised when the Census API rejects a request due to a missing or invalid key."""
+
+
+class CensusUnknownVariableError(CensusApiError):
+    """Raised when a requested variable does not exist in the queried vintage.
+
+    Variable availability differs across years, and the API rejects the whole
+    request — not just the offending field — with a 400.  Callers retry
+    without the variable rather than losing the entire year.
+    """
+
+    def __init__(self, variable: str) -> None:
+        super().__init__(f"Unknown Census variable: {variable}")
+        self.variable = variable
+
+
+# Body of a 400 looks like: error: unknown variable 'B25001_001E'
+_UNKNOWN_VARIABLE_RE = re.compile(r"unknown variable '([^']+)'", re.IGNORECASE)
 
 
 class CensusFetcher:
@@ -109,12 +129,9 @@ class CensusFetcher:
 
         Returns a dict with normalized field names (e.g. "total_population").
         """
-        variables = list(_ACS5_VARIABLES.keys())
-        url = f"{self.BASE_URL}/{year}/acs/acs5"
-
-        resp = await self._request(
-            url,
-            variables=variables,
+        resp = await self._request_dropping_unknown(
+            f"{self.BASE_URL}/{year}/acs/acs5",
+            variables=list(_ACS5_VARIABLES.keys()),
             state_fips=state_fips,
             county_fips=county_fips,
             tract_code=tract_code,
@@ -141,12 +158,9 @@ class CensusFetcher:
             logger.warning("No decennial config for year %d", year)
             return {}
 
-        url = f"{self.BASE_URL}/{year}/{config['dataset']}"
-        variables = list(config["vars"].keys())
-
-        resp = await self._request(
-            url,
-            variables=variables,
+        resp = await self._request_dropping_unknown(
+            f"{self.BASE_URL}/{year}/{config['dataset']}",
+            variables=list(config["vars"].keys()),
             state_fips=state_fips,
             county_fips=county_fips,
             tract_code=tract_code,
@@ -156,6 +170,42 @@ class CensusFetcher:
 
         raw = _parse_response(resp)
         return _normalize(raw, config["vars"])
+
+    async def _request_dropping_unknown(
+        self,
+        url: str,
+        *,
+        variables: list[str],
+        state_fips: str,
+        county_fips: str,
+        tract_code: str,
+    ) -> list[list[str]] | None:
+        """Request variables, dropping any the vintage doesn't recognize.
+
+        The API rejects the entire request when one variable is unavailable
+        for that year, so retry without it instead of losing every field.
+        """
+        remaining = list(variables)
+        while remaining:
+            try:
+                return await self._request(
+                    url,
+                    variables=remaining,
+                    state_fips=state_fips,
+                    county_fips=county_fips,
+                    tract_code=tract_code,
+                )
+            except CensusUnknownVariableError as exc:
+                if exc.variable not in remaining:
+                    # Can't attribute the rejection to anything we asked for —
+                    # retrying the same list would loop forever.
+                    raise
+                remaining.remove(exc.variable)
+                logger.warning(
+                    "Census variable unavailable for vintage; retrying without it",
+                    extra={"url": url, "variable": exc.variable, "remaining": len(remaining)},
+                )
+        return None
 
     async def _request(
         self,
@@ -196,6 +246,11 @@ class CensusFetcher:
                 extra={"url": url, "status": resp.status_code},
             )
             return None
+
+        if resp.status_code == 400:
+            match = _UNKNOWN_VARIABLE_RE.search(resp.text)
+            if match:
+                raise CensusUnknownVariableError(match.group(1))
 
         if resp.status_code != 200:
             logger.error(

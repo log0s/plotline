@@ -59,8 +59,12 @@ def upsert_census_snapshot(
     vacancy_rate: float | None = None
     total_housing = data.get("total_housing_units")
     occupied = data.get("occupied_housing_units")
-    if total_housing and total_housing > 0 and occupied is not None:
-        vacancy_rate = round((total_housing - occupied) / total_housing, 4)
+    vacant = data.get("vacant_housing_units")
+    if total_housing and total_housing > 0:
+        if vacant is not None:
+            vacancy_rate = round(vacant / total_housing, 4)
+        elif occupied is not None:
+            vacancy_rate = round((total_housing - occupied) / total_housing, 4)
 
     snap_id = uuid.uuid4()
 

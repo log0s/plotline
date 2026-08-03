@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from app.services.census import (
+    _ACS5_VARIABLES,
     CensusFetcher,
     CensusMissingKeyError,
     _parse_response,
@@ -325,6 +326,177 @@ class TestCensusFetcher:
         assert result["median_home_value"] is None
         assert result["median_gross_rent"] is None
         assert result["median_year_built"] == 1978
+
+
+# ── Housing pipeline (fetch → persist) ───────────────────────────────────────
+
+# Captured verbatim from the live API: 2023 ACS5, tract 36061007600.
+# Internally consistent the way real responses are — owner + renter ==
+# occupied (345 + 1080 == 1425) and occupied + vacant == total
+# (1425 + 201 == 1626) — which hand-built fixtures rarely are.
+_LIVE_ACS5_2023 = {
+    "B01003_001E": "2455",
+    "B19013_001E": "164188",
+    "B25077_001E": "2000001",
+    "B25035_001E": "1938",
+    "B25001_001E": "1626",
+    "B25002_003E": "201",
+    "B25003_001E": "1425",
+    "B25003_002E": "345",
+    "B25003_003E": "1080",
+    "B01002_001E": "34.4",
+    "B25064_001E": "2840",
+}
+
+
+def _acs5_api_response() -> list[list[str]]:
+    """Build a response covering exactly the variables we currently request.
+
+    Driven off _ACS5_VARIABLES so the fixture cannot drift from the real
+    request the way a hardcoded header row can.
+    """
+    variables = list(_ACS5_VARIABLES.keys())
+    missing = [v for v in variables if v not in _LIVE_ACS5_2023]
+    assert not missing, f"No captured value for {missing}; refresh from the live API"
+    return [
+        [*variables, "state", "county", "tract"],
+        [*(_LIVE_ACS5_2023[v] for v in variables), "36", "061", "007600"],
+    ]
+
+
+class TestHousingPipeline:
+    """The path HousingChart depends on: fetch_acs5 → upsert → persisted row."""
+
+    @pytest.mark.asyncio
+    async def test_acs5_row_satisfies_housing_chart_filter(self, db) -> None:
+        from sqlalchemy import text
+
+        parcel_id = str(uuid.uuid4())
+        db.execute(
+            text(
+                "INSERT INTO parcels (id, address, latitude, longitude, point, census_tract_id) "
+                "VALUES (:id, :addr, :lat, :lng, :pt, :tract)"
+            ),
+            {
+                "id": parcel_id,
+                "addr": "350 5th Ave",
+                "lat": 40.748,
+                "lng": -73.985,
+                "pt": "POINT(-73.985 40.748)",
+                "tract": "36061007600",
+            },
+        )
+        db.commit()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = _acs5_api_response()
+
+        fetcher = CensusFetcher(api_key="test-key")
+        fetcher.client = AsyncMock()
+        fetcher.client.get = AsyncMock(return_value=mock_response)
+
+        data = await fetcher.fetch_acs5(2023, "36", "061", "007600")
+
+        # The total-units variable must actually be on the wire — its absence
+        # is what left every ACS row without a total.
+        requested = fetcher.client.get.call_args.kwargs["params"]["get"]
+        assert "B25001_001E" in requested
+
+        pid = uuid.UUID(parcel_id)
+        upsert_census_snapshot(
+            db,
+            parcel_id=pid,
+            tract_fips="36061007600",
+            dataset="acs5",
+            year=2023,
+            data=data,
+            raw_data=data,
+        )
+
+        (row,) = get_census_snapshots(db, pid)
+
+        # Exactly the combination HousingChart filters on.
+        assert row.total_housing_units is not None
+        assert row.owner_occupied_units is not None or row.renter_occupied_units is not None
+
+        assert row.total_housing_units == 1626
+        assert row.occupied_housing_units == 1425
+        assert row.owner_occupied_units == 345
+        assert row.renter_occupied_units == 1080
+
+        # 201 vacant / 1626 total — previously uncomputable, so always NULL.
+        assert row.vacancy_rate is not None
+        assert abs(row.vacancy_rate - 0.1236) < 0.001
+
+    @pytest.mark.asyncio
+    async def test_unavailable_variable_drops_field_instead_of_year(self) -> None:
+        """A vintage missing one variable must not cost us the whole year."""
+        rejected = MagicMock()
+        rejected.status_code = 400
+        rejected.text = "error: unknown variable 'B25002_003E'"
+
+        ok = MagicMock()
+        ok.status_code = 200
+        variables = [v for v in _ACS5_VARIABLES if v != "B25002_003E"]
+        ok.json.return_value = [
+            [*variables, "state", "county", "tract"],
+            [*(_LIVE_ACS5_2023[v] for v in variables), "36", "061", "007600"],
+        ]
+
+        fetcher = CensusFetcher(api_key="test-key")
+        fetcher.client = AsyncMock()
+        fetcher.client.get = AsyncMock(side_effect=[rejected, ok])
+
+        data = await fetcher.fetch_acs5(2009, "36", "061", "007600")
+
+        assert "vacant_housing_units" not in data
+        assert data["total_housing_units"] == 1626
+        assert data["total_population"] == 2455
+
+        retried = fetcher.client.get.call_args.kwargs["params"]["get"]
+        assert "B25002_003E" not in retried
+
+    def test_vacancy_rate_derived_when_vacant_count_absent(self, db) -> None:
+        """Older vintages may lack B25002_003E; vacancy still derives."""
+        from sqlalchemy import text
+
+        parcel_id = str(uuid.uuid4())
+        db.execute(
+            text(
+                "INSERT INTO parcels (id, address, latitude, longitude, point, census_tract_id) "
+                "VALUES (:id, :addr, :lat, :lng, :pt, :tract)"
+            ),
+            {
+                "id": parcel_id,
+                "addr": "350 5th Ave",
+                "lat": 40.748,
+                "lng": -73.985,
+                "pt": "POINT(-73.985 40.748)",
+                "tract": "36061007600",
+            },
+        )
+        db.commit()
+
+        pid = uuid.UUID(parcel_id)
+        upsert_census_snapshot(
+            db,
+            parcel_id=pid,
+            tract_fips="36061007600",
+            dataset="acs5",
+            year=2009,
+            data={
+                "total_population": 2455,
+                "total_housing_units": 1626,
+                "occupied_housing_units": 1425,
+                "owner_occupied_units": 345,
+                "renter_occupied_units": 1080,
+            },
+        )
+
+        (row,) = get_census_snapshots(db, pid)
+        assert row.vacancy_rate is not None
+        assert abs(row.vacancy_rate - 0.1236) < 0.001
 
 
 # ── Demographics service (DB layer) ──────────────────────────────────────────

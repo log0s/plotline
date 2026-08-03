@@ -59,6 +59,8 @@ def configure_logging(settings: Settings) -> None:
     root_logger.handlers = [handler]
     root_logger.setLevel(log_level)
 
-    # Quiet noisy third-party loggers
-    for noisy in ("uvicorn.access", "sqlalchemy.engine"):
+    # Quiet noisy third-party loggers. httpx logs full request URLs at INFO,
+    # which puts CENSUS_API_KEY (passed as a query param) in plaintext in the
+    # log stream — our own service logs cover the same calls without it.
+    for noisy in ("uvicorn.access", "sqlalchemy.engine", "httpx"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
