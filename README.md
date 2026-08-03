@@ -183,6 +183,7 @@ plotline/
 │   └── revalidate_landsat.py   # Re-queue timelines to replace broken Landsat scenes
 │
 ├── prompts/                    # Phase prompts used to build this (see DEVELOPMENT.md)
+├── docs/                       # Audit trail and provenance analysis (see docs/audits/README.md)
 ├── DEVELOPMENT.md              # Claude Code build process journal
 └── SUPPORTED_COUNTIES.md       # County data source documentation
 ```
@@ -191,7 +192,7 @@ plotline/
 
 ## Development
 
-This project was built using [Claude Code](https://claude.com/claude-code) as the primary development tool — from initial scaffolding through deployment. **[DEVELOPMENT.md](DEVELOPMENT.md)** documents the process, including what 110 commits of history revealed about why bugs survive in agent-written code: the High-severity findings in my final audit had all sat unread for 130+ days.
+This project was built using [Claude Code](https://claude.com/claude-code) as the primary development tool — from initial scaffolding through deployment. **[DEVELOPMENT.md](DEVELOPMENT.md)** documents the process, including what 110 commits of history revealed about why bugs survive in agent-written code: the High-severity findings in my final audit had all sat unread for 130+ days — and **[docs/audits/](docs/audits/)** holds the audit prompts and findings themselves, with the supporting git analysis in **[docs/provenance/](docs/provenance/)**.
 
 ---
 

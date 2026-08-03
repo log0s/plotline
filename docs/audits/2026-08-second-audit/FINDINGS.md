@@ -80,6 +80,8 @@ Fix: After a source completes, delete rows for that (parcel_id, source) whose st
 
 ### M1. Census geocoder's known 200-with-HTML failure mode produces a raw 500
 
+**Resolved:** 949c1b3, 2026-08-03
+
 backend/app/services/geocoder.py:111, 117-118, backend/app/api/v1/geocode.py (handler catches only GeocoderError subclasses)
 
 Scenario: The Census geocoder returns its maintenance page with HTTP 200 (a behavior your own census.py:207 comment documents and guards against — "The Census API sometimes returns its HTML error page with a 200"). response.json() at geocoder.py:111 raises JSONDecodeError, which is not a GeocoderError, escapes the route's except clauses, and surfaces as an unhandled 500 — violating your own "Geocoder down? Return a clear 502" standard. [reconstructed] coords["coordinates"] / coords["y"] are similarly unguarded KeyErrors. Also note the retry loop retries only timeouts; a transient 503 fails immediately (defensible, but undocumented asymmetry).
@@ -161,6 +163,8 @@ Scenario: Census task fails; request completes. During processing the user brief
 Fix: Keep failed/skipped rows visible after completion ("Property data unavailable — we'll retry on your next visit"), and gate the empty-state copy on task status.
 
 ### M12. Celery config: dead retry semantics, disabled TLS verification, results stored for nobody
+
+**Resolved:** 05bb263, 2026-08-03
 
 backend/app/tasks/celery_app.py:20-25, 30-47
 

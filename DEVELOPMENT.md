@@ -8,7 +8,7 @@ If you only read one part of this, read the next section: what 110 commits of hi
 
 I started Plotline with a specific question: how far can an AI coding agent get from a human-authored outline? I wrote the architecture, the phase plans, and the constraints. The agent wrote nearly all the code. The interesting part was supposed to be finding the ceiling — where it would stop being able to keep up.
 
-Four and a half months and 110 commits later, I don't think that's the question the project answered. The failures I found at the end weren't the ones I expected, and they weren't about capability.
+Four and a half months and 110 commits later, I don't think that's the question the project answered. The failures I found at the end weren't the ones I expected, and they weren't about capability. The audit prompts and findings are in [docs/audits/](docs/audits/), and the git analysis behind every number below is in [docs/provenance/](docs/provenance/) — with the caveat that the findings documents are reconstructions with their damaged passages marked, because the originals were never preserved.
 
 ### What actually kept bugs alive
 
@@ -100,7 +100,7 @@ Took ~20 minutes to build this phase out completely. Got everything technically 
 * Really had a hard time with correctly pointing to the endpoints it made itself.
 * Seemed to add a lot of unnecessary code in this step, especially some weird and gratuitous logging in the back end.
 
-  > **Later:** That logging wasn't gratuitous, it was inert — `logging_config.py` shipped in the Phase 1 commit without a `structlog` processor to merge `extra={...}`, so every context field on every log call was dropped before output, for 140 days. Found in the August audit.
+  > **Later:** That logging wasn't gratuitous, it was inert — `logging_config.py` shipped in the Phase 1 commit without a `structlog` processor to merge `extra={...}`, so every context field on every log call was dropped before output, for 140 days. Found in the August audit ([H2](docs/audits/2026-08-second-audit/FINDINGS.md)).
 * Still very good at certain types of debugging (likely of the well-known issue variety) --- think things like version mismatches, breaking changes in new packages, etc.
 * Misses a lot of basic UX stuff (loading indicators, transitions, etc) but I suspect that's more from my lack of direction than anything else. Makes sense to add/address it later anyway.
 * Surprisingly good at debugging somewhat complex issues (e.g. found that `extract_cog_url` was pulling in rendered preview PNGs instead of an actual COG, debugged signing expiration issues when hitting external APIs)
@@ -112,7 +112,7 @@ Took ~20 minutes to build this phase out completely. Got everything technically 
 
 Took about 20 minutes again to build everything out. Debug took about eight minutes for basic functionality (i.e. things not being completely broken) and another six or so fixing bugs that were introduced, some regressions, etc. Had lots of issues with older data getting saved and not cleaned up after code changes. It did ask once, when addressing a known issue with Landsat 7 imagery having missing sections, but only that one time.
 
-> **Later:** The census work didn't come out of this phase working — the ACS variable dict landed here never requested total housing units, so the Housing chart had nothing to divide by and never rendered, for 131 days across seven commits to the same file. Found in the August audit.
+> **Later:** The census work didn't come out of this phase working — the ACS variable dict landed here never requested total housing units, so the Housing chart had nothing to divide by and never rendered, for 131 days across seven commits to the same file. Found in the August audit ([H1](docs/audits/2026-08-second-audit/FINDINGS.md)).
 
 * Started getting some more front-end errors in this one (missing packages, paths off, etc).
 * Seems to fairly consistently forget to do things like rebuilding Docker images, but this is probably more an error on my part; planning to make a lot of additions to the global Claude config after this with lessons learned.
@@ -148,7 +148,7 @@ Right around the same time to build as usual at ~22 minutes. Less than ten minut
 * Very useful that it can also do more "research" projects; in this case choosing a new featured spot with better data
 * Shockingly smart when given specific directions. Came up with a fairly good caching strategy to speed up tiling that required only minor tweaks.
 
-  > **Later:** The tweaks weren't minor and weren't finished. The same phase's build commit put an identical `Cache-Control: public, max-age=3600` on both the imagery list and the demographics list, which hid late-arriving data behind the browser cache. I fixed the imagery one 58 days later and didn't grep for the twin; the demographics copy survived another 72 days. Found in the August audit.
+  > **Later:** The tweaks weren't minor and weren't finished. The same phase's build commit put an identical `Cache-Control: public, max-age=3600` on both the imagery list and the demographics list, which hid late-arriving data behind the browser cache. I fixed the imagery one 58 days later and didn't grep for the twin; the demographics copy survived another 72 days. Found in the August audit ([H3](docs/audits/2026-08-second-audit/FINDINGS.md)).
 * Seeing a similar pattern to earlier, where it will often think it has properly fixed the issue (especially if given vague guidance) and have to revisit it several times.
 * One outlier - took a *very* long time (and kept getting stuck) trying to do a seemingly simple fix where timeline items were only showing up for featured items. I was getting close to my session limit, so maybe a throttling thing? No obvious reasons for the slowness that I could see in the commands it was running. It did figure it out in the end, but it took almost eighteen minutes and spent a lot of that time seemingly stuck (not consuming tokens, no visible processing going on).
 * Random nice bit of UX - it's smart enough to tell which work it did in any specific session and only commit that (within reason, gets confused sometimes if multiple agents running simultaneously are touching similar files).

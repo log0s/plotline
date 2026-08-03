@@ -19,4 +19,7 @@ transmission damage marked inline as *[reconstructed: …]* and *[passage lost i
 transcription]*; the second audit's findings and the provenance analysis took
 the most damage. The counties reconciliation prompt was never captured and its
 PROMPT.md is a stub saying so. Some still-open security-relevant findings are
-summarized rather than detailed, and say so where that applies.
+summarized rather than detailed, and say so where that applies. That redaction
+removed two exploitation passages that themselves contained reconstruction
+markers, so a redacted document may carry fewer markers than the reconstruction
+it was made from.
