@@ -814,3 +814,31 @@ def test_select_landsat_prefers_non_le07() -> None:
     groups = select_landsat_items(items)
     assert len(groups) == 1
     assert groups[0][0]["id"] == "LT05_2005_07_15"
+
+
+@pytest.mark.asyncio
+async def test_validate_landsat_selection_tolerates_empty_group() -> None:
+    """An empty selected group must not fail the whole Landsat source.
+
+    The gather comprehension filters empty groups; zipping the *unfiltered*
+    list against the results raised ValueError under strict=True the first
+    time any selector emitted one.
+    """
+    from app.services.stac import validate_landsat_selection
+
+    good_item = {
+        "id": "good",
+        "properties": {"datetime": "2020-06-01T00:00:00Z", "eo:cloud_cover": 5.0},
+        "assets": {"red": {"href": "https://example.com/good.tif"}},
+    }
+
+    selected_groups: list[list[dict[str, object]]] = [[], [good_item]]
+
+    async def mock_validate(item: dict[str, object]) -> bool:
+        return True
+
+    with patch("app.services.stac.validate_landsat_item", side_effect=mock_validate):
+        result = await validate_landsat_selection(selected_groups, [good_item])
+
+    assert len(result) == 1
+    assert result[0][0]["id"] == "good"

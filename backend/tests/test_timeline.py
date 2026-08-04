@@ -7,6 +7,7 @@ isolation, and status transitions (queued → processing → complete/failed).
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -217,6 +218,8 @@ async def test_fetch_source_stac_failure_marks_task_failed() -> None:
             (-105, 39, -104, 40),
             parcel_id,
             req_id,
+            lat=39.5,
+            lng=-104.5,
         )
 
     assert count == 0
@@ -921,3 +924,57 @@ def test_time_limit_stays_under_broker_visibility_timeout() -> None:
 
     assert fetch_imagery_timeline.time_limit < 3600
     assert fetch_imagery_timeline.soft_time_limit < fetch_imagery_timeline.time_limit
+
+
+@pytest.mark.asyncio
+async def test_fetch_usgs_topo_skips_products_without_source_id() -> None:
+    """A product with no sourceId is skipped, not upserted as "".
+
+    The upsert's conflict target is (parcel_id, stac_item_id), so every
+    id-less product on a parcel would overwrite the previous one.
+    """
+    from app.tasks.timeline import _fetch_usgs_topo
+
+    req_id = uuid.uuid4()
+    parcel_id = uuid.uuid4()
+
+    mock_task_row = MagicMock()
+    mock_db = MagicMock()
+    mock_db.__enter__ = MagicMock(return_value=mock_db)
+    mock_db.__exit__ = MagicMock(return_value=False)
+    mock_db.execute.return_value.scalars.return_value.first.return_value = mock_task_row
+
+    items = [{"id": "with-id"}, {"id": "no-id"}]
+
+    with (
+        patch("app.db.SessionLocal", return_value=mock_db),
+        patch(
+            "app.tasks.timeline.topo_service.search_usgs_topo",
+            new_callable=AsyncMock,
+            return_value=items,
+        ),
+        patch("app.tasks.timeline.topo_service.select_topo_items", return_value=items),
+        patch(
+            "app.tasks.timeline.topo_service.extract_geotiff_url",
+            side_effect=lambda i: f"https://example.com/{i['id']}.tif",
+        ),
+        patch(
+            "app.tasks.timeline.topo_service.extract_publication_date",
+            return_value=date(1955, 1, 1),
+        ),
+        patch(
+            "app.tasks.timeline.topo_service.extract_source_id",
+            side_effect=lambda i: "" if i["id"] == "no-id" else "SRC-1",
+        ),
+        patch("app.tasks.timeline.topo_service.extract_bbox_wkt", return_value=None),
+        patch(
+            "app.tasks.timeline.imagery_service.upsert_imagery_snapshot", return_value=True
+        ) as mock_upsert,
+        patch("app.tasks.timeline.imagery_service.reconcile_source_snapshots"),
+        patch("app.tasks.timeline.imagery_service.update_request_task"),
+    ):
+        count = await _fetch_usgs_topo((-105, 39, -104, 40), parcel_id, req_id)
+
+    assert count == 1
+    assert mock_upsert.call_count == 1
+    assert mock_upsert.call_args.kwargs["stac_item_id"] == "SRC-1"

@@ -168,8 +168,8 @@ async def _fetch_source(
     viewport_bbox: tuple[float, float, float, float],
     parcel_id: uuid.UUID,
     timeline_request_id: uuid.UUID,
-    lat: float = 0.0,
-    lng: float = 0.0,
+    lat: float,
+    lng: float,
 ) -> int:
     """Fetch one imagery source and persist snapshots. Returns items_found count.
 
@@ -430,6 +430,17 @@ async def _search_and_persist_topo(
 
             publication_date = topo_service.extract_publication_date(item)
             source_id = topo_service.extract_source_id(item)
+            # An id-less product would upsert as stac_item_id="", and the
+            # conflict target is (parcel_id, stac_item_id) — so every id-less
+            # product on a parcel overwrites the last one, leaving one row
+            # where there should be several. Skip them, as the property path
+            # already does for records with no id.
+            if not source_id:
+                logger.warning(
+                    "Skipping topo product with no sourceId",
+                    extra={"parcel_id": str(parcel_id), "cog_url": cog_url},
+                )
+                continue
 
             imagery_service.upsert_imagery_snapshot(
                 db,

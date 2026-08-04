@@ -619,3 +619,34 @@ def test_reconcile_quarter_scope_keeps_other_quarters_of_the_year(db: Session) -
 
     assert deleted == 1
     assert _item_ids(db, parcel_id, "sentinel2") == {"S2_2020Q1", "S2_2020Q3_new"}
+
+
+# ── Tile-proxy input bounds and STAC fetch allowlist ──────────────────────────
+
+
+def test_tile_proxy_rejects_out_of_range_zoom(client: TestClient) -> None:
+    """z outside 0–24 is rejected at the boundary, not forwarded to Titiler."""
+    snapshot_id = uuid.uuid4()
+    assert client.get(f"/api/v1/imagery/{snapshot_id}/tiles/50/1/1").status_code == 422
+    assert client.get(f"/api/v1/imagery/{snapshot_id}/tiles/-1/1/1").status_code == 422
+
+
+def test_tile_proxy_rejects_negative_tile_index(client: TestClient) -> None:
+    """Negative x/y are rejected at the boundary."""
+    snapshot_id = uuid.uuid4()
+    assert client.get(f"/api/v1/imagery/{snapshot_id}/tiles/10/-1/1").status_code == 422
+    assert client.get(f"/api/v1/imagery/{snapshot_id}/tiles/10/1/-1").status_code == 422
+
+
+def test_stac_host_allowlist() -> None:
+    """Only the Planetary Computer host may be fetched for STAC items."""
+    from app.api.v1.imagery import _is_allowed_stac_host
+
+    assert _is_allowed_stac_host(
+        "https://planetarycomputer.microsoft.com/api/stac/v1/collections/"
+        "landsat-c2-l2/items/LT05_L2SP_033033_19870704_02_T1"
+    )
+    assert not _is_allowed_stac_host("https://evil.example.com/api/stac/v1/items/x")
+    assert not _is_allowed_stac_host("http://169.254.169.254/latest/meta-data/")
+    # A host that merely ends with the allowed name must not pass.
+    assert not _is_allowed_stac_host("https://planetarycomputer.microsoft.com.evil.test/x")

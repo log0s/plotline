@@ -655,13 +655,20 @@ async def validate_landsat_selection(
     for year_items in by_year.values():
         year_items.sort(key=_cloud_cover)
 
+    # Filter once and zip over the filtered list. Validating `if g` while
+    # zipping over the unfiltered groups made strict=True raise ValueError —
+    # failing the whole Landsat source — the first time any selector emitted
+    # an empty group. No selector does today; that is what makes it a
+    # landmine rather than a bug.
+    non_empty = [g for g in selected_groups if g]
+
     # Validate all selected items in parallel
     valid_flags = await asyncio.gather(
-        *(validate_landsat_item(g[0]) for g in selected_groups if g),
+        *(validate_landsat_item(g[0]) for g in non_empty),
     )
 
     validated: list[list[dict[str, object]]] = []
-    for group, is_valid in zip(selected_groups, valid_flags, strict=True):
+    for group, is_valid in zip(non_empty, valid_flags, strict=True):
         item = group[0]
         if is_valid:
             validated.append(group)

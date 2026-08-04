@@ -17,9 +17,10 @@ import uuid
 from collections import OrderedDict
 from datetime import date
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi import Response as FastAPIResponse
 from fastapi.responses import Response
 from redis.exceptions import RedisError
@@ -277,6 +278,19 @@ def _get_titiler_client() -> httpx.AsyncClient:
     return _titiler_client
 
 
+# Only Landsat snapshots reach the STAC fetch, and for Landsat cog_url holds
+# the Planetary Computer item self-link — every row in the table is on this
+# host. (The blob hosts that serve NAIP and Sentinel-2 COGs are not included:
+# those sources never take this path.) Without the check, a cog_url written
+# by a compromised upstream would make the API fetch an attacker-chosen URL
+# from inside the network. Second-order, but the check is nearly free.
+_ALLOWED_STAC_HOSTS = frozenset({"planetarycomputer.microsoft.com"})
+
+
+def _is_allowed_stac_host(url: str) -> bool:
+    return (urlparse(url).hostname or "").lower() in _ALLOWED_STAC_HOSTS
+
+
 def _get_stac_fetch_client() -> httpx.AsyncClient:
     global _stac_fetch_client
     if _stac_fetch_client is None:
@@ -296,6 +310,15 @@ async def close_clients() -> None:
         await _stac_fetch_client.aclose()
         _stac_fetch_client = None
 
+
+# Unbounded z/x/y rode straight through to Titiler, which turned z=50 or a
+# negative index into a 500 and then into our 502 path. 24 is past the
+# resolution of any source we serve. x/y get one generous static bound rather
+# than the exact per-zoom 2**z - 1: anything inside the bound but outside the
+# COG's extent already comes back as a transparent tile, so a tighter check
+# would buy nothing the existing path doesn't handle.
+_MAX_ZOOM = 24
+_MAX_TILE_INDEX = 2**24 - 1
 
 # 1x1 transparent PNG (68 bytes) — returned for out-of-bounds tile requests
 # so MapLibre doesn't log 404 errors for edge tiles.
@@ -443,9 +466,9 @@ async def _proxy_landsat_tile(
 )
 async def proxy_imagery_tile(
     snapshot_id: uuid.UUID,
-    z: int,
-    x: int,
-    y: int,
+    z: int = Path(ge=0, le=_MAX_ZOOM, description="Web Mercator zoom level"),
+    x: int = Path(ge=0, le=_MAX_TILE_INDEX, description="Tile column"),
+    y: int = Path(ge=0, le=_MAX_TILE_INDEX, description="Tile row"),
     cog: int = Query(default=0, ge=0, description="Mosaic tile index (0 = primary)"),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
@@ -558,6 +581,13 @@ async def get_signed_stac_item(
         logger.debug("STAC item cache read failed: %s", exc)
 
     if stac_item is None:
+        if not _is_allowed_stac_host(snap.cog_url):
+            logger.error(
+                "Refusing STAC fetch to a non-allowlisted host",
+                extra={"snapshot_id": str(snapshot_id), "url": snap.cog_url},
+            )
+            raise HTTPException(status_code=502, detail="Failed to fetch STAC item")
+
         # Fetch the original STAC item from Planetary Computer
         try:
             resp = await _get_stac_fetch_client().get(snap.cog_url)
