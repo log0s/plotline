@@ -10,7 +10,9 @@ A finding describes the code at the audit's SHA — `c1ac879` (2026-05-22) for t
 first audit, `5f5fb42` (2026-07-29) for the second — and line numbers have moved
 since. Findings are not edited as the code changes. Where one has been fixed, a
 **Resolved:** line naming the commit and date was added above it afterwards;
-those annotations are the only later additions to the finding text.
+those annotations are the only later additions to the finding text. The second
+audit's findings have a living companion, `2026-08-second-audit/STATUS.md`,
+recording each finding's verified status against the current code.
 
 Provenance varies by file. The three PROMPT.md files for the first audit, the
 second audit, and the provenance analysis are verbatim. The four findings and
