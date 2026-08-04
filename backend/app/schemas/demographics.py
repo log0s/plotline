@@ -12,6 +12,10 @@ class CensusSnapshotResponse(BaseModel):
 
     year: int
     dataset: str
+    # The geography this row describes, which is not always the parcel's
+    # current tract: years published on older tract boundaries are fetched
+    # against the tract that contained the parcel at that vintage.
+    tract_fips: str
     total_population: int | None = None
     median_household_income: int | None = None
     median_home_value: int | None = None

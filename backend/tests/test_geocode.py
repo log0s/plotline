@@ -775,3 +775,61 @@ def test_geocode_endpoint_missing_coordinates_returns_502(client: TestClient) ->
         response = client.post("/api/v1/geocode", json={"address": "1600 Pennsylvania Ave NW"})
 
     assert response.status_code == 502
+
+
+# ── Per-vintage tract lookup ─────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_lookup_tract_at_vintage_returns_ancestor_tract() -> None:
+    """The 2010 vintage resolves the ancestor of a tract created in 2020."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import lookup_tract_at_vintage
+
+    settings = get_settings()
+
+    # Captured shape of a Census2010_Current response for the Stapleton point,
+    # whose current-vintage tract is 08031004111.
+    mock_response = {
+        "result": {
+            "geographies": {
+                "Census Tracts": [{"STATE": "08", "COUNTY": "031", "TRACT": "004107"}],
+            }
+        }
+    }
+
+    with respx.mock:
+        route = respx.get("https://geocoding.geo.census.gov/geocoder/geographies/coordinates").mock(
+            return_value=httpx.Response(200, json=mock_response)
+        )
+        tract = await lookup_tract_at_vintage(
+            39.78518536945, -104.891391524528, "Census2010_Current", settings
+        )
+
+    assert tract == "08031004107"
+    assert route.calls.last.request.url.params["vintage"] == "Census2010_Current"
+
+
+@pytest.mark.asyncio
+async def test_lookup_tract_at_vintage_returns_none_without_tract() -> None:
+    """A vintage with no tract for the point yields None, not a bad FIPS."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import lookup_tract_at_vintage
+
+    settings = get_settings()
+
+    with respx.mock:
+        respx.get("https://geocoding.geo.census.gov/geocoder/geographies/coordinates").mock(
+            return_value=httpx.Response(200, json={"result": {"geographies": {}}})
+        )
+        tract = await lookup_tract_at_vintage(
+            39.78518536945, -104.891391524528, "Census2010_Current", settings
+        )
+
+    assert tract is None

@@ -631,6 +631,93 @@ class TestComputeSubtitles:
         assert any("home value" in s.lower() for s in subtitles)
         assert any("125%" in s for s in subtitles)
 
+    def test_no_delta_spans_a_tract_boundary_change(self) -> None:
+        """The Stapleton shape: 41.07 through 2018, then the 2020 split to 41.11.
+
+        Units fall from 4,649 to 2,389 across the seam because the polygon got
+        smaller, not because homes disappeared. A subtitle comparing the two
+        would state a 48% decline as fact.
+        """
+        old, new = "08031004107", "08031004111"
+        series = [
+            (2010, "decennial", old, 3810, 1773, 1000),
+            (2012, "acs5", old, 4200, 1727, 1100),
+            (2015, "acs5", old, 5800, 2611, 1600),
+            (2018, "acs5", old, 9100, 4649, 3000),
+            (2020, "decennial", new, 6848, 2642, None),
+            (2021, "acs5", new, 6620, 2389, 1769),
+            (2023, "acs5", new, 6972, 2612, 1883),
+        ]
+        snapshots = [
+            CensusSnapshotRow(
+                id=uuid.uuid4(),
+                parcel_id=uuid.uuid4(),
+                tract_fips=tract,
+                dataset=dataset,
+                year=year,
+                total_population=pop,
+                total_housing_units=units,
+                occupied_housing_units=owner and units,
+                owner_occupied_units=owner,
+                median_age=37.3 if year == 2023 else None,
+            )
+            for year, dataset, tract, pop, units, owner in series
+        ]
+
+        subtitles = compute_subtitles(snapshots)
+        pop_subtitle = next(s for s in subtitles if s.startswith("Population"))
+
+        # 2010 → 2018 inside 41.07, not 2010 → 2023 across the split.
+        assert "3,810 → 9,100" in pop_subtitle
+        assert "6,972" not in pop_subtitle
+        assert "before the 2020 tract boundary change" in pop_subtitle
+
+        # Single-year facts still come from the newest data, not the span.
+        assert any("Median resident age: 37.3" in s for s in subtitles)
+
+    def test_current_boundary_span_is_labelled(self) -> None:
+        """When the longest run is the current tract, say so rather than nothing."""
+        old, new = "08031004107", "08031004111"
+        series = [
+            (2015, "acs5", old, 5800),
+            (2018, "acs5", new, 6100),
+            (2021, "acs5", new, 6620),
+            (2023, "acs5", new, 6972),
+        ]
+        snapshots = [
+            CensusSnapshotRow(
+                id=uuid.uuid4(),
+                parcel_id=uuid.uuid4(),
+                tract_fips=tract,
+                dataset=dataset,
+                year=year,
+                total_population=pop,
+            )
+            for year, dataset, tract, pop in series
+        ]
+
+        pop_subtitle = next(s for s in compute_subtitles(snapshots) if s.startswith("Population"))
+        assert "since 2018" in pop_subtitle
+        assert "within current tract boundaries" in pop_subtitle
+
+    def test_unchanged_tract_carries_no_scope_wording(self) -> None:
+        """Green Valley Ranch never split — its subtitles must read as before."""
+        snapshots = [
+            CensusSnapshotRow(
+                id=uuid.uuid4(),
+                parcel_id=uuid.uuid4(),
+                tract_fips="08031008388",
+                dataset="acs5",
+                year=year,
+                total_population=pop,
+            )
+            for year, pop in [(2012, 6399), (2018, 9517), (2023, 14568)]
+        ]
+
+        pop_subtitle = next(s for s in compute_subtitles(snapshots) if s.startswith("Population"))
+        assert "6,399 → 14,568" in pop_subtitle
+        assert "boundaries" not in pop_subtitle
+
 
 # ── Demographics endpoint ─────────────────────────────────────────────────────
 

@@ -88,6 +88,7 @@ export interface ImageryListResponse {
 export interface CensusSnapshot {
   year: number;
   dataset: "decennial" | "acs5";
+  tract_fips: string;
   total_population: number | null;
   median_household_income: number | null;
   median_home_value: number | null;

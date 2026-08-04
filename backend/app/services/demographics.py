@@ -187,6 +187,50 @@ def get_census_snapshots(
     return results
 
 
+def find_tract_runs(
+    snapshots: list[CensusSnapshotRow],
+) -> list[list[CensusSnapshotRow]]:
+    """Split year-ascending snapshots into runs sharing one tract geography.
+
+    More than one run means the tract was redrawn somewhere in the series, so
+    counts either side of the seam describe different areas.
+    """
+    runs: list[list[CensusSnapshotRow]] = []
+    for snap in snapshots:
+        if runs and runs[-1][-1].tract_fips == snap.tract_fips:
+            runs[-1].append(snap)
+        else:
+            runs.append([snap])
+    return runs
+
+
+def _comparable_span(
+    snapshots: list[CensusSnapshotRow],
+) -> tuple[list[CensusSnapshotRow], str]:
+    """Return the longest single-geography run plus wording that scopes it.
+
+    Every subtitle is a delta, and a delta computed across a tract split is
+    fiction — the 2020 Denver split alone would report a 48% housing "decline"
+    that is only a smaller polygon.  Ties go to the more recent run.  The
+    suffix is empty when the series never changes geography.
+    """
+    runs = find_tract_runs(snapshots)
+    if len(runs) <= 1:
+        return snapshots, ""
+
+    best = runs[0]
+    for run in runs[1:]:
+        if len(run) >= len(best):
+            best = run
+
+    if best[-1] is snapshots[-1]:
+        return best, ", within current tract boundaries"
+
+    # The run ends at a seam: name the year the boundaries changed.
+    break_year = snapshots[snapshots.index(best[-1]) + 1].year
+    return best, f", before the {break_year} tract boundary change"
+
+
 def compute_subtitles(snapshots: list[CensusSnapshotRow]) -> list[str]:
     """Generate interpretive subtitle strings from census data trends.
 
@@ -195,10 +239,15 @@ def compute_subtitles(snapshots: list[CensusSnapshotRow]) -> list[str]:
     if not snapshots:
         return []
 
+    # Trends compare two years and so must stay inside one geography; the
+    # latest-value subtitles below describe a single year and use the full
+    # series.
+    span, scope = _comparable_span(snapshots)
+
     subtitles: list[str] = []
 
     # Population trend
-    pop_points = [(s.year, s.total_population) for s in snapshots if s.total_population]
+    pop_points = [(s.year, s.total_population) for s in span if s.total_population]
     if len(pop_points) >= 2:
         first_year, first_pop = pop_points[0]
         last_year, last_pop = pop_points[-1]
@@ -207,14 +256,12 @@ def compute_subtitles(snapshots: list[CensusSnapshotRow]) -> list[str]:
             direction = "grew" if pct > 0 else "declined"
             subtitles.append(
                 f"Population {direction} {abs(pct)}% since {first_year} "
-                f"({first_pop:,} → {last_pop:,})"
+                f"({first_pop:,} → {last_pop:,}){scope}"
             )
 
     # Home value trend (ACS only)
     value_points = [
-        (s.year, s.median_home_value)
-        for s in snapshots
-        if s.median_home_value and s.dataset == "acs5"
+        (s.year, s.median_home_value) for s in span if s.median_home_value and s.dataset == "acs5"
     ]
     if len(value_points) >= 2:
         first_year, first_val = value_points[0]
@@ -224,13 +271,13 @@ def compute_subtitles(snapshots: list[CensusSnapshotRow]) -> list[str]:
             direction = "rose" if pct > 0 else "fell"
             subtitles.append(
                 f"Median home value {direction} {abs(pct)}% since {first_year} "
-                f"(${first_val:,} → ${last_val:,}, nominal)"
+                f"(${first_val:,} → ${last_val:,}, nominal){scope}"
             )
 
     # Ownership shift
     owner_points = [
         (s.year, s.owner_occupied_units, s.occupied_housing_units)
-        for s in snapshots
+        for s in span
         if s.owner_occupied_units and s.occupied_housing_units and s.occupied_housing_units > 0
     ]
     if len(owner_points) >= 2:
@@ -239,7 +286,7 @@ def compute_subtitles(snapshots: list[CensusSnapshotRow]) -> list[str]:
         first_pct = round(first_own / first_occ * 100)
         last_pct = round(last_own / last_occ * 100)
         if abs(first_pct - last_pct) >= 3:
-            subtitles.append(f"Owner-occupied shifted from {first_pct}% to {last_pct}%")
+            subtitles.append(f"Owner-occupied shifted from {first_pct}% to {last_pct}%{scope}")
 
     # Median age (latest)
     latest_age = next(

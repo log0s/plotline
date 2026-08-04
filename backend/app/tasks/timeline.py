@@ -18,6 +18,7 @@ import httpx
 from celery.exceptions import SoftTimeLimitExceeded
 
 from app.services import demographics as demographics_service
+from app.services import geocoder as geocoder_service
 from app.services import imagery as imagery_service
 from app.services import property_events as property_events_service
 from app.services import stac as stac_service
@@ -29,9 +30,11 @@ from app.services.census import (
     CensusApiError,
     CensusFetcher,
     CensusMissingKeyError,
+    geography_vintage,
     parse_tract_fips,
 )
 from app.services.county_adapters import get_adapter_for_county
+from app.services.geocoder import GeocoderError
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -484,13 +487,18 @@ async def _fetch_census(
     tract_fips: str,
     api_key: str | None = None,
     timeout: float = 30.0,
+    latitude: float | None = None,
+    longitude: float | None = None,
 ) -> int:
     """Fetch Census Bureau data for a parcel's tract and persist snapshots.
+
+    Coordinates are optional: without them every year is fetched against the
+    stored (current-vintage) tract, which is the pre-existing behaviour.
 
     Returns the number of census snapshots saved.
     """
     try:
-        state_fips, county_fips, tract_code = parse_tract_fips(tract_fips)
+        parse_tract_fips(tract_fips)
     except ValueError as exc:
         logger.warning("Invalid tract FIPS", exc_info=exc)
         _set_task_status(timeline_request_id, "census", "skipped", error_message=str(exc))
@@ -503,11 +511,10 @@ async def _fetch_census(
             parcel_id,
             timeline_request_id,
             tract_fips,
-            state_fips,
-            county_fips,
-            tract_code,
             api_key,
             timeout,
+            latitude,
+            longitude,
         )
     except Exception as exc:
         logger.error("Census fetch failed", extra={"tract": tract_fips}, exc_info=exc)
@@ -515,25 +522,77 @@ async def _fetch_census(
         return 0
 
 
+class _VintageTracts:
+    """Resolves and caches the tract containing a point, per geography vintage.
+
+    One geocoder call per distinct vintage per parcel.  A vintage that yields
+    no tract, or a geocoder outage, falls back to the stored tract — the same
+    request the code made before per-vintage resolution existed, so the worst
+    case is today's behaviour rather than a lost year.
+    """
+
+    def __init__(
+        self,
+        stored_tract: str,
+        latitude: float | None,
+        longitude: float | None,
+    ) -> None:
+        self._stored = stored_tract
+        self._lat = latitude
+        self._lon = longitude
+        self._cache: dict[str, str] = {}
+
+    async def tract_for(self, dataset: str, year: int) -> str:
+        vintage = geography_vintage(dataset, year)
+        if vintage is None or self._lat is None or self._lon is None:
+            return self._stored
+        if vintage in self._cache:
+            return self._cache[vintage]
+
+        from app.config import get_settings
+
+        try:
+            resolved = await geocoder_service.lookup_tract_at_vintage(
+                self._lat, self._lon, vintage, get_settings()
+            )
+        except GeocoderError as exc:
+            logger.warning(
+                "Vintage tract lookup failed, using stored tract",
+                extra={"vintage": vintage, "tract": self._stored},
+                exc_info=exc,
+            )
+            resolved = None
+
+        tract = resolved or self._stored
+        self._cache[vintage] = tract
+        logger.info(
+            "Resolved tract for vintage",
+            extra={"vintage": vintage, "tract": tract, "stored_tract": self._stored},
+        )
+        return tract
+
+
 async def _fetch_census_years(
     parcel_id: uuid.UUID,
     timeline_request_id: uuid.UUID,
     tract_fips: str,
-    state_fips: str,
-    county_fips: str,
-    tract_code: str,
     api_key: str | None,
     timeout: float,
+    latitude: float | None = None,
+    longitude: float | None = None,
 ) -> int:
     from app.db import SessionLocal
 
     fetcher = CensusFetcher(api_key=api_key, timeout=timeout)
+    tracts = _VintageTracts(tract_fips, latitude, longitude)
     items_saved = 0
     failed_requests = 0
 
     try:
         # Fetch decennial data
         for year in DECENNIAL_YEARS:
+            year_tract = await tracts.tract_for("decennial", year)
+            state_fips, county_fips, tract_code = parse_tract_fips(year_tract)
             try:
                 data = await fetcher.fetch_decennial(year, state_fips, county_fips, tract_code)
                 if data:
@@ -541,14 +600,14 @@ async def _fetch_census_years(
                         demographics_service.upsert_census_snapshot(
                             db,
                             parcel_id=parcel_id,
-                            tract_fips=tract_fips,
+                            tract_fips=year_tract,
                             dataset="decennial",
                             year=year,
                             data=data,
                             raw_data=data,
                         )
                         items_saved += 1
-                    logger.info("Census decennial saved", extra={"year": year, "tract": tract_fips})
+                    logger.info("Census decennial saved", extra={"year": year, "tract": year_tract})
             except CensusApiError as exc:
                 failed_requests += 1
                 logger.warning("Census decennial failed", extra={"year": year}, exc_info=exc)
@@ -559,6 +618,8 @@ async def _fetch_census_years(
 
         # Fetch ACS 5-year data
         for year in ACS5_YEARS:
+            year_tract = await tracts.tract_for("acs5", year)
+            state_fips, county_fips, tract_code = parse_tract_fips(year_tract)
             try:
                 data = await fetcher.fetch_acs5(year, state_fips, county_fips, tract_code)
                 if data:
@@ -566,14 +627,14 @@ async def _fetch_census_years(
                         demographics_service.upsert_census_snapshot(
                             db,
                             parcel_id=parcel_id,
-                            tract_fips=tract_fips,
+                            tract_fips=year_tract,
                             dataset="acs5",
                             year=year,
                             data=data,
                             raw_data=data,
                         )
                         items_saved += 1
-                    logger.info("Census ACS5 saved", extra={"year": year, "tract": tract_fips})
+                    logger.info("Census ACS5 saved", extra={"year": year, "tract": year_tract})
             except CensusApiError as exc:
                 failed_requests += 1
                 logger.warning("Census ACS5 failed", extra={"year": year}, exc_info=exc)
@@ -879,6 +940,8 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
                     tract_fips,
                     api_key=settings.census_api_key,
                     timeout=settings.census_api_timeout,
+                    latitude=lat,
+                    longitude=lng,
                 ),
             )
         )

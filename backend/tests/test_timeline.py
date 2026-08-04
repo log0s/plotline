@@ -383,6 +383,119 @@ async def test_fetch_census_success_persists_snapshots() -> None:
     assert "complete" in statuses
 
 
+@pytest.mark.asyncio
+async def test_fetch_census_uses_ancestor_tract_for_older_vintages() -> None:
+    """Years on 2010 geography must be fetched against the 2010-vintage tract.
+
+    Denver 41.11 was created in the 2020 redistricting, so asking for it in
+    2018 returns nothing. Its 2010 ancestor 41.07 is a different tract code
+    that no arithmetic on the current FIPS would produce — resolving the
+    parcel's point at that vintage is the only way to find it.
+    """
+    from app.tasks.timeline import _fetch_census
+
+    parcel_id = uuid.uuid4()
+    req_id = uuid.uuid4()
+
+    mock_task_row = MagicMock()
+    mock_db = MagicMock()
+    mock_db.__enter__ = MagicMock(return_value=mock_db)
+    mock_db.__exit__ = MagicMock(return_value=False)
+    mock_db.execute.return_value.scalars.return_value.first.return_value = mock_task_row
+
+    mock_fetcher = AsyncMock()
+    mock_fetcher.fetch_decennial = AsyncMock(return_value={"total_population": 3810})
+    mock_fetcher.fetch_acs5 = AsyncMock(return_value={"total_population": 6620})
+    mock_fetcher.close = AsyncMock()
+
+    with (
+        patch("app.db.SessionLocal", return_value=mock_db),
+        patch("app.tasks.timeline.CensusFetcher", return_value=mock_fetcher),
+        patch("app.tasks.timeline.demographics_service.upsert_census_snapshot") as mock_upsert,
+        patch("app.tasks.timeline.imagery_service.update_request_task"),
+        patch("app.tasks.timeline.asyncio.sleep", new_callable=AsyncMock),
+        patch(
+            "app.tasks.timeline.geocoder_service.lookup_tract_at_vintage",
+            new_callable=AsyncMock,
+            return_value="08031004107",
+        ) as mock_lookup,
+    ):
+        await _fetch_census(
+            parcel_id,
+            req_id,
+            "08031004111",
+            latitude=39.785,
+            longitude=-104.891,
+        )
+
+    # One geocoder call for the one older vintage in play, not one per year.
+    assert mock_lookup.await_count == 1
+    assert mock_lookup.await_args.args[2] == "Census2010_Current"
+
+    stored = {
+        (c.kwargs["dataset"], c.kwargs["year"]): c.kwargs["tract_fips"]
+        for c in mock_upsert.call_args_list
+    }
+    assert stored[("acs5", 2018)] == "08031004107"
+    assert stored[("decennial", 2010)] == "08031004107"
+
+    # Years already on 2020 geography keep the parcel's stored tract.
+    assert stored[("acs5", 2023)] == "08031004111"
+    assert stored[("decennial", 2020)] == "08031004111"
+
+    # ACS 2009 is 2000 geography, which the geocoder no longer serves; it stays
+    # on the stored tract rather than silently borrowing the 2010 ancestor.
+    assert stored[("acs5", 2009)] == "08031004111"
+
+    acs_tracts = {c.args[3] for c in mock_fetcher.fetch_acs5.await_args_list}
+    assert acs_tracts == {"004107", "004111"}
+
+
+@pytest.mark.asyncio
+async def test_fetch_census_falls_back_when_vintage_lookup_fails() -> None:
+    """A geocoder outage must cost the ancestor tract, not the whole fetch."""
+    from app.services.geocoder import GeocoderUnavailableError
+    from app.tasks.timeline import _fetch_census
+
+    parcel_id = uuid.uuid4()
+    req_id = uuid.uuid4()
+
+    mock_task_row = MagicMock()
+    mock_db = MagicMock()
+    mock_db.__enter__ = MagicMock(return_value=mock_db)
+    mock_db.__exit__ = MagicMock(return_value=False)
+    mock_db.execute.return_value.scalars.return_value.first.return_value = mock_task_row
+
+    mock_fetcher = AsyncMock()
+    mock_fetcher.fetch_decennial = AsyncMock(return_value={"total_population": 5000})
+    mock_fetcher.fetch_acs5 = AsyncMock(return_value={"total_population": 5500})
+    mock_fetcher.close = AsyncMock()
+
+    with (
+        patch("app.db.SessionLocal", return_value=mock_db),
+        patch("app.tasks.timeline.CensusFetcher", return_value=mock_fetcher),
+        patch("app.tasks.timeline.demographics_service.upsert_census_snapshot") as mock_upsert,
+        patch("app.tasks.timeline.imagery_service.update_request_task") as mock_update,
+        patch("app.tasks.timeline.asyncio.sleep", new_callable=AsyncMock),
+        patch(
+            "app.tasks.timeline.geocoder_service.lookup_tract_at_vintage",
+            new_callable=AsyncMock,
+            side_effect=GeocoderUnavailableError("down"),
+        ),
+    ):
+        count = await _fetch_census(
+            parcel_id,
+            req_id,
+            "08031004111",
+            latitude=39.785,
+            longitude=-104.891,
+        )
+
+    assert count > 0
+    assert "complete" in [c[0][2] for c in mock_update.call_args_list]
+    assert {c.kwargs["tract_fips"] for c in mock_upsert.call_args_list} == {"08031004111"}
+
+
 # ── _fetch_property ───────────────────────────────────────────────────────────
 
 

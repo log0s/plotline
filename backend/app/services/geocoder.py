@@ -323,3 +323,87 @@ async def reverse_geocode(
         raise GeocoderUnavailableError(
             f"Census reverse geocoder timed out after {_MAX_ATTEMPTS} attempts"
         ) from last_exc
+
+
+async def lookup_tract_at_vintage(
+    latitude: float,
+    longitude: float,
+    vintage: str,
+    settings: Settings,
+) -> str | None:
+    """Return the tract FIPS containing a point in a given geography vintage.
+
+    Tract boundaries are redrawn every decade, so the tract a parcel sits in
+    under the current (2020) geography may not exist in the geography an older
+    ACS or decennial vintage was published on.  Resolving the point again at
+    that vintage is the only reliable way to find the tract that does — FIPS
+    arithmetic does not work, because a split does not preserve numbering
+    (Denver 41.07 became 41.11, among others).
+
+    Returns None when the vintage yields no tract for the point.
+
+    Raises:
+        GeocoderUnavailableError: Census API unreachable after retries.
+    """
+    url = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
+    params: dict[str, str] = {
+        "x": str(longitude),
+        "y": str(latitude),
+        "benchmark": _BENCHMARK,
+        "vintage": vintage,
+        "layers": "Census Tracts",
+        "format": "json",
+    }
+    if settings.census_api_key:
+        params["key"] = settings.census_api_key
+
+    last_exc: Exception | None = None
+
+    async with httpx.AsyncClient(timeout=settings.census_geocoder_timeout) as client:
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            logger.info(
+                "Looking up tract at vintage",
+                extra={"lat": latitude, "lon": longitude, "vintage": vintage, "attempt": attempt},
+            )
+            try:
+                response = await client.get(url, params=params)
+                response.raise_for_status()
+            except httpx.TimeoutException as exc:
+                last_exc = exc
+                logger.warning(
+                    "Vintage tract lookup timeout",
+                    extra={"vintage": vintage, "attempt": attempt},
+                )
+                if attempt < _MAX_ATTEMPTS:
+                    await asyncio.sleep(1.0)
+                continue
+            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+                raise GeocoderUnavailableError(f"Vintage tract lookup error: {exc}") from exc
+
+            data = _parse_json(response, "Census reverse geocoder")
+
+            try:
+                geographies = (data.get("result") or {}).get("geographies") or {}
+                census_tracts = geographies.get("Census Tracts", [])
+                if not census_tracts:
+                    logger.info(
+                        "No tract for point in vintage",
+                        extra={"vintage": vintage},
+                    )
+                    return None
+
+                tract = census_tracts[0]
+                state_fips = tract.get("STATE")
+                county_fips = tract.get("COUNTY")
+                tract_fips = tract.get("TRACT")
+            except _SHAPE_ERRORS as exc:
+                raise _shape_error("Census reverse geocoder", exc) from exc
+
+            if not (state_fips and county_fips and tract_fips):
+                return None
+
+            return f"{state_fips}{county_fips}{tract_fips}"
+
+        raise GeocoderUnavailableError(
+            f"Vintage tract lookup timed out after {_MAX_ATTEMPTS} attempts"
+        ) from last_exc

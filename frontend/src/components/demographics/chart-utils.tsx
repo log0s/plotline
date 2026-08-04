@@ -1,5 +1,16 @@
 import { fmtK } from "./chart-constants";
 
+export function TractBreakNote({ years }: { years: number[] }) {
+  if (years.length === 0) return null;
+  return (
+    <p className="text-[9px] text-slate-500 leading-relaxed mt-1">
+      Census tract boundaries changed in {years.join(" and ")} (this area grew
+      enough to be split); earlier figures describe the larger predecessor
+      tract.
+    </p>
+  );
+}
+
 interface TooltipProps {
   active?: boolean;
   payload?: Array<{ name: string; value: number; color: string }>;

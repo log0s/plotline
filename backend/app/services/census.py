@@ -74,6 +74,27 @@ _ACS5_VARIABLES: dict[str, str] = {
 DECENNIAL_YEARS = [1990, 2000, 2010, 2020]
 ACS5_YEARS = [2009, 2012, 2015, 2018, 2021, 2023]
 
+# Census geocoder vintage each (dataset, year) is published on.
+#
+# A parcel's stored tract is resolved at the current vintage, which is 2020
+# geography.  Asking for a 2020 tract in a year published on 2010 geography
+# returns a 404 for any tract created in the 2020 redistricting, silently
+# costing that year.  Years absent from this map are fetched against the
+# stored tract: 2021/2023 and decennial 2020 already are 2020 geography, and
+# ACS 2009 (2000 geography) and decennial 1990/2000 have no vintage the
+# geocoder still serves — Census2010_Current is its oldest.
+_GEOGRAPHY_VINTAGES: dict[tuple[str, int], str] = {
+    ("decennial", 2010): "Census2010_Current",
+    ("acs5", 2012): "Census2010_Current",
+    ("acs5", 2015): "Census2010_Current",
+    ("acs5", 2018): "Census2010_Current",
+}
+
+
+def geography_vintage(dataset: str, year: int) -> str | None:
+    """Return the geocoder vintage for a census year, or None for the current one."""
+    return _GEOGRAPHY_VINTAGES.get((dataset, year))
+
 
 class CensusApiError(Exception):
     """Raised when the Census API returns an unexpected error."""

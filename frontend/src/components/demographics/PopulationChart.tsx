@@ -10,8 +10,14 @@ import {
   YAxis,
 } from "recharts";
 import type { CensusSnapshot } from "../../types";
-import { CHART_MARGIN, COLORS, fmtK } from "./chart-constants";
-import { ChartTooltip, SectionHeader } from "./chart-utils";
+import {
+  CHART_MARGIN,
+  COLORS,
+  TRACT_BREAK_LINE,
+  findTractBreakYears,
+  fmtK,
+} from "./chart-constants";
+import { ChartTooltip, SectionHeader, TractBreakNote } from "./chart-utils";
 
 interface PopulationChartProps {
   snapshots: CensusSnapshot[];
@@ -24,9 +30,12 @@ export function PopulationChart({
   selectedYear,
   subtitle,
 }: PopulationChartProps) {
-  const data = snapshots
-    .filter((s) => s.total_population != null)
-    .map((s) => ({ year: s.year, population: s.total_population }));
+  const plotted = snapshots.filter((s) => s.total_population != null);
+  const data = plotted.map((s) => ({
+    year: s.year,
+    population: s.total_population,
+  }));
+  const breakYears = findTractBreakYears(plotted);
 
   if (data.length === 0) return null;
 
@@ -54,6 +63,9 @@ export function PopulationChart({
             width={40}
           />
           <Tooltip content={<ChartTooltip />} />
+          {breakYears.map((year) => (
+            <ReferenceLine key={year} x={year} {...TRACT_BREAK_LINE} />
+          ))}
           {selectedYear && (
             <ReferenceLine
               x={selectedYear}
@@ -73,6 +85,7 @@ export function PopulationChart({
           />
         </LineChart>
       </ResponsiveContainer>
+      <TractBreakNote years={breakYears} />
     </motion.div>
   );
 }

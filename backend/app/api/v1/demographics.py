@@ -60,6 +60,7 @@ def get_demographics(
             CensusSnapshotResponse(
                 year=s.year,
                 dataset=s.dataset,
+                tract_fips=s.tract_fips,
                 total_population=s.total_population,
                 median_household_income=s.median_household_income,
                 median_home_value=s.median_home_value,

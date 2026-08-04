@@ -10,8 +10,14 @@ import {
   YAxis,
 } from "recharts";
 import type { CensusSnapshot } from "../../types";
-import { CHART_MARGIN, COLORS, fmtK } from "./chart-constants";
-import { ChartTooltip, SectionHeader } from "./chart-utils";
+import {
+  CHART_MARGIN,
+  COLORS,
+  TRACT_BREAK_LINE,
+  findTractBreakYears,
+  fmtK,
+} from "./chart-constants";
+import { ChartTooltip, SectionHeader, TractBreakNote } from "./chart-utils";
 
 interface HousingChartProps {
   snapshots: CensusSnapshot[];
@@ -24,20 +30,20 @@ export function HousingChart({
   selectedYear,
   subtitle,
 }: HousingChartProps) {
-  const data = snapshots
-    .filter(
-      (s) =>
-        s.total_housing_units != null &&
-        (s.owner_occupied_units != null || s.renter_occupied_units != null),
-    )
-    .map((s) => {
-      const owner = s.owner_occupied_units ?? 0;
-      const renter = s.renter_occupied_units ?? 0;
-      const occupied = s.occupied_housing_units ?? owner + renter;
-      const total = s.total_housing_units ?? occupied;
-      const vacant = Math.max(0, total - occupied);
-      return { year: s.year, Owner: owner, Renter: renter, Vacant: vacant };
-    });
+  const plotted = snapshots.filter(
+    (s) =>
+      s.total_housing_units != null &&
+      (s.owner_occupied_units != null || s.renter_occupied_units != null),
+  );
+  const breakYears = findTractBreakYears(plotted);
+  const data = plotted.map((s) => {
+    const owner = s.owner_occupied_units ?? 0;
+    const renter = s.renter_occupied_units ?? 0;
+    const occupied = s.occupied_housing_units ?? owner + renter;
+    const total = s.total_housing_units ?? occupied;
+    const vacant = Math.max(0, total - occupied);
+    return { year: s.year, Owner: owner, Renter: renter, Vacant: vacant };
+  });
 
   if (data.length === 0) return null;
 
@@ -65,6 +71,9 @@ export function HousingChart({
             width={40}
           />
           <Tooltip content={<ChartTooltip />} />
+          {breakYears.map((year) => (
+            <ReferenceLine key={year} x={year} {...TRACT_BREAK_LINE} />
+          ))}
           {selectedYear && (
             <ReferenceLine
               x={selectedYear}
@@ -95,6 +104,7 @@ export function HousingChart({
           />
         </BarChart>
       </ResponsiveContainer>
+      <TractBreakNote years={breakYears} />
     </motion.div>
   );
 }
