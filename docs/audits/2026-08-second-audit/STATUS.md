@@ -53,7 +53,7 @@ an explicit deferral, both recorded below — never an unfinished edit.
 | M1 Geocoder decode | Resolved (949c1b3) | `geocoder.py:158,196`. The finding's retry-asymmetry aside (only timeouts retried) is unchanged; it was flagged as defensible, not as a defect. |
 | M2 Rate limiting | Partially resolved (ae5793a) | INCR and EXPIRE now ship in one pipeline with `EXPIRE … NX`, so a death between them can no longer leave an immortal counter. The X-Forwarded-For handling is accepted — see below. |
 | M3 Backfill scope | Partially resolved (ae5793a) | A cooldown (`backfill_cooldown_hours`, default 6) bounds the per-visit cost and logs each suppression. The cooldown is dispatch-anchored — it reads the latest `TimelineRequest.created_at`, which includes a request the current visit may have just created — not completion-anchored; correct for cost-bounding, and the per-source work inherits it unless it deliberately changes it. Per-source scope is deferred, not accepted — see below. |
-| M4 Partial census/Landsat failures | Open | `timeline.py:236-257`, `:500-545` — failures counted, never persisted, so nothing can target the gaps. |
+| M4 Partial census/Landsat failures | Open | `timeline.py:234-259`, `:588-658` (the census year loop moved into `_fetch_census_years` in b5a306a) — failures counted, never persisted, so nothing can target the gaps. Sharper than the finding states on the census half: a year the API has no data for returns `{}` and is skipped by `if data:` (`:598` decennial, `:625` ACS5) **without** incrementing `failed_requests` (`:612`, `:639`), so the all-failed check at `:651` cannot see it either. The gap is not merely unpersisted — it is invisible to the task's own failure arithmetic, which is why a parcel could sit at `complete` with four of six ACS years missing. One instance of that shape — years lost to the 2020 tract redistricting — is healed by b5a306a and its `scripts/heal_tract_vintage_gaps.py`; the general problem of persisting per-year failures is untouched. |
 | M5 Sync I/O on the loop | Open | `geocode.py:55-57,146-151`; `timeline.py:310-360`. The worker half is accepted; the autocomplete half is not. |
 | M6 Redis socket timeouts | Resolved (dd99cee) | `socket_timeout` and `socket_connect_timeout` of 2s on both clients, matching the DB probe's `statement_timeout`. |
 | M7 ORM/schema drift | Open | Partial indexes in `0009:49`, `0010:67,83` absent from `models/parcels.py`; `conftest.py:55-190` still hand-written DDL. |
@@ -143,6 +143,20 @@ reconciliation flagged in spirit (item 15) but not as a code finding.
   Titiler from the public needs a shared secret or a signed callback. The
   routing half stays accepted regardless — this is about who may call the
   endpoint, not where the traffic goes.
+- **H1's decennial half — the Housing chart still cannot show a decennial
+  year.** 6def10c fixed the ACS side of the impossible-combination finding;
+  the other side of the same sentence in FINDINGS.md is still true.
+  `_DECENNIAL_CONFIGS` (`census.py:27-56`) fetches population and total units
+  only, and `HousingChart.tsx:33-37` requires a total *plus* an owner/renter
+  split, so 1990/2000/2010/2020 rows are structurally excluded from the chart
+  even when fully populated. Confirmed again during the tract-vintage work,
+  which is what made it visible: Stapleton's 2010 row exists and carries
+  1,773 units, and the chart still will not draw it. The prerequisite is
+  verifying occupancy variable names against the live Census API per vintage
+  — names drift across decades, the known pattern being P001001 (2000/2010)
+  vs P1_001N (2020), and an unavailable variable makes the API reject the
+  whole request. Worth doing: it would extend the Housing chart from ~2009
+  back to 1990.
 - **M4, M7, M8, M5 (autocomplete half), L1, L3, L8, L10 hygiene, L12
   Dockerfile.** Real, and larger than a one-liner or touching shared surface.
   See the second audit's triage for the design decision each one turns on.
