@@ -535,9 +535,11 @@ async def proxy_imagery_tile(
     },
     # Unauthenticated and expensive: each call makes Titiler read a COG
     # header (and, for Landsat, fetch a STAC item and sign three bands).
-    # Stingier than the tile proxy because a warmup is one call per snapshot
-    # per session, where tiles are dozens per pan.
-    dependencies=[Depends(RateLimit(times=30, seconds=60))],
+    # Stingier than the tile proxy because the client warms a snapshot once
+    # per session, where tiles are dozens per pan. Not stingier than that: a
+    # carrier NAT or an office egress puts many visitors in one bucket, and
+    # refusing a warmup costs the real one a slow first tile.
+    dependencies=[Depends(RateLimit(times=60, seconds=60))],
 )
 async def warmup_cog(
     snapshot_id: uuid.UUID,

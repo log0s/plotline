@@ -23,6 +23,27 @@ export async function getTimelineRequest(
   return handleResponse<TimelineRequest>(response);
 }
 
+/**
+ * Ask the API to pre-warm Titiler's cache for a snapshot.
+ *
+ * Best-effort: resolves false when the call is refused (rate limited) or
+ * fails, so the caller can let a later selection try again. Nothing is
+ * surfaced to the user — a cold cache only costs a slower first tile.
+ */
+export async function warmupSnapshot(snapshotId: string): Promise<boolean> {
+  try {
+    const response = await apiFetch(
+      `${BASE_URL}/imagery/${snapshotId}/warmup`,
+      {
+        method: "POST",
+      },
+    );
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function getImagery(
   parcelId: string,
   options?: {

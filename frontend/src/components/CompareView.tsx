@@ -12,6 +12,7 @@ import maplibregl from "maplibre-gl";
 import { SOURCE_LABELS } from "../constants";
 import { useAppStore } from "../store";
 import { applyImageryLayer } from "../utils/applyImageryLayer";
+import { scheduleWarmup } from "../utils/warmup";
 import type { GeocodeResponse, ImagerySnapshot } from "../types";
 
 interface CompareViewProps {
@@ -325,6 +326,8 @@ function useApplySnapshot(
     const map = mapRef.current;
     if (!map) return;
 
+    let cancelWarmup: (() => void) | undefined;
+
     const apply = () => {
       if (!readyRef.current) {
         const onLoad = () => {
@@ -335,10 +338,7 @@ function useApplySnapshot(
         return;
       }
       if (snapshot) {
-        const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
-        fetch(`${apiBase}/api/v1/imagery/${snapshot.id}/warmup`, {
-          method: "POST",
-        }).catch(() => {});
+        cancelWarmup = scheduleWarmup(snapshot.id);
       }
 
       applyImageryLayer(map, snapshot);
@@ -352,5 +352,7 @@ function useApplySnapshot(
     };
 
     apply();
+
+    return () => cancelWarmup?.();
   }, [mapRef, readyRef, snapshot]);
 }

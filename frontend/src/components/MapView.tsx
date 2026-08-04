@@ -17,6 +17,7 @@ import maplibregl from "maplibre-gl";
 import { SOURCE_LABELS } from "../constants";
 import { useAppStore } from "../store";
 import { applyImageryLayer } from "../utils/applyImageryLayer";
+import { scheduleWarmup } from "../utils/warmup";
 import type { GeocodeResponse, ImagerySnapshot } from "../types";
 
 interface MapViewProps {
@@ -149,6 +150,8 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
     const map = mapRef.current;
     if (!map) return;
 
+    let cancelWarmup: (() => void) | undefined;
+
     const apply = (snap: ImagerySnapshot | null) => {
       if (!mapReadyRef.current) {
         const onLoad = () => {
@@ -160,10 +163,7 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
       }
 
       if (snap) {
-        const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
-        fetch(`${apiBase}/api/v1/imagery/${snap.id}/warmup`, {
-          method: "POST",
-        }).catch(() => {});
+        cancelWarmup = scheduleWarmup(snap.id);
       }
 
       applyImageryLayer(map, snap);
@@ -178,6 +178,8 @@ export function MapView({ parcel, sheetY }: MapViewProps) {
     };
 
     apply(selectedSnapshot);
+
+    return () => cancelWarmup?.();
   }, [webglSupported, selectedSnapshot, parcel.latitude, parcel.longitude]);
 
   if (!webglSupported) {
