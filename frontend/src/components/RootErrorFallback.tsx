@@ -7,7 +7,7 @@ export function RootErrorFallback() {
   }
 
   return (
-    <div className="relative w-full min-h-screen bg-navy-950 flex flex-col items-center justify-center px-4">
+    <div className="relative w-full min-h-dvh bg-navy-950 flex flex-col items-center justify-center px-4">
       <h2 className="text-2xl font-bold text-white mb-2">Something broke</h2>
       <p className="text-sm text-slate-400 mb-6 text-center max-w-md">
         An unexpected error occurred. Please try refreshing the page.

@@ -10,7 +10,7 @@ export default function NotFoundPage() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
-      className="flex flex-col items-center justify-center min-h-screen px-4"
+      className="flex flex-col items-center justify-center min-h-dvh px-4"
     >
       <h1 className="text-7xl font-bold text-white mb-2">
         4<span className="text-amber-400">0</span>4

@@ -162,7 +162,7 @@ export default function ExplorePage() {
 
   if (loadError) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen px-4">
+      <div className="flex flex-col items-center justify-center min-h-dvh px-4">
         <h2 className="text-2xl font-bold text-white mb-4">Parcel not found</h2>
         <p className="text-slate-400 mb-6">{loadError.message}</p>
         <button
@@ -177,7 +177,7 @@ export default function ExplorePage() {
 
   if (parcelQuery.isLoading || !parcel) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-dvh">
         <div className="flex items-center gap-3 text-slate-400">
           <svg
             className="animate-spin w-5 h-5 text-amber-400"
@@ -211,7 +211,7 @@ export default function ExplorePage() {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.4 }}
-      className="relative w-full h-screen flex flex-col"
+      className="relative w-full h-dvh flex flex-col"
     >
       <div className="relative flex-1 min-h-0 overflow-hidden md:overflow-visible">
         <ErrorBoundary

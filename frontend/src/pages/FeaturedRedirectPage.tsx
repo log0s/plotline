@@ -25,7 +25,7 @@ export default function FeaturedRedirectPage() {
     const isNotFound = error instanceof ApiRequestError && error.status === 404;
     if (isNotFound) {
       return (
-        <div className="flex flex-col items-center justify-center min-h-screen px-4">
+        <div className="flex flex-col items-center justify-center min-h-dvh px-4">
           <h2 className="text-2xl font-bold text-white mb-2">
             Featured location not found
           </h2>
@@ -43,7 +43,7 @@ export default function FeaturedRedirectPage() {
       );
     }
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen px-4">
+      <div className="flex flex-col items-center justify-center min-h-dvh px-4">
         <h2 className="text-2xl font-bold text-white mb-2">
           Couldn&apos;t load featured location
         </h2>
@@ -61,7 +61,7 @@ export default function FeaturedRedirectPage() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen">
+    <div className="flex items-center justify-center min-h-dvh">
       <div className="flex items-center gap-3 text-slate-400">
         <svg
           className="animate-spin w-5 h-5 text-amber-400"
