@@ -324,6 +324,43 @@ def test_list_imagery_empty_returns_empty_list(client: TestClient, db: Session) 
     assert data["snapshots"] == []
 
 
+def test_list_imagery_caps_rendered_preview_thumbnails(client: TestClient, db: Session) -> None:
+    """rendered_preview thumbnails come back size-capped and unsigned.
+
+    Uncapped, preview.png renders the full scene (~1 MB) for a 64px card,
+    and signing one is a wasted round-trip — the SAS endpoint returns it
+    unchanged.
+    """
+    from app.services.imagery import upsert_imagery_snapshot
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id, "Preview St")
+    preview = (
+        "https://planetarycomputer.microsoft.com/api/data/v1/item/preview.png"
+        "?collection=naip&item=naip_2020_item&assets=image&format=png"
+    )
+    upsert_imagery_snapshot(
+        db,
+        parcel_id=parcel_id,
+        source="naip",
+        capture_date=date(2020, 7, 15),
+        stac_item_id="naip_2020_item",
+        stac_collection="naip",
+        cog_url="https://example.com/naip.tif",
+        thumbnail_url=preview,
+        resolution_m=1.0,
+    )
+
+    with patch("app.api.v1.imagery.stac_service.sign_pc_url", new_callable=AsyncMock) as mock_sign:
+        mock_sign.side_effect = lambda url: url
+        resp = client.get(f"/api/v1/parcels/{parcel_id}/imagery")
+
+    assert resp.status_code == 200
+    thumb = resp.json()["snapshots"][0]["thumbnail_url"]
+    assert "max_size=128" in thumb
+    assert preview not in [call.args[0] for call in mock_sign.call_args_list]
+
+
 # ── Backfill eligibility ──────────────────────────────────────────────────────
 
 

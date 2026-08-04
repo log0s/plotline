@@ -17,7 +17,7 @@ import uuid
 from collections import OrderedDict
 from datetime import date
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
@@ -126,6 +126,30 @@ def get_timeline_request(
     )
 
 
+_PC_PREVIEW_PATH = "/api/data/v1/item/preview.png"
+# Timeline thumbnails render in a 64px box; 128 covers 2x displays.
+_THUMBNAIL_MAX_SIZE = "128"
+
+
+def _is_pc_preview(url: str) -> bool:
+    return urlparse(url).path == _PC_PREVIEW_PATH
+
+
+def _bounded_preview_url(url: str) -> str:
+    """Cap a Planetary Computer rendered_preview at thumbnail size.
+
+    Unbounded, preview.png renders the whole scene: ~1 MB and ~2.4s of
+    server-side render per thumbnail, for a 64px card. With max_size the
+    same preview is ~19 KB and under a second.
+    """
+    parts = urlparse(url)
+    params = parse_qs(parts.query, keep_blank_values=True)
+    if "max_size" in params or "width" in params or "height" in params:
+        return url
+    params["max_size"] = [_THUMBNAIL_MAX_SIZE]
+    return urlunparse(parts._replace(query=urlencode(params, doseq=True)))
+
+
 @router.get(
     "/parcels/{parcel_id}/imagery",
     response_model=ImageryListResponse,
@@ -185,7 +209,10 @@ async def list_imagery(
             urls_to_sign.add(snap.cog_url)
             if snap.additional_cog_urls:
                 urls_to_sign.update(snap.additional_cog_urls)
-        if snap.thumbnail_url:
+        # rendered_preview thumbnails are data-API URLs that sign themselves
+        # server-side — the SAS endpoint hands them back unchanged, so signing
+        # one is a wasted round-trip per snapshot on a cold cache.
+        if snap.thumbnail_url and not _is_pc_preview(snap.thumbnail_url):
             urls_to_sign.add(snap.thumbnail_url)
 
     url_list = list(urls_to_sign)
@@ -210,9 +237,13 @@ async def list_imagery(
                 else None
             )
 
-        signed_thumb = (
-            signed_map.get(snap.thumbnail_url, snap.thumbnail_url) if snap.thumbnail_url else None
-        )
+        signed_thumb: str | None
+        if not snap.thumbnail_url:
+            signed_thumb = None
+        elif _is_pc_preview(snap.thumbnail_url):
+            signed_thumb = _bounded_preview_url(snap.thumbnail_url)
+        else:
+            signed_thumb = signed_map.get(snap.thumbnail_url, snap.thumbnail_url)
 
         snapshot_responses.append(
             ImagerySnapshotResponse(
