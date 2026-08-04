@@ -29,7 +29,7 @@ an explicit deferral, both recorded below — never an unfinished edit.
 
 | Hash | Covers |
 |---|---|
-| 172639d | M6, M10 (advisory lock), L11 |
+| dd99cee | M6, M10 (advisory lock), L11 |
 | 3269bbf | L5 |
 | ffb71b2 | L2, L4, L6 (source id), L7, L9 |
 | ae5793a | M2 (atomicity), M3 (cooldown), counties item 13 |
@@ -52,14 +52,14 @@ an explicit deferral, both recorded below — never an unfinished edit.
 |---|---|---|
 | M1 Geocoder decode | Resolved (949c1b3) | `geocoder.py:158,196`. The finding's retry-asymmetry aside (only timeouts retried) is unchanged; it was flagged as defensible, not as a defect. |
 | M2 Rate limiting | Partially resolved (ae5793a) | INCR and EXPIRE now ship in one pipeline with `EXPIRE … NX`, so a death between them can no longer leave an immortal counter. The X-Forwarded-For handling is accepted — see below. |
-| M3 Backfill scope | Partially resolved (ae5793a) | A cooldown (`backfill_cooldown_hours`, default 6) bounds the per-visit cost and logs each suppression. Per-source scope is deferred, not accepted — see below. |
+| M3 Backfill scope | Partially resolved (ae5793a) | A cooldown (`backfill_cooldown_hours`, default 6) bounds the per-visit cost and logs each suppression. The cooldown is dispatch-anchored — it reads the latest `TimelineRequest.created_at`, which includes a request the current visit may have just created — not completion-anchored; correct for cost-bounding, and the per-source work inherits it unless it deliberately changes it. Per-source scope is deferred, not accepted — see below. |
 | M4 Partial census/Landsat failures | Open | `timeline.py:236-257`, `:500-545` — failures counted, never persisted, so nothing can target the gaps. |
 | M5 Sync I/O on the loop | Open | `geocode.py:55-57,146-151`; `timeline.py:310-360`. The worker half is accepted; the autocomplete half is not. |
-| M6 Redis socket timeouts | Resolved (172639d) | `socket_timeout` and `socket_connect_timeout` of 2s on both clients, matching the DB probe's `statement_timeout`. |
+| M6 Redis socket timeouts | Resolved (dd99cee) | `socket_timeout` and `socket_connect_timeout` of 2s on both clients, matching the DB probe's `statement_timeout`. |
 | M7 ORM/schema drift | Open | Partial indexes in `0009:49`, `0010:67,83` absent from `models/parcels.py`; `conftest.py:55-190` still hand-written DDL. |
 | M8 DO NOTHING freezes records | Open | `property_events.py:74`; `county_adapters.py:466,734`. |
 | M9 Titiler callback path | Partially resolved (56d6647) | `/warmup` (30/min) and `/{id}/stac` (600/min) now carry rate limits. The routing itself is accepted — see below. |
-| M10 Migration on boot | Partially resolved (172639d) | A session-scoped `pg_advisory_lock` in `alembic/env.py` serializes concurrent boots. The worker-ahead-of-schema window is accepted — see below. |
+| M10 Migration on boot | Partially resolved (dd99cee) | A session-scoped `pg_advisory_lock` in `alembic/env.py` serializes concurrent boots. The worker-ahead-of-schema window is accepted — see below. |
 | M11 Failures vanish from UI | Resolved (256ed32) | `ParcelInfo.tsx:131-133,268-275`; `DemographicsPanel.tsx:78-95`. |
 | M12 Celery config | Resolved (05bb263) | `celery_app.py:29-31,53`; `timeline.py:950-958`. |
 
@@ -77,7 +77,7 @@ an explicit deferral, both recorded below — never an unfinished edit.
 | L8 Autocomplete self-DoS | Open | `useAddressAutocomplete.ts:12` (150ms); `SearchInput.tsx:35,44,57,112` still clears the input before the geocode resolves. |
 | L9 Tile-proxy input | Resolved (ffb71b2) | `z` capped at 0–24; `x`/`y` given one generous static bound, since anything inside it but outside the COG extent already returns a transparent tile. |
 | L10 Raw error strings | Open | `schemas/imagery.py:25,38`; `timeline.py:198,402,650`. |
-| L11 Prefork engine | Resolved (172639d) | `worker_process_init` → `engine.dispose(close=False)`. |
+| L11 Prefork engine | Resolved (dd99cee) | `worker_process_init` → `engine.dispose(close=False)`. |
 | L12 Misc | Partially resolved (56d6647) | CORS `allow_credentials` dropped. Still open: JSON vs JSONB (`models/parcels.py:323`/`:398`), "declined 0%" (`demographics.py:203-211`), the URL-normalization chain (`config.py:83-89` **and** `alembic/env.py:36-42`), `Dockerfile.fly` running as root with gcc, and DC's hardcoded permit layers (`county_adapters.py:396-404`). |
 
 ## Counties reconciliation
@@ -134,6 +134,15 @@ reconciliation flagged in spirit (item 15) but not as a code finding.
   shape. The open decision is whether scope lives as a `sources` column on
   `TimelineRequest` or is derived per-run from the previous request's task
   rows.
+- **M9, authenticating the Titiler callback.** The rate limits in 56d6647 are
+  an interim mitigation, and the batch that added them established that a
+  counter is the wrong instrument here: every legitimate call to `/stac`
+  arrives from Titiler's single egress IP, so a per-IP limit is one shared
+  bucket for all users rather than a per-visitor budget, and 600/min is set
+  loose enough not to throttle real tile serving. Properly distinguishing
+  Titiler from the public needs a shared secret or a signed callback. The
+  routing half stays accepted regardless — this is about who may call the
+  endpoint, not where the traffic goes.
 - **M4, M7, M8, M5 (autocomplete half), L1, L3, L8, L10 hygiene, L12
   Dockerfile.** Real, and larger than a one-liner or touching shared surface.
   See the second audit's triage for the design decision each one turns on.
