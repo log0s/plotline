@@ -50,7 +50,10 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_credentials=True,
+        # No cookie or session auth anywhere in the API, so credentialed
+        # requests have nothing to carry — and allowing them constrains
+        # allow_origins to never be a wildcard.
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )

@@ -7,6 +7,11 @@ app = "log0s-plotline-api"
    [env]
      APP_ENV = "production"
      TITILER_URL = "https://plotline-titiler.fly.dev"
+     # Public, deliberately: Titiler calls back to the API for signed STAC
+     # items, so this traffic crosses the public internet. Internal
+     # networking was implemented and reverted in c6213d5 — Fly's .internal
+     # addresses resolve to IPv6 only, which broke API→Titiler. Do not
+     # re-attempt without IPv6 support on both apps.
      API_INTERNAL_URL = "https://log0s-plotline-api.fly.dev"
 
    [http_service]

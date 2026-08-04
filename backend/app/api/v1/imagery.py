@@ -498,7 +498,15 @@ async def proxy_imagery_tile(
         "COG header before tile requests arrive. Best-effort; failures are "
         "silently ignored."
     ),
-    responses={204: {"description": "Warmup initiated (or skipped)"}},
+    responses={
+        204: {"description": "Warmup initiated (or skipped)"},
+        429: {"description": "Rate limit exceeded"},
+    },
+    # Unauthenticated and expensive: each call makes Titiler read a COG
+    # header (and, for Landsat, fetch a STAC item and sign three bands).
+    # Stingier than the tile proxy because a warmup is one call per snapshot
+    # per session, where tiles are dozens per pan.
+    dependencies=[Depends(RateLimit(times=30, seconds=60))],
 )
 async def warmup_cog(
     snapshot_id: uuid.UUID,
@@ -551,8 +559,16 @@ async def warmup_cog(
     ),
     responses={
         404: {"description": "Snapshot not found or not a STAC-tile source"},
+        429: {"description": "Rate limit exceeded"},
         502: {"description": "Failed to fetch STAC item from upstream"},
     },
+    # Deliberately generous. In production every legitimate call arrives from
+    # Titiler's single egress IP, so this is one shared bucket for all users
+    # at once, not a per-visitor budget — a tight limit here would throttle
+    # real tile serving under load, not abuse. It bounds an anonymous caller
+    # who fans out to Planetary Computer and the SAS signer; distinguishing
+    # Titiler from the public properly needs a shared secret, not a counter.
+    dependencies=[Depends(RateLimit(times=600, seconds=60))],
 )
 async def get_signed_stac_item(
     snapshot_id: uuid.UUID,
