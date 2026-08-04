@@ -21,6 +21,14 @@ logger = logging.getLogger(__name__)
 
 def _client_ip(request: Request) -> str:
     # Fly's proxy sets Fly-Client-IP; generic proxies set X-Forwarded-For.
+    #
+    # Taking the first X-Forwarded-For entry is spoofable in general — a
+    # client can send any value it likes. It is unreachable IN PRODUCTION ON
+    # FLY only because Fly's proxy sets Fly-Client-IP itself on every inbound
+    # request and the branch above always wins. That makes the deployment
+    # topology load-bearing: if this app is ever fronted by a different proxy,
+    # or served without one, revisit this — the correct fix is to trust only
+    # the Nth-from-last XFF entry for a known proxy depth.
     fly_ip = request.headers.get("fly-client-ip")
     if fly_ip:
         return fly_ip
@@ -51,9 +59,15 @@ class RateLimit:
         key = f"ratelimit:{request.url.path}:{_client_ip(request)}"
         try:
             redis = get_async_redis()
-            count = await redis.incr(key)
-            if count == 1:
-                await redis.expire(key, self.seconds)
+            # INCR and EXPIRE go in one pipeline. Issued separately, a
+            # process death or a connection drop between them leaves a key
+            # with a count and no TTL — an immortal counter that locks that
+            # IP out of this route permanently. EXPIRE ... NX so a refresh
+            # mid-window can't slide the window forward.
+            async with redis.pipeline(transaction=True) as pipe:
+                pipe.incr(key)
+                pipe.expire(key, self.seconds, nx=True)
+                count, _ = await pipe.execute()
         except (RedisError, OSError) as exc:
             logger.warning("Rate limit check failed open: %s", exc)
             return

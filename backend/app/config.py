@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     # ── Parcel deduplication ──────────────────────────────────────────────────
     parcel_dedup_radius_meters: float = 50.0
 
+    # ── Backfill ──────────────────────────────────────────────────────────────
+    # A parcel whose census or property source keeps failing would otherwise
+    # re-run the whole five-source pipeline on every single page view. This is
+    # the minimum age of the last attempt before another backfill is allowed.
+    backfill_cooldown_hours: float = 6.0
+
     # ── Rate limiting ─────────────────────────────────────────────────────────
     # Per-IP limits on the endpoints that fan out to external APIs and the
     # Celery worker. Disabled in tests.

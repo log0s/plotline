@@ -110,4 +110,9 @@ async def query_socrata(
             "Socrata response",
             extra={"domain": domain, "resource": resource_id, "rows": len(data)},
         )
+        if len(data) >= limit:
+            logger.warning(
+                "Socrata query hit its row cap — results are truncated",
+                extra={"domain": domain, "resource": resource_id, "cap": limit, "where": where},
+            )
         return data

@@ -105,4 +105,9 @@ async def query_feature_service(
             "ArcGIS response",
             extra={"url": service_url, "rows": len(rows)},
         )
+        if len(rows) >= result_record_count:
+            logger.warning(
+                "ArcGIS query hit its row cap — results are truncated",
+                extra={"url": service_url, "cap": result_record_count, "where": where},
+            )
         return rows

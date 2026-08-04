@@ -327,12 +327,19 @@ def test_list_imagery_empty_returns_empty_list(client: TestClient, db: Session) 
 # ── Backfill eligibility ──────────────────────────────────────────────────────
 
 
-def _backfill_setup(db: Session, property_status: str) -> tuple[object, object]:
+def _backfill_setup(
+    db: Session, property_status: str, age_hours: float = 24.0
+) -> tuple[object, object]:
     """Insert a completed request whose property task has the given status.
+
+    ``age_hours`` is how long ago the request was created — backfill is
+    suppressed inside the cooldown window, so the default puts it safely
+    outside.
 
     The parcel is a stand-in rather than an ORM load — the real model selects
     its PostGIS geometry column, which SQLite can't evaluate.
     """
+    from datetime import UTC, datetime, timedelta
     from types import SimpleNamespace
 
     from app.models.parcels import TimelineRequest, TimelineRequestTask
@@ -342,7 +349,12 @@ def _backfill_setup(db: Session, property_status: str) -> tuple[object, object]:
 
     # Inserted through the ORM so the UUID columns are bound the same way the
     # service's lookups bind them.
-    req = TimelineRequest(id=uuid.uuid4(), parcel_id=parcel_id, status="complete")
+    req = TimelineRequest(
+        id=uuid.uuid4(),
+        parcel_id=parcel_id,
+        status="complete",
+        created_at=datetime.now(UTC) - timedelta(hours=age_hours),
+    )
     db.add(req)
     for source, status in (("property", property_status), ("usgs_topo", "complete")):
         db.add(
@@ -366,6 +378,28 @@ def test_backfill_retries_failed_property_task(db: Session) -> None:
     from app.services.imagery import maybe_refetch_for_backfill
 
     parcel, req = _backfill_setup(db, "failed")
+
+    assert maybe_refetch_for_backfill(db, parcel, req) is not None
+
+
+def test_backfill_suppressed_inside_the_cooldown(db: Session) -> None:
+    """A failed source inside the cooldown window does not re-dispatch.
+
+    Without this, every page view of a parcel with one persistently failing
+    source re-runs the whole five-source pipeline.
+    """
+    from app.services.imagery import maybe_refetch_for_backfill
+
+    parcel, req = _backfill_setup(db, "failed", age_hours=1.0)
+
+    assert maybe_refetch_for_backfill(db, parcel, req) is None
+
+
+def test_backfill_resumes_outside_the_cooldown(db: Session) -> None:
+    """The same parcel becomes eligible again once the window has passed."""
+    from app.services.imagery import maybe_refetch_for_backfill
+
+    parcel, req = _backfill_setup(db, "failed", age_hours=7.0)
 
     assert maybe_refetch_for_backfill(db, parcel, req) is not None
 

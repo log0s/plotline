@@ -22,6 +22,7 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.models.parcels import Parcel, TimelineRequest, TimelineRequestTask
 
 logger = logging.getLogger(__name__)
@@ -78,15 +79,18 @@ def _find_reusable_request(db: Session, parcel_id: uuid.UUID) -> TimelineRequest
     )
 
 
+def _as_utc(value: datetime) -> datetime:
+    """Attach UTC to a naive timestamp (SQLite hands back naive datetimes)."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
 def _is_stale_inflight(request: TimelineRequest) -> bool:
     if request.status not in _INFLIGHT_STATUSES:
         return False
     updated = request.updated_at
     if updated is None:
         return False
-    if updated.tzinfo is None:
-        updated = updated.replace(tzinfo=UTC)
-    return datetime.now(tz=UTC) - updated > _STALE_INFLIGHT
+    return datetime.now(tz=UTC) - _as_utc(updated) > _STALE_INFLIGHT
 
 
 def _create_queued_request(
@@ -357,6 +361,33 @@ def maybe_refetch_for_backfill(
 
     if not needs_refetch:
         return None
+
+    # A source that fails persistently (a retired Census vintage, a county
+    # portal that stays down) keeps needs_refetch true forever, and every
+    # page view would dispatch the full five-source pipeline again — dozens
+    # of upstream calls and minutes of worker time to re-attempt one source.
+    # The cooldown makes that visit-driven cost bounded per parcel. It does
+    # not narrow the refetch to the missing source; that is deliberately
+    # deferred (M3's per-source scope).
+    cooldown = timedelta(hours=get_settings().backfill_cooldown_hours)
+    last_attempt = db.execute(
+        select(TimelineRequest.created_at)
+        .where(TimelineRequest.parcel_id == parcel.id)
+        .order_by(TimelineRequest.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if last_attempt is not None:
+        age = datetime.now(UTC) - _as_utc(last_attempt)
+        if age < cooldown:
+            logger.info(
+                "Backfill suppressed — last attempt is inside the cooldown",
+                extra={
+                    "parcel_id": str(parcel.id),
+                    "age_hours": round(age.total_seconds() / 3600, 2),
+                    "cooldown_hours": cooldown.total_seconds() / 3600,
+                },
+            )
+            return None
 
     new_req, created = _create_queued_request(db, parcel.id)
     if not created:

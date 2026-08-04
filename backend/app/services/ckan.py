@@ -109,4 +109,9 @@ async def query_ckan_datastore(
             "CKAN response",
             extra={"domain": domain, "resource": resource_id, "rows": len(records)},
         )
+        if len(records) >= limit:
+            logger.warning(
+                "CKAN query hit its row cap — results are truncated",
+                extra={"domain": domain, "resource": resource_id, "cap": limit, "q": q},
+            )
         return cast(list[dict[str, Any]], records)
