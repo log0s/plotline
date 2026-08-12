@@ -22,17 +22,23 @@ the address — so a re-queue against an un-fixed deploy re-selects the same
 wrong granules and heals the parcel straight back into the defect.
 
 To make the ordering mechanical rather than a thing the operator has to
-remember, the script fetches ``/api/v1/health`` from the running API before
-touching the database and reads ``version.sha`` — the SHA baked into the
-deployed image. It then refuses to queue anything unless one of:
+remember, the script requires the operator to pass *exactly one* of two flags, and
+refuses to queue anything otherwise:
 
-* ``--require-sha <prefix>`` matches the deployed SHA. The operator passes
-  the SHA of the deploy that carries the geometry fix. This is a prefix
-  match against what prod reports; it does *not* walk commit history, so
-  passing a SHA that merely contains the fix in its ancestry is the
+* ``--require-sha <prefix>``. The script fetches ``/api/v1/health`` from the
+  running API before touching the database, reads ``version.sha`` — the SHA
+  baked into the deployed image — and requires it to match. The operator
+  passes the SHA of the deploy that carries the geometry fix. This is a
+  prefix match against what prod reports; it does *not* walk commit history,
+  so passing a SHA that merely contains the fix in its ancestry is the
   operator's judgement, not something the script verifies.
-* ``--skip-deploy-check`` is passed, which logs a warning naming what was
-  skipped and proceeds anyway.
+* ``--skip-deploy-check``, which logs a warning naming what was skipped and
+  proceeds anyway. This is the sanctioned path for uses that do not depend
+  on scene geometry.
+
+Neither flag is a refusal, and so is both: a bare invocation is not allowed
+to fall through on a warning, because the likely operator is running from
+shell history days later and a warning in scrollback is not a gate.
 
 The health URL defaults to ``api_internal_url`` from settings (correct when
 running via ``docker compose exec api``); ``--api-url`` overrides it. A
@@ -56,6 +62,8 @@ Usage (API + worker must be running):
         --require-sha <sha> --dry-run <id> [<id> ...]
     docker compose exec api python scripts/requeue_parcels.py \
         --require-sha <sha> <id> [<id> ...]
+    docker compose exec api python scripts/requeue_parcels.py \
+        --skip-deploy-check <id> [<id> ...]
 """
 
 from __future__ import annotations
@@ -63,6 +71,7 @@ from __future__ import annotations
 import argparse
 import sys
 import uuid
+from typing import NoReturn
 
 import httpx
 import structlog
@@ -108,10 +117,10 @@ def _fetch_deployed_sha(api_url: str) -> str:
     return sha
 
 
-def _refuse(deployed: str, required: str | None) -> None:
+def _refuse(deployed: str, required: str) -> NoReturn:
     print("REFUSING to re-queue — deployment gate failed.", file=sys.stderr)
     print(f"  prod is running: {deployed}", file=sys.stderr)
-    print(f"  required:        {required or '(none given)'}", file=sys.stderr)
+    print(f"  required:        {required}", file=sys.stderr)
     print(f"  why: {_WHY}.", file=sys.stderr)
     print(
         "  Pass --require-sha <prefix> matching a deploy that carries the "
@@ -121,8 +130,29 @@ def _refuse(deployed: str, required: str | None) -> None:
     sys.exit(1)
 
 
+def _refuse_flags(problem: str) -> NoReturn:
+    print(f"REFUSING to re-queue — {problem}", file=sys.stderr)
+    print(
+        "  --require-sha <prefix>   the deployed API must report this SHA",
+        file=sys.stderr,
+    )
+    print(
+        "  --skip-deploy-check      re-queue without checking (logs a warning)",
+        file=sys.stderr,
+    )
+    print(f"  why: {_WHY}.", file=sys.stderr)
+    sys.exit(1)
+
+
 def _check_deploy_gate(api_url: str, require_sha: str | None, skip: bool) -> None:
-    """Exit nonzero unless the deployed SHA is vouched for, or the gate is skipped."""
+    """Exit nonzero unless the deployed SHA is vouched for, or the gate is skipped.
+
+    Exactly one of ``require_sha`` / ``skip`` must be given; neither and both
+    are refusals, checked before any network or database access.
+    """
+    if require_sha and skip:
+        _refuse_flags("--require-sha and --skip-deploy-check are mutually exclusive.")
+
     if skip:
         logger.warning(
             "deploy_check_skipped",
@@ -132,13 +162,15 @@ def _check_deploy_gate(api_url: str, require_sha: str | None, skip: bool) -> Non
         )
         return
 
+    if not require_sha:
+        _refuse_flags("no deployment gate given. Pass exactly one of:")
+
     try:
         deployed = _fetch_deployed_sha(api_url)
     except RuntimeError as exc:
         _refuse(f"unknown — {exc}", require_sha)
-        return
 
-    if require_sha and deployed.lower().startswith(require_sha.lower()):
+    if deployed.lower().startswith(require_sha.lower()):
         print(f"Deploy gate passed — prod is running {deployed}.")
         return
 
@@ -166,12 +198,14 @@ def main() -> None:
     )
     parser.add_argument(
         "--require-sha",
-        help="Git SHA prefix the deployed API must report before re-queuing",
+        help="Git SHA prefix the deployed API must report before re-queuing "
+        "(required unless --skip-deploy-check)",
     )
     parser.add_argument(
         "--skip-deploy-check",
         action="store_true",
-        help="Re-queue without verifying the deployed SHA (logs a warning)",
+        help="Re-queue without verifying the deployed SHA (logs a warning); "
+        "mutually exclusive with --require-sha",
     )
     args = parser.parse_args()
 
