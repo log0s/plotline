@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1509,6 +1510,80 @@ async def test_failed_mint_does_not_wedge_the_container() -> None:
         retried = await sign_pc_url(href.format(band="blue"))
 
     assert retried.endswith("?se=2026-08-12T21:02:06Z&sr=c&sig=abc")
+
+
+# ── SAS signing: container-token cache TTL tracks the token's own expiry ─────
+
+
+def _se(seconds_from_now: float) -> str:
+    stamp = datetime.fromtimestamp(time.time() + seconds_from_now, UTC)
+    return stamp.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+@pytest.mark.asyncio
+async def test_container_token_cached_until_shortly_before_its_expiry() -> None:
+    """The TTL is the token's remaining life less the margin, never more."""
+    from app.services.stac import _SAS_TOKEN_MARGIN_S
+
+    token = f"se={_se(45 * 60)}&sr=c&sig=abc"
+    client = AsyncMock()
+    client.get = AsyncMock(return_value=_token_response(200, token))
+    redis = _cache_miss_redis()
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=client),
+        patch("app.db.get_async_redis", return_value=redis),
+    ):
+        await sign_pc_url("https://landsateuwest.blob.core.windows.net/landsat-c2/level-2/red.tif")
+
+    _key, ttl, _value = redis.setex.await_args.args
+    # A full-life token: ~45 min less the margin, and well past the old fixed
+    # 1200 s — this is the 2.25× cadence reduction, asserted.
+    assert 45 * 60 - _SAS_TOKEN_MARGIN_S - 5 <= ttl <= 45 * 60 - _SAS_TOKEN_MARGIN_S
+    assert ttl > 1200
+
+
+@pytest.mark.asyncio
+async def test_container_token_ttl_never_outlives_the_token() -> None:
+    """A short-lived token is cached for less, not for the fixed span."""
+    from app.services.stac import _SAS_TOKEN_MARGIN_S, _container_token_ttl
+
+    for remaining in (45 * 60, 20 * 60, 10 * 60, _SAS_TOKEN_MARGIN_S + 60):
+        ttl = _container_token_ttl(f"se={_se(remaining)}&sr=c&sig=abc")
+        assert ttl <= remaining - _SAS_TOKEN_MARGIN_S
+        assert ttl > 0
+
+
+@pytest.mark.asyncio
+async def test_expiring_container_token_is_not_cached() -> None:
+    """A token with less than the margin left is used once and not cached.
+
+    Caching it would hand the next caller a credential that can die inside a
+    tile render — the failure cf0df2b exists to prevent.
+    """
+    token = f"se={_se(60)}&sr=c&sig=abc"
+    client = AsyncMock()
+    client.get = AsyncMock(return_value=_token_response(200, token))
+    redis = _cache_miss_redis()
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=client),
+        patch("app.db.get_async_redis", return_value=redis),
+    ):
+        signed = await sign_pc_url(
+            "https://landsateuwest.blob.core.windows.net/landsat-c2/level-2/red.tif"
+        )
+
+    assert signed.endswith(f"?{token}")
+    redis.setex.assert_not_called()
+
+
+def test_container_token_ttl_falls_back_when_se_is_unusable() -> None:
+    """An absent or unparseable ``se`` keeps the inherited fixed TTL."""
+    from app.services.stac import _SAS_CACHE_TTL, _container_token_ttl
+
+    assert _container_token_ttl("sr=c&sig=abc") == _SAS_CACHE_TTL
+    assert _container_token_ttl("se=not-a-date&sr=c&sig=abc") == _SAS_CACHE_TTL
 
 
 def test_blob_container_parses_account_and_container() -> None:

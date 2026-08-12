@@ -171,7 +171,31 @@ async def search_stac(
 # ── URL signing ───────────────────────────────────────────────────────────────
 
 
-_SAS_CACHE_TTL = 1200  # 20 minutes (tokens last ~45 min, so this keeps margin)
+# Per-URL signed hrefs (``sas:{url}``) are cached for a fixed span; it is also
+# the fallback for a container token whose own ``se`` will not parse. 1200 s is
+# inherited, not derived: 9ea33d9 set 600 s against a believed ~30 min token
+# life, and 3b7b10e doubled it when the life was measured at 45 min. Container
+# tokens no longer use it — see _container_token_ttl.
+_SAS_CACHE_TTL = 1200
+
+# Stop serving a cached container token this long before it dies.
+#
+# What has to fit inside the margin is the longest path from *issuing* a signed
+# URL to *reading* the blob, because the token has only this much life left
+# when the cache entry rotates. Every such path is a single request:
+#   - Tile: the /stac callback signs, Titiler's GDAL reads the blob in the same
+#     render. Bounded by the 30 s Titiler client timeout (imagery.py:324).
+#   - Titiler's item LRU has no expiry, but its key carries ``?v={se}``, so a
+#     cached item stops being addressed the moment this entry rotates — plus
+#     one in-flight render.
+#   - The /stac Cache-Control is already capped at the token's own remaining
+#     life less 300 s (imagery.py:672-695), so an intermediate cache cannot
+#     extend a token past its expiry either. Self-bounding, not a constraint.
+#   - Worker validation and the preview renderer sign and then immediately
+#     HEAD/GET, inside a 10 s client timeout.
+# 300 s is ~10× the longest of those and matches _STAC_CACHE_MARGIN_S. No
+# constraint found that needs the ~25 min the fixed 1200 s TTL used to leave.
+_SAS_TOKEN_MARGIN_S = 300
 
 # How long a caller is willing to spend *sleeping* between signing retries.
 #
@@ -381,10 +405,12 @@ async def _mint_container_token(
         round((time.monotonic() - started) * 1000),
     )
 
-    try:
-        await get_async_redis().setex(cache_key, _SAS_CACHE_TTL, token.encode())
-    except (RedisError, OSError) as exc:
-        logger.debug("SAS token cache write failed: %s", exc)
+    ttl = _container_token_ttl(token)
+    if ttl > 0:
+        try:
+            await get_async_redis().setex(cache_key, ttl, token.encode())
+        except (RedisError, OSError) as exc:
+            logger.debug("SAS token cache write failed: %s", exc)
 
     return token
 
@@ -443,15 +469,39 @@ def _token_expiry(token: str) -> str | None:
     return values[0] if values else None
 
 
-def token_expiry_seconds(signed_url: str) -> float | None:
-    """Return a signed URL's SAS expiry as a POSIX timestamp, or None."""
-    expiry = _token_expiry(urlsplit(signed_url).query)
+def _expiry_timestamp(expiry: str | None) -> float | None:
+    """Parse an ``se`` field into a POSIX timestamp, or None if unusable."""
     if expiry is None:
         return None
     try:
         return datetime.fromisoformat(expiry.replace("Z", "+00:00")).timestamp()
     except ValueError:
         return None
+
+
+def token_expiry_seconds(signed_url: str) -> float | None:
+    """Return a signed URL's SAS expiry as a POSIX timestamp, or None."""
+    return _expiry_timestamp(_token_expiry(urlsplit(signed_url).query))
+
+
+def _container_token_ttl(token: str) -> int:
+    """Seconds to cache a container token: its own life, less the margin.
+
+    Deriving the TTL from the token instead of a fixed 1200 s is what keeps the
+    cache entry and the credential on the same clock. The fixed span expired
+    the key ~25 min before the token it held, so ``?v`` — which names that key —
+    rotated every 20 min against a 45-minute credential, and every Landsat
+    ``/stac`` cache key rotated together each time (BOUNDARY-BASELINE.md §1).
+    Rotations now fall roughly 40 min apart, ~2.25× less often.
+
+    A token whose ``se`` will not parse falls back to the fixed TTL; one with
+    less than the margin left is not cached at all, so the next caller mints
+    rather than inheriting a token that could die mid-render.
+    """
+    expiry = _expiry_timestamp(_token_expiry(token))
+    if expiry is None:
+        return _SAS_CACHE_TTL
+    return int(expiry - time.time()) - _SAS_TOKEN_MARGIN_S
 
 
 async def container_token_expiry(account: str, container: str, *, wait_budget: float) -> str | None:

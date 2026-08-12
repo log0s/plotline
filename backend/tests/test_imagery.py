@@ -929,7 +929,9 @@ def test_landsat_tile_falls_back_to_time_bucket_when_expiry_unavailable(
 
     assert resp.status_code == 200
     bucket = url.split("?v=")[1]
-    assert bucket == f"t{int(time.time()) // 600}"
+    from app.api.v1.imagery import _STAC_URL_BUCKET_S
+
+    assert bucket == f"t{int(time.time()) // _STAC_URL_BUCKET_S}"
     assert "Landsat SAS token expiry unavailable" in caplog.text
 
 
@@ -952,7 +954,9 @@ def test_landsat_tile_versions_url_when_token_has_no_expiry(
         url = _titiler_url_param(mock_titiler)
 
     assert resp.status_code == 200
-    assert url.split("?v=")[1] == f"t{int(time.time()) // 600}"
+    from app.api.v1.imagery import _STAC_URL_BUCKET_S
+
+    assert url.split("?v=")[1] == f"t{int(time.time()) // _STAC_URL_BUCKET_S}"
 
 
 def test_warmup_uses_the_same_stac_url_as_the_tile_proxy(client: TestClient, db: Session) -> None:

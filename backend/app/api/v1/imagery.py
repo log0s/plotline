@@ -486,10 +486,12 @@ async def _proxy_cog_tile(
     return await _fetch_titiler(titiler_url, params, snap.id)
 
 
-# Fallback granularity when the token's own expiry is unavailable. Shorter
-# than the ~25 min of margin a cached token is guaranteed to have left
-# (~45 min lifetime less the 20 min _SAS_CACHE_TTL holds it).
-_STAC_URL_BUCKET_S = 600
+# Fallback granularity when the token's own expiry is unavailable. Must stay
+# under the life a cached container token is guaranteed to have left, so an
+# item keyed on a wall-clock bucket cannot outlive the token it pins. That
+# guarantee is now `stac._SAS_TOKEN_MARGIN_S` (300 s) — it was ~25 min while
+# the token cache ran on a fixed 1200 s TTL, which is why this was 600 s.
+_STAC_URL_BUCKET_S = 120
 
 
 async def _landsat_stac_url(snapshot_id: uuid.UUID, settings: Settings) -> str:
@@ -501,12 +503,13 @@ async def _landsat_stac_url(snapshot_id: uuid.UUID, settings: Settings) -> str:
     Titiler serve an item whose token had expired, which GDAL reports as an
     unsupported format and Titiler as a 500.
 
-    In practice the key rotates on ``_SAS_CACHE_TTL`` (20 min), not on the
-    token's 45-minute life: ``v`` names the token cached in Redis, and that
-    entry dies first. Rotation is therefore ~2.25× more frequent than the
-    token lifetime suggests, and every Landsat key rotates together — the load
-    term behind G7. Measured live 2026-08-12: 18 keys rotating at once drew 6
-    concurrent token mints, 0 failures, one wave of 4.2× tile latency
+    The key rotates when the Redis entry ``v`` names dies, not when the token
+    does. That entry is now cached for the token's own life less a 300 s margin
+    (``stac._container_token_ttl``), so rotation runs ~40 min apart; under the
+    fixed 1200 s TTL it ran every 20 min. Every Landsat key still rotates
+    together — the load term behind G7. Measured live 2026-08-12 on the 20-min
+    cadence: 18 keys rotating at once drew 6 concurrent token mints, 0
+    failures, one wave of 4.2× tile latency
     (docs/audits/2026-08-titiler-cache/BOUNDARY-BASELINE.md).
 
     Never raises: this computes a cache key, and a signer or Redis that is
