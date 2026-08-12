@@ -218,7 +218,11 @@ throttle was deployed before either re-run, and neither re-rolled the dice.
 ## 7. Census ride-along, and M4
 
 - **3 census rows gained across 2 parcels** during the sweep — the transient-gap
-  opportunistic heals. Small, as expected.
+  opportunistic heals. Small, as expected. *A later commentary restated this as
+  a net **loss** of 3 rows across 44 parcels and asked for the mechanism; that
+  reading matches nothing in this document, and `CENSUS_TRIAGE.md` closes it as
+  a phantom — `census_snapshots` has no deletion path, so a net loss is not
+  reachable. The line above is the record and always was.*
 - 161 ACS5 and 61 decennial saves fired against 63
   `Census API: no data for tract` responses, which are the silent
   `if data:` skips M4 describes — they increment nothing.
