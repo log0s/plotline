@@ -12,7 +12,9 @@ numbers are HEAD's, not the audit's.
 The 2026-08-12 operational audit (`../2026-08-ops-audit/`) has its own section
 below. Its findings are about the running system rather than the code, but two
 of them bear directly on rows here — M4 above all — so they are tracked
-together rather than in a second living document.
+together rather than in a second living document. The 2026-08-12 geometry
+audit (`../2026-08-geometry-audit/`) is tracked the same way, in its own
+section further down.
 
 Nothing was incidentally resolved between the audit and the verification pass.
 M6, L2, L5 and all six L12 items were checked specifically against the commits
@@ -115,12 +117,91 @@ file is where the fix commits get cited.
 
 | # | Status | Where it stands |
 |---|---|---|
-| O1 Unsigned-href fallback | Resolved (c645208) | **New finding.** A signing failure fell back to the unsigned href at five call sites. Planetary Computer blob storage is private, so that href can only be rejected with a 409 — the audit tied 37 Titiler 500s across 10 snapshots to it, each preceded seconds earlier by a band-signing failure on the same snapshot id. The first audit read this fallback as graceful degradation; it is not degradation, it is a guaranteed user-visible failure manufactured out of a retryable one. Both tile paths now 502 with a curated message; the listing omits what it cannot sign; warmup and the preview renderer skip rather than render. `imagery.py` (API) and `preview_renderer.py:100-106`. No unsigned-fallback site remained in `stac.py` — every signing call there already goes through `sign_pc_url`, which carries the a536d07 limiter and retries. |
+| O1 Unsigned-href fallback | Resolved (c645208), **act two** (3b7b10e) | **New finding.** A signing failure fell back to the unsigned href at five call sites. Planetary Computer blob storage is private, so that href can only be rejected with a 409 — the audit tied 37 Titiler 500s across 10 snapshots to it, each preceded seconds earlier by a band-signing failure on the same snapshot id. The first audit read this fallback as graceful degradation; it is not degradation, it is a guaranteed user-visible failure manufactured out of a retryable one. Both tile paths now 502 with a curated message; the listing omits what it cannot sign; warmup and the preview renderer skip rather than render. `imagery.py` (API) and `preview_renderer.py:100-106`. No unsigned-fallback site remained in `stac.py` — every signing call there already goes through `sign_pc_url`, which carries the a536d07 limiter and retries. **Act two, 2026-08-12 — the fix's first contact with production.** Converting the fallback into a 502 was right, and it exposed that the thing being retried was tuned for the wrong caller. a536d07's retry honours `Retry-After`, which PC sets around 60s; the tile path's end-to-end budget is ~30s (frontend `AbortSignal` plus the proxy timeout). A Landsat scrub burst at 02:5x–03:00Z produced 23 backoffs — one captured at `attempt: 2, wait_s: 54.0` — and a 502 storm while Titiler itself stayed healthy: every rate-limited tile was being killed by its own client mid-sleep, so the curated message never reached anyone. 3b7b10e splits the policy by context (`SIGN_WAIT_BATCH` 60s for the worker, `SIGN_WAIT_REQUEST` 2s for the four request-path sites) and, structurally, moves blob signing onto PC's container-scoped tokens so the 429s largely stop happening. Two acts, not resolved-then-regressed: the first fix made the failure honest, and an honest failure is what made the latency mismatch legible. |
 | O2 Stranded rows | Resolved (2afdfb5) | **New finding.** Eleven task rows sat non-terminal forever: three `processing` under failed "Task timed out" requests, eight `queued` under complete April requests. An OOM kill is a SIGKILL, so the soft-limit handler never runs. A `worker_ready` janitor now fails both shapes past the 45-minute threshold. Note the shape: the parent *requests* were already terminal, so a sweep of in-flight requests alone would have caught none of them. |
 | O3 Worker OOM | Resolved (01cfdd6) | **New finding.** A live OOM kill inside a 20-minute log sample, on a 512 MB machine. `fly.worker.toml` now asks for 1 GB. Whether `WorkerLostError` should fail the request promptly is untouched; O2's janitor bounds the damage either way. |
 | O4 Deployed-SHA visibility | Resolved (ba62922) | **New finding, and the process gap behind HIGH-1.** Nothing recorded what was deployed, so the audit had to infer the running release from image build dates — which is how it discovered that a536d07 was committed but never pushed. `GET /api/v1/health` now reports the image's git SHA and build time. |
 | O5 Damaged parcels | Open — needs a run | `7397388e` (Denver, 20 Landsat years) and `e0cb3db9` (Ocean NJ, 8) are still damaged. `scripts/requeue_parcels.py` (d1fadd4) takes ids and re-runs them; it has deliberately **not** been run. Heal only after the throttle is deployed, or the re-run rolls the same dice. The ops audit's Appendix A lists three more candidates (a census-gapped parcel, a vintage-break residue, a zero-topo parcel). |
+| O7 Second worker machine "stopped since Aug 4" | **Struck — no action** | The ops audit's Appendix flagged `e7845415f57728` as possibly-unintentional half capacity. It is Fly's standby machine: the hardware-failover twin Fly provisions alongside the primary and keeps stopped until it is needed. Nothing was left behind on Aug 4 and there is nothing to start. The MEDIUM-1 sizing conclusion is unaffected — that was about the live machine's 512 MB, fixed in 01cfdd6. |
 | O6 Sentinel-2 unassessed | Open | The audit declined to apply a flat "healthy ≈ 30 quarters" threshold: observed counts run 13–35 in a smooth continuum with no bimodality, and cloud-cover filtering makes the expected count location-dependent. Sentinel-2 damage is unassessed, not cleared. Doing it properly needs a per-parcel expectation — available scenes versus selected. |
+
+## Geometry defect family (2026-08-12)
+
+Measured in `../2026-08-geometry-audit/`, a read-only pass over every
+PC-backed `imagery_snapshots` row: refetch the STAC item, parse
+`item["geometry"]` with shapely, and compare a real point-in-footprint test
+against the bbox test the pipeline actually ran.
+
+**The finding.** 33 of 2,880 assessable rows — 1.2%, 29 Landsat and 4
+Sentinel-2 — serve a granule whose footprint excludes the parcel. The
+aggregate understates it: on the six featured pages, which are the public
+demo surface, **four are affected and 15 timeline cards are wrong**, RiNo's
+1987 and 1988 cards among them — the two oldest, the ones carrying the "how
+it has changed" narrative.
+
+**The root cause is a single absence.** Nothing in the pipeline read
+`item["geometry"]` at all. A STAC bbox is the envelope of the geometry, so
+for a rotated WRS-2 parallelogram it overstates coverage badly. The
+agreement matrix makes the asymmetry exact: `bbox=N, geom=Y` is empty across
+all 2,880 rows and structurally must be. **The bbox filter could never
+reject a covering scene — only admit a non-covering one.** That is what
+decides the Ocean NJ question below.
+
+| Fix | Commit |
+|---|---|
+| Point filter tests `item["geometry"]`, falls back to bbox when absent | 2039e64 |
+| Sentinel-2 gains Landsat's validation fallback walk | e7d4c6d |
+| NAIP year suppressed when no selected tile contains the point | 14b59af |
+
+**Remedies rejected on evidence — do not re-propose these without new
+numbers.** Both were plausible and both are refuted in the report's §6:
+
+- **`bbox` → `intersects` in the STAC query.** The premise was that the
+  20-item cap truncates the covering tile before we see it. It does not
+  happen: in **33 of 33** failures the covering item was already in the
+  returned pool, typically 13–19 of 20. The one truncation-shaped case (NAIP
+  2023 over Midtown) turned out to be genuine data absence. Directionally
+  correct as cleanup; it is not remediation, and bundling it with the
+  geometry fix would change result sets and muddy attribution of the
+  deletion wave.
+- **Coverage-aware ranking.** Its premise is scarcity — that we must choose
+  between covering candidates on coverage quality. Scarcity never existed:
+  13–19 covering candidates per pool, and the cloud-cover cost of choosing
+  correctly is under 1 percentage point, occasionally negative (Rodanthe
+  2015 improves 25.0% → 1.0%). Revisit only if post-fix spot checks show
+  covering-but-marginal picks.
+
+**NAIP is a different defect in the same family, and a recurrence pattern.**
+NAIP had zero bbox-vs-geometry failures — its near-axis-aligned quads make
+the two nearly identical. What it had instead: the viewport path optimises
+coverage *area* and never tests point containment, so a year with no
+covering tile is served as the nearest neighbours. Both 350 5th Ave parcels
+served a 2023 mosaic that is entirely New Jersey imagery for a Midtown
+Manhattan address. That path is the *first* audit's praised "sophisticated
+path" — the second time a praised path has been found harbouring its own
+version of the failure it was praised for handling. The unsigned-href
+fallback (O1) was the first.
+
+**Predicted heal impact, written before the heal runs.** 33 fix-attributable
+deletions on the local dataset, each a one-for-one replacement in the same
+year/quarter group — the wrong granule deleted, the covering one inserted.
+**No timeline should lose a card to the geometry fix.** Separately, the NAIP
+gate removes exactly one card: 2023 from each of the two 350 5th Ave
+parcels, where PC has no covering tile. Hudson Yards keeps its 2023 card —
+`nj_m_4007416_se` contains the point, which is the mosaic design working;
+the brief that commissioned this batch expected it to lose one, and that is
+wrong. Total churn will exceed 33 for reasons unrelated to the fix (PC's
+catalogue has moved since these rows were written), so 33 is the
+fix-attributable floor. The worker logs after the heal confirm or falsify
+this paragraph.
+
+**Ocean NJ (`e0cb3db9`) — the geometry defect did not cause its gaps.**
+Structural, not observational: the bbox filter cannot delete a year, so the
+missing years are the signing incident, as O5 has it. Its *surviving* years
+are unassessed and it has exactly the coastal, boundary-adjacent profile
+that failed at Rodanthe and Hudson Yards. Heal it after the fix is
+deployed — `scripts/requeue_parcels.py`'s `--require-sha` gate exists to
+make that ordering mechanical rather than remembered.
 
 ## Accepted, with reasons
 
