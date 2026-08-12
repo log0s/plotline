@@ -296,3 +296,37 @@ Deploy and heal execution belong to Ryan.
 Scoring note: the drift observed at 04:17Z (4 failing, then 5 half an hour
 later, a different set) means single-snapshot spot checks are not evidence
 either way. Sweep the full 43 × 6, and sweep twice, ≥45 min apart.
+
+---
+
+## Addendum, 2026-08-12 — provenance correction to §2.1
+
+§2.1 item 1 attributes the first pass's "300 s TTL" memory to a
+`CacheSettings` class in **rio-tiler 3.x/4.x**. That attribution is wrong;
+the rest of item 1 (rio-tiler 8.0.5 caches STAC items in a `maxsize=512`
+`LRUCache` with no expiry, and `grep -rl CacheSettings rio_tiler/` returns 0
+files) stands unchanged.
+
+`CacheSettings` has never lived in rio-tiler. Checked the sdists/wheels for
+rio-tiler 3.1.6, 4.1.13, 6.7.0, 8.0.5 and 9.4.2: `CacheSettings` appears in
+**none** of them. The class is in **`titiler.pgstac.settings`** — read from
+`titiler-pgstac` 3.1.0:
+
+```python
+class CacheSettings(BaseSettings):
+    ttl: int = 300       # TTL of the cache in seconds
+    maxsize: int = 512   # Maximum size of the LRU cache
+    disable: bool = False
+    model_config = SettingsConfigDict(env_prefix="TITILER_PGSTAC_CACHE_", ...)
+```
+
+So the 300 s default is real, and so are the `TITILER_PGSTAC_CACHE_TTL` /
+`_MAXSIZE` / `_DISABLE` knobs — but they belong to a package **this
+deployment does not run**. We run `ghcr.io/developmentseed/titiler:1.2.1`
+(titiler.core), not titiler-pgstac. This is the likely source of the
+first-pass memory, and it is the second config knob in this investigation
+that would have been a line nothing reads (see item 2 on
+`RIO_TILER_CACHE_TTL`).
+
+The operational conclusion is unaffected: no environment variable available
+to this deployment bounds the STAC item cache.

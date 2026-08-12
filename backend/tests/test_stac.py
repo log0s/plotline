@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1340,6 +1341,36 @@ async def test_non_blob_urls_still_use_per_url_signing() -> None:
 
     assert result == signed
     assert mock_client.get.await_args_list[0].args[0] == PC_SIGN_URL
+
+
+@pytest.mark.asyncio
+async def test_container_token_mint_logs_once_per_pc_call(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A mint logs a greppable line; a warm cache read does not."""
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(
+        return_value=_token_response(200, "se=2026-08-12T05:00:40Z&sr=c&sig=abc")
+    )
+
+    redis = _cache_miss_redis()
+    with (
+        caplog.at_level(logging.INFO, logger="app.services.stac"),
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=redis),
+    ):
+        await sign_pc_url("https://landsateuwest.blob.core.windows.net/landsat-c2/level-2/red.tif")
+        mints = [r for r in caplog.records if "SAS container token minted" in r.getMessage()]
+        assert len(mints) == 1
+        assert "container=landsateuwest/landsat-c2" in mints[0].getMessage()
+        assert "se=2026-08-12T05:00:40Z" in mints[0].getMessage()
+
+        caplog.clear()
+        redis.get.return_value = b"se=2026-08-12T05:00:40Z&sr=c&sig=abc"
+        await sign_pc_url(
+            "https://landsateuwest.blob.core.windows.net/landsat-c2/level-2/green.tif"
+        )
+        assert "SAS container token minted" not in caplog.text
 
 
 def test_blob_container_parses_account_and_container() -> None:

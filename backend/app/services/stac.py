@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime
@@ -356,8 +357,18 @@ async def _container_token(account: str, container: str, *, wait_budget: float) 
     except (RedisError, OSError) as exc:
         logger.debug("SAS token cache read failed: %s", exc)
 
+    # Logged per mint, not per cache write: concurrent misses each reach this
+    # line, and counting the duplicates at a 45-minute token boundary is how
+    # single-flighting this function gets scored (G7).
+    started = time.monotonic()
     resp = await _sas_get(f"{PC_TOKEN_URL}/{account}/{container}", None, wait_budget=wait_budget)
     token = str(resp.json()["token"])
+    logger.info(
+        "SAS container token minted container=%s se=%s ms=%d",
+        f"{account}/{container}",
+        _token_expiry(token),
+        round((time.monotonic() - started) * 1000),
+    )
 
     try:
         await redis.setex(cache_key, _SAS_CACHE_TTL, token.encode())
