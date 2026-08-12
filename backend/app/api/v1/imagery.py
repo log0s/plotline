@@ -486,6 +486,44 @@ async def _proxy_cog_tile(
     return await _fetch_titiler(titiler_url, params, snap.id)
 
 
+# Fallback granularity when the token's own expiry is unavailable. Shorter
+# than the ~25 min of margin a cached token is guaranteed to have left
+# (~45 min lifetime less the 20 min _SAS_CACHE_TTL holds it).
+_STAC_URL_BUCKET_S = 600
+
+
+async def _landsat_stac_url(snapshot_id: uuid.UUID, settings: Settings) -> str:
+    """Build the STAC callback URL Titiler fetches for a Landsat snapshot.
+
+    ``v`` is the expiry of the container token ``get_signed_stac_item`` will
+    embed in the band hrefs, so the URL — which is what Titiler keys its item
+    cache on — changes exactly when the token it pins does. A constant URL let
+    Titiler serve an item whose token had expired, which GDAL reports as an
+    unsupported format and Titiler as a 500.
+
+    Never raises: this computes a cache key, and a signer or Redis that is
+    down must not fail a tile the callback could still serve. The callback
+    signs freshly and 502s honestly if it cannot.
+    """
+    version: str | None = None
+    try:
+        version = await stac_service.container_token_expiry(
+            *stac_service.LANDSAT_BLOB_CONTAINER,
+            wait_budget=stac_service.SIGN_WAIT_REQUEST,
+        )
+    except (httpx.RequestError, httpx.HTTPStatusError, RedisError, OSError) as exc:
+        logger.warning(
+            "Landsat SAS token expiry unavailable; falling back to a time bucket",
+            extra={"snapshot_id": str(snapshot_id), "error": str(exc)},
+        )
+
+    if version is None:
+        version = f"t{int(time.time()) // _STAC_URL_BUCKET_S}"
+
+    base = f"{settings.api_internal_url}/api/v1/imagery/{snapshot_id}/stac"
+    return f"{base}?{urlencode({'v': version})}"
+
+
 async def _proxy_landsat_tile(
     snap: ImagerySnapshotRow,
     z: int,
@@ -500,7 +538,7 @@ async def _proxy_landsat_tile(
     freshly signed asset URLs.  Titiler reads the red/green/blue COGs and
     composites them into a single RGB tile.
     """
-    stac_item_url = f"{settings.api_internal_url}/api/v1/imagery/{snap.id}/stac"
+    stac_item_url = await _landsat_stac_url(snap.id, settings)
     # Landsat C2 L2 surface reflectance: uint16, nodata=0,
     # scale=2.75e-05, offset=-0.2.  Typical land DNs are 7000–20000.
     # rescale 7000,14000 gives good contrast for most land surfaces.
@@ -592,7 +630,7 @@ async def warmup_cog(
 
     try:
         if snap.source == "landsat":
-            stac_url = f"{settings.api_internal_url}/api/v1/imagery/{snap.id}/stac"
+            stac_url = await _landsat_stac_url(snap.id, settings)
             await _get_titiler_client().get(
                 f"{settings.titiler_url}/stac/info",
                 params={"url": stac_url, "assets": ["red", "green", "blue"]},
@@ -621,6 +659,32 @@ async def warmup_cog(
         pass
 
     return Response(status_code=204)
+
+
+# Stop caching this far before the embedded token dies, and never advertise
+# more than this, so a cached copy always has usable life left.
+_STAC_CACHE_MARGIN_S = 300
+_STAC_CACHE_MAX_AGE_S = 900
+
+
+def _stac_cache_control(assets: dict[str, Any], bands: list[str]) -> str:
+    """Freshness for a signed STAC item, bounded by its own token's expiry.
+
+    The response carried no freshness headers at all, which lets any
+    intermediate cache apply heuristic freshness to a document that goes stale
+    the moment its SAS token expires.
+    """
+    if not bands:
+        return "no-store"
+
+    expiry = stac_service.token_expiry_seconds(assets[bands[0]]["href"])
+    if expiry is None:
+        return "no-store"
+
+    max_age = min(int(expiry - time.time()) - _STAC_CACHE_MARGIN_S, _STAC_CACHE_MAX_AGE_S)
+    if max_age <= 0:
+        return "no-store"
+    return f"private, max-age={max_age}"
 
 
 @router.get(
@@ -734,4 +798,5 @@ async def get_signed_stac_item(
     return Response(
         content=json.dumps(stac_item),
         media_type="application/geo+json",
+        headers={"Cache-Control": _stac_cache_control(assets, bands)},
     )

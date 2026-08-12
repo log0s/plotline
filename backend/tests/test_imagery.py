@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+import time
 import uuid
-from datetime import date
-from unittest.mock import AsyncMock, patch
+from datetime import UTC, date, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
+import pytest
 from fastapi.testclient import TestClient
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 # ── Imagery service unit tests ─────────────────────────────────────────────────
@@ -810,6 +815,213 @@ def test_signed_stac_item_502s_when_band_signing_fails(client: TestClient, db: S
 
     assert resp.status_code == 502
     assert "blob.core.windows.net" not in resp.text
+
+
+# ── The Landsat STAC callback URL rotates with its SAS token ─────────────────
+
+_LANDSAT_STAC_URL = (
+    "https://planetarycomputer.microsoft.com/api/stac/v1/collections/landsat-c2-l2/items/LT05_2020"
+)
+
+
+def _landsat_snapshot(db: Session, street: str) -> uuid.UUID:
+    from app.api.v1.imagery import _snapshot_cache
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id, street)
+    snapshot_id = _insert_snapshot(db, parcel_id, "landsat", _LANDSAT_STAC_URL)
+    _snapshot_cache.clear()
+    return snapshot_id
+
+
+def _titiler_url_param(mock_titiler: MagicMock) -> str:
+    params = mock_titiler.return_value.get.await_args.kwargs["params"]
+    return str(params["url"])
+
+
+def _ok_titiler() -> MagicMock:
+    client = MagicMock()
+    client.get = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            content=b"tile",
+            headers={"content-type": "image/png"},
+            request=httpx.Request("GET", "http://titiler/x"),
+        )
+    )
+    return client
+
+
+def test_landsat_tile_url_carries_token_expiry(client: TestClient, db: Session) -> None:
+    """Titiler keys its STAC item cache on this URL, so it must name the
+    token expiry the callback will embed."""
+    snapshot_id = _landsat_snapshot(db, "Expiry Way")
+
+    with (
+        patch("app.api.v1.imagery._get_titiler_client") as mock_titiler,
+        patch(
+            "app.api.v1.imagery.stac_service.container_token_expiry",
+            new_callable=AsyncMock,
+            return_value="2026-08-12T05:00:40Z",
+        ),
+    ):
+        mock_titiler.return_value = _ok_titiler()
+        resp = client.get(f"/api/v1/imagery/{snapshot_id}/tiles/14/4757/6457")
+        url = _titiler_url_param(mock_titiler)
+
+    assert resp.status_code == 200
+    assert url.endswith(f"/api/v1/imagery/{snapshot_id}/stac?v=2026-08-12T05%3A00%3A40Z")
+
+
+def test_landsat_tile_url_changes_when_token_rotates(client: TestClient, db: Session) -> None:
+    """The regression test: a constant URL let Titiler serve a cached item
+    whose SAS token had expired, which surfaced as a 502."""
+    snapshot_id = _landsat_snapshot(db, "Rotation Rd")
+    urls = []
+
+    for expiry in ("2026-08-12T05:00:40Z", "2026-08-12T05:45:40Z"):
+        with (
+            patch("app.api.v1.imagery._get_titiler_client") as mock_titiler,
+            patch(
+                "app.api.v1.imagery.stac_service.container_token_expiry",
+                new_callable=AsyncMock,
+                return_value=expiry,
+            ),
+        ):
+            mock_titiler.return_value = _ok_titiler()
+            client.get(f"/api/v1/imagery/{snapshot_id}/tiles/14/4757/6457")
+            urls.append(_titiler_url_param(mock_titiler))
+
+    assert urls[0] != urls[1]
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        httpx.RequestError("signer unreachable"),
+        RedisError("connection lost"),
+        OSError("socket closed"),
+    ],
+    ids=["signer-down", "redis-down", "socket-error"],
+)
+def test_landsat_tile_falls_back_to_time_bucket_when_expiry_unavailable(
+    client: TestClient, db: Session, caplog: pytest.LogCaptureFixture, failure: Exception
+) -> None:
+    """Computing a cache key must never fail a tile the callback could serve.
+
+    Every dependency of the versioning step — the signer, Redis, the socket
+    under it — degrades to a wall-clock bucket and a warning, not a 502.
+    """
+    snapshot_id = _landsat_snapshot(db, "Fallback Ave")
+
+    with (
+        caplog.at_level(logging.WARNING, logger="app.api.v1.imagery"),
+        patch("app.api.v1.imagery._get_titiler_client") as mock_titiler,
+        patch(
+            "app.api.v1.imagery.stac_service.container_token_expiry",
+            new_callable=AsyncMock,
+            side_effect=failure,
+        ),
+    ):
+        mock_titiler.return_value = _ok_titiler()
+        resp = client.get(f"/api/v1/imagery/{snapshot_id}/tiles/14/4757/6457")
+        url = _titiler_url_param(mock_titiler)
+
+    assert resp.status_code == 200
+    bucket = url.split("?v=")[1]
+    assert bucket == f"t{int(time.time()) // 600}"
+    assert "Landsat SAS token expiry unavailable" in caplog.text
+
+
+def test_landsat_tile_versions_url_when_token_has_no_expiry(
+    client: TestClient, db: Session
+) -> None:
+    """A token with no ``se`` yields None, not an exception — still version it."""
+    snapshot_id = _landsat_snapshot(db, "No Expiry Ln")
+
+    with (
+        patch("app.api.v1.imagery._get_titiler_client") as mock_titiler,
+        patch(
+            "app.api.v1.imagery.stac_service.container_token_expiry",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+    ):
+        mock_titiler.return_value = _ok_titiler()
+        resp = client.get(f"/api/v1/imagery/{snapshot_id}/tiles/14/4757/6457")
+        url = _titiler_url_param(mock_titiler)
+
+    assert resp.status_code == 200
+    assert url.split("?v=")[1] == f"t{int(time.time()) // 600}"
+
+
+def test_warmup_uses_the_same_stac_url_as_the_tile_proxy(client: TestClient, db: Session) -> None:
+    """Warming a different URL than tiles read primes a key nothing uses —
+    and leaves the first tile paying the cold fetch anyway."""
+    snapshot_id = _landsat_snapshot(db, "Warmup Walk")
+    urls = []
+
+    for path in ("tiles/14/4757/6457", "warmup"):
+        with (
+            patch("app.api.v1.imagery._get_titiler_client") as mock_titiler,
+            patch(
+                "app.api.v1.imagery.stac_service.container_token_expiry",
+                new_callable=AsyncMock,
+                return_value="2026-08-12T05:00:40Z",
+            ),
+        ):
+            mock_titiler.return_value = _ok_titiler()
+            method = client.post if path == "warmup" else client.get
+            method(f"/api/v1/imagery/{snapshot_id}/{path}")
+            urls.append(_titiler_url_param(mock_titiler))
+
+    assert urls[0] == urls[1]
+
+
+def test_signed_stac_item_cache_control_tracks_token_expiry(
+    client: TestClient, db: Session
+) -> None:
+    """The item goes stale the moment its token does, so it must say so."""
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id, "Freshness Ct")
+    snapshot_id = _insert_snapshot(db, parcel_id, "landsat", _LANDSAT_STAC_URL)
+
+    item = {
+        "id": "LT05_2020",
+        "assets": {
+            band: {"href": f"https://landsateuwest.blob.core.windows.net/landsat-c2/{band}.tif"}
+            for band in ("red", "green", "blue")
+        },
+    }
+    fetch_client = AsyncMock()
+    fetch_client.get.return_value = httpx.Response(
+        200, json=item, request=httpx.Request("GET", _LANDSAT_STAC_URL)
+    )
+
+    def _sign_expiring_at(expiry: datetime) -> object:
+        async def _sign(url: str, **_kwargs: object) -> str:
+            return f"{url}?se={expiry.strftime('%Y-%m-%dT%H:%M:%SZ')}&sig=ok"
+
+        return _sign
+
+    live = datetime.now(UTC) + timedelta(minutes=30)
+    with (
+        patch("app.api.v1.imagery._get_stac_fetch_client", return_value=fetch_client),
+        patch("app.api.v1.imagery.stac_service.sign_pc_url", side_effect=_sign_expiring_at(live)),
+    ):
+        fresh = client.get(f"/api/v1/imagery/{snapshot_id}/stac")
+
+    max_age = int(fresh.headers["cache-control"].split("max-age=")[1])
+    assert 0 < max_age <= 30 * 60 - 300
+
+    dead = datetime.now(UTC) - timedelta(minutes=1)
+    with (
+        patch("app.api.v1.imagery._get_stac_fetch_client", return_value=fetch_client),
+        patch("app.api.v1.imagery.stac_service.sign_pc_url", side_effect=_sign_expiring_at(dead)),
+    ):
+        stale = client.get(f"/api/v1/imagery/{snapshot_id}/stac")
+
+    assert stale.headers["cache-control"] == "no-store"
 
 
 def test_list_imagery_omits_snapshots_it_cannot_sign(client: TestClient, db: Session) -> None:

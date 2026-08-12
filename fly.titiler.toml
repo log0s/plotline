@@ -21,6 +21,15 @@ primary_region = 'lax'
   GDAL_HTTP_MULTIPLEX = 'YES'
   GDAL_HTTP_MAX_RETRY = '3'
   GDAL_HTTP_RETRY_DELAY = '1'
+  # No knob here bounds the STAC item cache. rio-tiler 8.0.5 caches fetched
+  # items in a module-level LRUCache(maxsize=512) with no TTL
+  # (rio_tiler/io/stac.py:100-102), keyed on the item URL; it reads no
+  # environment variable, and RIO_TILER_CACHE_* does not exist in rio-tiler or
+  # titiler. An entry lives until 512-slot eviction or process restart, which
+  # is how a cached SAS token outlived its expiry by hours and 502'd every
+  # Landsat tile for that snapshot. The fix is on the API side: the Landsat
+  # /stac callback URL carries the token's expiry, so the cache key rotates
+  # with the token. See docs/audits/2026-08-titiler-cache/FINDINGS.md.
 
 [http_service]
   internal_port = 80

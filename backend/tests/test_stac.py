@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -1350,6 +1350,51 @@ def test_blob_container_parses_account_and_container() -> None:
     ) == ("naipeuwest", "naip")
     assert _blob_container("https://prd-tnm.s3.amazonaws.com/topo.tif") is None
     assert _blob_container("https://planetarycomputer.microsoft.com/api/data/v1/x") is None
+
+
+# ── SAS token expiry ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_container_token_expiry_reads_se_from_cached_token() -> None:
+    """The expiry comes off the cached token — no signing call."""
+    from app.services.stac import LANDSAT_BLOB_CONTAINER, container_token_expiry
+
+    redis = AsyncMock()
+    redis.get.return_value = b"st=2026-08-11T04:15:40Z&se=2026-08-12T05:00:40Z&sr=c&sig=abc"
+
+    mock_client = AsyncMock()
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=redis),
+    ):
+        expiry = await container_token_expiry(*LANDSAT_BLOB_CONTAINER, wait_budget=2.0)
+
+    assert expiry == "2026-08-12T05:00:40Z"
+    mock_client.get.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_container_token_expiry_none_when_token_lacks_se() -> None:
+    """A token with no expiry field yields None rather than raising."""
+    from app.services.stac import LANDSAT_BLOB_CONTAINER, container_token_expiry
+
+    redis = AsyncMock()
+    redis.get.return_value = b"st=2026-08-11T04:15:40Z&sr=c&sig=abc"
+
+    with patch("app.db.get_async_redis", return_value=redis):
+        expiry = await container_token_expiry(*LANDSAT_BLOB_CONTAINER, wait_budget=2.0)
+
+    assert expiry is None
+
+
+def test_token_expiry_seconds_parses_signed_url() -> None:
+    from app.services.stac import token_expiry_seconds
+
+    epoch = token_expiry_seconds("https://x.blob.core.windows.net/c/b.tif?se=2026-08-12T05:00:40Z")
+    assert epoch == datetime(2026, 8, 12, 5, 0, 40, tzinfo=UTC).timestamp()
+    assert token_expiry_seconds("https://x.blob.core.windows.net/c/b.tif") is None
+    assert token_expiry_seconds("https://x.blob.core.windows.net/c/b.tif?se=not-a-date") is None
 
 
 # ── NAIP point-coverage gate ─────────────────────────────────────────────────

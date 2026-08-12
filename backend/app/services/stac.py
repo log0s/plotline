@@ -10,9 +10,9 @@ import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
-from datetime import date
+from datetime import date, datetime
 from typing import Any, cast
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 from shapely.geometry import Point
@@ -190,6 +190,11 @@ SIGN_WAIT_REQUEST = 2.0
 
 _BLOB_HOST_SUFFIX = ".blob.core.windows.net"
 
+# The one container every landsat-c2-l2 band asset lives in. The Landsat tile
+# path holds only the STAC item self-link, never a blob href, so the container
+# cannot be derived there without the item fetch that path is trying to avoid.
+LANDSAT_BLOB_CONTAINER = ("landsateuwest", "landsat-c2")
+
 
 def _get_sign_client() -> httpx.AsyncClient:
     """Pooled client (per event loop) so parallel signs share TLS connections."""
@@ -360,6 +365,34 @@ async def _container_token(account: str, container: str, *, wait_budget: float) 
         logger.debug("SAS token cache write failed: %s", exc)
 
     return token
+
+
+def _token_expiry(token: str) -> str | None:
+    """Return a SAS token query string's ``se`` (expiry) field, if it has one."""
+    values = parse_qs(token).get("se")
+    return values[0] if values else None
+
+
+def token_expiry_seconds(signed_url: str) -> float | None:
+    """Return a signed URL's SAS expiry as a POSIX timestamp, or None."""
+    expiry = _token_expiry(urlsplit(signed_url).query)
+    if expiry is None:
+        return None
+    try:
+        return datetime.fromisoformat(expiry.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+async def container_token_expiry(account: str, container: str, *, wait_budget: float) -> str | None:
+    """Return the expiry of the container token this process would sign with.
+
+    Callers use it to version a URL against the token it will carry, so a
+    cache keyed on that URL cannot outlive the token. It reads the same Redis
+    key ``_container_token`` populates, so it costs one GET on the warm path.
+    """
+    token = await _container_token(account, container, wait_budget=wait_budget)
+    return _token_expiry(token)
 
 
 async def _request_signature(url: str, *, wait_budget: float) -> str:
