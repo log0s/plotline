@@ -418,17 +418,47 @@ def filter_items_containing_point(
     lat: float,
     lng: float,
 ) -> list[dict[str, object]]:
-    """Keep only STAC items whose bbox actually contains the given point.
+    """Keep only STAC items whose *footprint* contains the given point.
 
-    The STAC search uses a buffered bbox, so it can return items that
-    intersect the search area but don't cover the parcel itself (e.g.
-    adjacent NAIP tiles).  This filters them out.
+    Called by the Landsat and Sentinel-2 paths (timeline.py), whose searches
+    use a buffered bbox and so return scenes that merely intersect the search
+    area. Containment is tested against ``item["geometry"]``, not the bbox:
+    a STAC bbox is the envelope of the geometry, so for a rotated WRS-2
+    parallelogram or a part-filled MGRS quarter it overstates coverage and
+    admits granules whose real footprint excludes the address. The 2026-08
+    geometry audit measured 33 such rows — 29 Landsat, 4 S2 — serving a
+    scene that does not contain the parcel.
+
+    Items with no usable geometry fall back to the bbox test. An item is
+    never rejected merely for lacking geometry: the audit found 17 rows
+    whose items PC would not serve at all, and a missing field is not
+    evidence of missing coverage.
     """
+    from shapely.geometry import shape
+
+    point = Point(lng, lat)
     result = []
     for item in items:
+        geometry = item.get("geometry")
+        if isinstance(geometry, dict) and geometry.get("type"):
+            try:
+                if shape(geometry).contains(point):
+                    result.append(item)
+                continue
+            except (AttributeError, KeyError, TypeError, ValueError) as exc:
+                logger.debug(
+                    "Unparseable STAC geometry; falling back to bbox",
+                    extra={"item_id": item.get("id"), "error": str(exc)},
+                )
+        else:
+            logger.debug(
+                "STAC item has no geometry; falling back to bbox",
+                extra={"item_id": item.get("id")},
+            )
+
         bbox = item.get("bbox")
         if not isinstance(bbox, list) or len(bbox) < 4:
-            result.append(item)  # no bbox — keep it, can't verify
+            result.append(item)  # no bbox either — keep it, can't verify
             continue
         w, s, e, n = float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])
         if w <= lng <= e and s <= lat <= n:

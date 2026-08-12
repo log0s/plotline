@@ -416,6 +416,85 @@ async def test_sign_pc_url_redis_write_failure_still_returns() -> None:
 # ── Spatial filtering ────────────────────────────────────────────────────────
 
 
+# The 2026-08 geometry audit's first failing pair, captured verbatim from
+# Planetary Computer: two Landsat 5 scenes of the same 1987-10-21 overpass
+# over RiNo Art District, Denver (39.7690, -104.9800). WRS-2 footprints are
+# rotated parallelograms, so path 033 / row 033's envelope reaches well north
+# of the scene itself — its bbox contains RiNo, its footprint does not. The
+# pipeline served this scene for RiNo's oldest timeline card. Row 032, the
+# same overpass one row north at the same 0.0% cloud, does contain it.
+_RINO = {"lat": 39.7690, "lng": -104.9800}
+
+_LANDSAT_1987_ROW033 = {
+    "id": "LT05_L2SP_033033_19871021_02_T1",
+    "bbox": [-105.9983, 37.9052, -103.2388, 39.8386],
+    "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [-105.4388023, 39.8278263],
+                [-105.9103781, 38.2385054],
+                [-103.8334187, 37.9312614],
+                [-103.3201571, 39.517015],
+                [-105.4388023, 39.8278263],
+            ]
+        ],
+    },
+    "properties": {"datetime": "1987-10-21T17:05:15.359075Z", "eo:cloud_cover": 0.0},
+}
+
+_LANDSAT_1987_ROW032 = {
+    "id": "LT05_L2SP_033032_19871021_02_T1",
+    "bbox": [-105.565, 39.3382, -102.7497, 41.2793],
+    "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [-105.0023878, 41.2675649],
+                [-105.487187, 39.6795067],
+                [-103.3693913, 39.3663488],
+                [-102.836767, 40.9481093],
+                [-105.0023878, 41.2675649],
+            ]
+        ],
+    },
+    "properties": {"datetime": "1987-10-21T17:04:51.302075Z", "eo:cloud_cover": 0.0},
+}
+
+
+def test_filter_rejects_item_whose_bbox_contains_but_footprint_excludes() -> None:
+    """The defect itself: a covering envelope over a non-covering footprint."""
+    from app.services.stac import filter_items_containing_point
+
+    bbox = _LANDSAT_1987_ROW033["bbox"]
+    assert bbox[0] <= _RINO["lng"] <= bbox[2] and bbox[1] <= _RINO["lat"] <= bbox[3], (
+        "fixture must be one the old bbox test admitted, or it proves nothing"
+    )
+
+    kept = filter_items_containing_point([_LANDSAT_1987_ROW033], **_RINO)
+    assert kept == []
+
+
+def test_filter_keeps_item_whose_footprint_contains_the_point() -> None:
+    """The same overpass one WRS-2 row north does cover RiNo, and is kept."""
+    from app.services.stac import filter_items_containing_point
+
+    kept = filter_items_containing_point([_LANDSAT_1987_ROW033, _LANDSAT_1987_ROW032], **_RINO)
+    assert [i["id"] for i in kept] == ["LT05_L2SP_033032_19871021_02_T1"]
+
+
+def test_filter_falls_back_to_bbox_when_geometry_is_absent() -> None:
+    """No geometry is not evidence of no coverage — never reject on that alone."""
+    from app.services.stac import filter_items_containing_point
+
+    no_geometry = {k: v for k, v in _LANDSAT_1987_ROW033.items() if k != "geometry"}
+    kept = filter_items_containing_point([no_geometry], **_RINO)
+    assert [i["id"] for i in kept] == ["LT05_L2SP_033033_19871021_02_T1"]
+
+    null_geometry = {**_LANDSAT_1987_ROW033, "geometry": None}
+    assert len(filter_items_containing_point([null_geometry], **_RINO)) == 1
+
+
 def test_filter_items_containing_point_keeps_matching() -> None:
     from app.services.stac import filter_items_containing_point
 
