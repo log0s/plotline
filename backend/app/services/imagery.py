@@ -400,6 +400,141 @@ def maybe_refetch_for_backfill(
     return new_req
 
 
+# ── Stranded-work janitor ─────────────────────────────────────────────────────
+
+_TERMINAL_REQUEST_STATUSES = ("complete", "failed")
+_STRANDED_ERROR = "Stranded: worker died mid-task (janitor)"
+
+
+def _age_minutes(since: datetime) -> float:
+    return round((datetime.now(tz=UTC) - _as_utc(since)).total_seconds() / 60, 1)
+
+
+def _fail_open_tasks(db: Session, request: TimelineRequest) -> int:
+    """Mark a request's non-terminal task rows failed. Caller commits."""
+    tasks = (
+        db.execute(
+            select(TimelineRequestTask)
+            .where(TimelineRequestTask.timeline_request_id == request.id)
+            .where(TimelineRequestTask.status.in_(_INFLIGHT_STATUSES))
+        )
+        .scalars()
+        .all()
+    )
+    for task in tasks:
+        task.status = "failed"
+        task.completed_at = datetime.now(tz=UTC)
+        task.error_message = _STRANDED_ERROR
+    return len(tasks)
+
+
+def sweep_stranded_work(db: Session) -> tuple[int, int]:
+    """Fail requests and task rows a dead worker left in flight.
+
+    An OOM kill is a SIGKILL: the task's SoftTimeLimitExceeded handler never
+    runs, so nothing marks the rows terminal and they sit in queued/processing
+    forever. Two shapes exist, and the second is the one the 2026-08 ops audit
+    found in production:
+
+      1. The request itself is still in flight. Anything untouched for longer
+         than the task's hard time limit plus margin (``_STALE_INFLIGHT``, 45
+         minutes against a 35-minute limit) was lost.
+      2. The request is already terminal — the *next* caller's stale-takeover
+         failed it, or the soft-limit handler failed the request but not its
+         rows — while a task row underneath it is still queued/processing.
+         Those rows never expire on their own, and while they sit non-terminal
+         backfill cannot see the source as failed.
+
+    Runs on worker startup, so a worker that died mid-task heals its own mess
+    on the next boot. Rows are locked with SKIP LOCKED, so two workers booting
+    at once split the work instead of colliding, and neither waits.
+
+    Returns (requests_failed, orphan_tasks_failed).
+    """
+    inflight = (
+        db.execute(
+            select(TimelineRequest)
+            .where(TimelineRequest.status.in_(_INFLIGHT_STATUSES))
+            .with_for_update(skip_locked=True)
+        )
+        .scalars()
+        .all()
+    )
+
+    requests_failed = 0
+    for request in inflight:
+        # Age is read in Python, not SQL: the test database is SQLite, which
+        # stores these timestamps as text and cannot compare them to a bound
+        # aware datetime the way PostgreSQL does.
+        if not _is_stale_inflight(request):
+            continue
+        tasks_failed = _fail_open_tasks(db, request)
+        request.status = "failed"
+        request.completed_at = datetime.now(tz=UTC)
+        request.error_message = _STRANDED_ERROR
+        requests_failed += 1
+        logger.warning(
+            "Janitor failed a stranded timeline request",
+            extra={
+                "request_id": str(request.id),
+                "parcel_id": str(request.parcel_id),
+                "age_minutes": _age_minutes(request.updated_at),
+                "tasks_failed": tasks_failed,
+            },
+        )
+
+    orphans = (
+        db.execute(
+            select(TimelineRequestTask, TimelineRequest)
+            .join(
+                TimelineRequest,
+                TimelineRequest.id == TimelineRequestTask.timeline_request_id,
+            )
+            .where(TimelineRequestTask.status.in_(_INFLIGHT_STATUSES))
+            .where(TimelineRequest.status.in_(_TERMINAL_REQUEST_STATUSES))
+        )
+        .tuples()
+        .all()
+    )
+
+    orphan_tasks_failed = 0
+    for task, request in orphans:
+        # Same guard as above: a request that finished seconds ago may still
+        # have a row mid-write.
+        if datetime.now(tz=UTC) - _as_utc(request.updated_at) <= _STALE_INFLIGHT:
+            continue
+        task.status = "failed"
+        task.completed_at = datetime.now(tz=UTC)
+        task.error_message = _STRANDED_ERROR
+        orphan_tasks_failed += 1
+        logger.warning(
+            "Janitor failed a stranded task row",
+            extra={
+                "request_id": str(request.id),
+                "parcel_id": str(request.parcel_id),
+                "source": task.source,
+                "request_status": request.status,
+                "age_minutes": _age_minutes(request.updated_at),
+            },
+        )
+
+    # Commit either way — with nothing to write it just releases the row
+    # locks the SELECT above took.
+    db.commit()
+    if requests_failed or orphan_tasks_failed:
+        logger.warning(
+            "Janitor swept stranded work",
+            extra={
+                "requests_failed": requests_failed,
+                "orphan_tasks_failed": orphan_tasks_failed,
+            },
+        )
+    else:
+        logger.info("Janitor found no stranded work")
+
+    return requests_failed, orphan_tasks_failed
+
+
 # ── Imagery snapshot helpers ──────────────────────────────────────────────────
 
 

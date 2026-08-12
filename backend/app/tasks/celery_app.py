@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from celery import Celery
-from celery.signals import setup_logging, worker_process_init
+from celery.signals import setup_logging, worker_process_init, worker_ready
 
 from app.config import get_settings
 from app.logging_config import configure_logging
@@ -84,6 +84,31 @@ def dispose_inherited_engine(**kwargs: object) -> None:
     engine.dispose(close=False)
 
 
+def sweep_stranded_work(**kwargs: object) -> None:
+    """Fail work a dead worker left in flight, once per worker boot.
+
+    An OOM kill bypasses the soft-time-limit handler, so requests and task
+    rows stay queued/processing forever — three such rows were live in
+    production when the 2026-08 ops audit ran. Startup is the right hook:
+    the fleet is small, a worker that was killed comes back, and running it
+    per task would put a table scan in front of every job.
+
+    Never fatal: a broker or database hiccup at boot must not stop the
+    worker from accepting work.
+    """
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from app.db import SessionLocal
+    from app.services import imagery as imagery_service
+
+    try:
+        with SessionLocal() as db:
+            imagery_service.sweep_stranded_work(db)
+    except SQLAlchemyError:
+        logger.warning("Stranded-work sweep failed at worker startup", exc_info=True)
+
+
 # Connected as calls rather than decorators: Celery's connect() is untyped.
 setup_logging.connect(configure_worker_logging)
 worker_process_init.connect(dispose_inherited_engine)
+worker_ready.connect(sweep_stranded_work)

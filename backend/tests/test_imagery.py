@@ -847,3 +847,138 @@ def test_list_imagery_omits_snapshots_it_cannot_sign(client: TestClient, db: Ses
     snapshots = resp.json()["snapshots"]
     assert [s["cog_url"] for s in snapshots] == [f"{good_url}?sig=ok"]
     assert _BLOB_URL not in resp.text
+
+
+# ── Stranded-work janitor ────────────────────────────────────────────────────
+
+
+def _stranded_setup(
+    db: Session,
+    *,
+    request_status: str,
+    task_status: str,
+    age_minutes: float,
+) -> tuple[uuid.UUID, uuid.UUID]:
+    """Insert a request of the given age with one task row under it."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.parcels import TimelineRequest, TimelineRequestTask
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id, "Stranded Rd")
+    stamp = datetime.now(UTC) - timedelta(minutes=age_minutes)
+    req = TimelineRequest(
+        id=uuid.uuid4(),
+        parcel_id=parcel_id,
+        status=request_status,
+        created_at=stamp,
+        updated_at=stamp,
+    )
+    db.add(req)
+    db.add(
+        TimelineRequestTask(
+            id=uuid.uuid4(),
+            timeline_request_id=req.id,
+            source="landsat",
+            status=task_status,
+            items_found=0,
+        )
+    )
+    db.commit()
+    return req.id, parcel_id
+
+
+def _reload(db: Session, request_id: uuid.UUID) -> tuple[str, str]:
+    from app.models.parcels import TimelineRequest, TimelineRequestTask
+
+    db.expire_all()
+    req = db.get(TimelineRequest, request_id)
+    task = (
+        db.query(TimelineRequestTask)
+        .filter(TimelineRequestTask.timeline_request_id == request_id)
+        .one()
+    )
+    assert req is not None
+    return req.status, task.status
+
+
+def test_janitor_fails_a_stale_processing_request(db: Session) -> None:
+    """A request left processing past the hard time limit is failed, and its
+    task rows with it — an OOM kill never runs the timeout handler."""
+    from app.services.imagery import sweep_stranded_work
+
+    request_id, _ = _stranded_setup(
+        db, request_status="processing", task_status="processing", age_minutes=90
+    )
+
+    assert sweep_stranded_work(db) == (1, 0)
+
+    from app.models.parcels import TimelineRequest
+
+    assert _reload(db, request_id) == ("failed", "failed")
+    req = db.get(TimelineRequest, request_id)
+    assert req is not None
+    assert req.error_message == "Stranded: worker died mid-task (janitor)"
+
+
+def test_janitor_leaves_a_fresh_request_alone(db: Session) -> None:
+    """Work that started minutes ago is running, not stranded."""
+    from app.services.imagery import sweep_stranded_work
+
+    request_id, _ = _stranded_setup(
+        db, request_status="processing", task_status="processing", age_minutes=5
+    )
+
+    assert sweep_stranded_work(db) == (0, 0)
+    assert _reload(db, request_id) == ("processing", "processing")
+
+
+def test_janitor_fails_task_rows_orphaned_under_a_terminal_request(db: Session) -> None:
+    """The shape actually found in production: the request is already failed
+    (soft-limit handler, or a later stale takeover) while a task row under it
+    is still processing. Nothing else ever closes those rows, and backfill
+    cannot see the source as failed while they sit open."""
+    from app.services.imagery import sweep_stranded_work
+
+    request_id, _ = _stranded_setup(
+        db, request_status="failed", task_status="processing", age_minutes=1440
+    )
+
+    assert sweep_stranded_work(db) == (0, 1)
+    assert _reload(db, request_id) == ("failed", "failed")
+
+
+def test_janitor_leaves_task_rows_under_a_just_finished_request(db: Session) -> None:
+    """A request that completed seconds ago may still be mid-write."""
+    from app.services.imagery import sweep_stranded_work
+
+    request_id, _ = _stranded_setup(
+        db, request_status="complete", task_status="queued", age_minutes=2
+    )
+
+    assert sweep_stranded_work(db) == (0, 0)
+    assert _reload(db, request_id) == ("complete", "queued")
+
+
+def test_janitor_runs_on_worker_startup() -> None:
+    """The sweep is wired to worker_ready — a worker that was OOM-killed
+    heals its own stranded rows on the next boot, with no separate script."""
+    from celery.signals import worker_ready
+
+    from app.tasks.celery_app import sweep_stranded_work as hook
+
+    connected = [ref() if callable(ref) else ref for _, ref in worker_ready.receivers]
+    assert any(getattr(r, "__name__", None) == hook.__name__ for r in connected)
+
+
+def test_janitor_startup_hook_survives_a_database_outage() -> None:
+    """A database hiccup at boot must not stop the worker starting."""
+    from sqlalchemy.exc import OperationalError
+
+    from app.tasks.celery_app import sweep_stranded_work as hook
+
+    with patch(
+        "app.services.imagery.sweep_stranded_work",
+        side_effect=OperationalError("x", {}, Exception()),
+    ):
+        hook()
