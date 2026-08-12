@@ -497,9 +497,17 @@ async def _landsat_stac_url(snapshot_id: uuid.UUID, settings: Settings) -> str:
 
     ``v`` is the expiry of the container token ``get_signed_stac_item`` will
     embed in the band hrefs, so the URL — which is what Titiler keys its item
-    cache on — changes exactly when the token it pins does. A constant URL let
+    cache on — changes whenever that token is replaced. A constant URL let
     Titiler serve an item whose token had expired, which GDAL reports as an
     unsupported format and Titiler as a 500.
+
+    In practice the key rotates on ``_SAS_CACHE_TTL`` (20 min), not on the
+    token's 45-minute life: ``v`` names the token cached in Redis, and that
+    entry dies first. Rotation is therefore ~2.25× more frequent than the
+    token lifetime suggests, and every Landsat key rotates together — the load
+    term behind G7. Measured live 2026-08-12: 18 keys rotating at once drew 6
+    concurrent token mints, 0 failures, one wave of 4.2× tile latency
+    (docs/audits/2026-08-titiler-cache/BOUNDARY-BASELINE.md).
 
     Never raises: this computes a cache key, and a signer or Redis that is
     down must not fail a tile the callback could still serve. The callback

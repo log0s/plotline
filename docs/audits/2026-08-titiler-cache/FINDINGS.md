@@ -299,6 +299,26 @@ either way. Sweep the full 43 × 6, and sweep twice, ≥45 min apart.
 
 ---
 
+## Addendum, 2026-08-12 — §5 scored; §4 boundary figure refined
+
+`cf0df2b` and `30caec4` were deployed at **2026-08-12T19:53:27Z**. The header's
+"committed, **not deployed** as of writing" was true when written and is now
+superseded. §5 was executed and scored the same evening; the record is
+`BOUNDARY-BASELINE.md` in this directory. Verdict: **items 1 and 2 confirmed**,
+item 3 recorded as not independently testable. Nothing above is edited.
+
+One figure in this document needs reading with care. §4 and §5 both describe
+the rotation boundary as the token's 45-minute lifetime. The *observable*
+boundary is 20 minutes: `?v` names the token cached in Redis, and
+`_SAS_CACHE_TTL` (`stac.py:174`) is 1200 s, so the key rotates ~25 min before
+the credential it names expires. The direction favours the argument in §4 — a
+cached item is discarded well before its token could go stale — but §4.2's
+simultaneity concern is correspondingly 2.25× more frequent than stated, and
+§5's "more than 45 min apart yields two different values" is true but not
+tight.
+
+---
+
 ## Addendum, 2026-08-12 — provenance correction to §2.1
 
 §2.1 item 1 attributes the first pass's "300 s TTL" memory to a
