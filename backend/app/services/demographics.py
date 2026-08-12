@@ -54,6 +54,11 @@ def upsert_census_snapshot(
 ) -> bool:
     """Insert a census snapshot, updating on conflict (idempotent).
 
+    ``tract_fips`` is refreshed alongside the values: the conflict target is
+    (parcel_id, dataset, year), so a re-run that resolves a different ancestor
+    tract for the year must relabel the row it refreshes, or the row would
+    carry one tract's label over another tract's numbers.
+
     Returns True if a row was inserted/updated.
     """
     vacancy_rate: float | None = None
@@ -83,6 +88,7 @@ def upsert_census_snapshot(
              :owner_occupied_units, :renter_occupied_units, :vacancy_rate,
              :median_age, :median_gross_rent, :raw_data)
         ON CONFLICT (parcel_id, dataset, year) DO UPDATE SET
+            tract_fips = EXCLUDED.tract_fips,
             total_population = EXCLUDED.total_population,
             median_household_income = EXCLUDED.median_household_income,
             median_home_value = EXCLUDED.median_home_value,

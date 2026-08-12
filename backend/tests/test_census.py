@@ -572,6 +572,53 @@ class TestDemographicsService:
         rows = get_census_snapshots(db, pid)
         assert len(rows) == 1
         assert rows[0].total_population == 3100  # Updated, not duplicated
+        assert rows[0].tract_fips == "08031006202"
+
+    def test_upsert_relabels_when_tract_changes(self, db) -> None:
+        """A re-run resolving a different ancestor tract relabels the row it refreshes."""
+        from sqlalchemy import text
+
+        parcel_id = str(uuid.uuid4())
+        db.execute(
+            text(
+                "INSERT INTO parcels (id, address, latitude, longitude, point) "
+                "VALUES (:id, :addr, :lat, :lng, :pt)"
+            ),
+            {
+                "id": parcel_id,
+                "addr": "789 Elm St",
+                "lat": 38.9,
+                "lng": -77.0,
+                "pt": "POINT(-77.0 38.9)",
+            },
+        )
+        db.commit()
+
+        pid = uuid.UUID(parcel_id)
+
+        # First write lands on the current (2020) tract.
+        upsert_census_snapshot(
+            db,
+            parcel_id=pid,
+            tract_fips="11001006202",
+            dataset="acs5",
+            year=2015,
+            data={"total_population": 3000},
+        )
+        # Re-run resolves the 2010-vintage ancestor for the same year.
+        upsert_census_snapshot(
+            db,
+            parcel_id=pid,
+            tract_fips="11001980000",
+            dataset="acs5",
+            year=2015,
+            data={"total_population": 2750},
+        )
+
+        rows = get_census_snapshots(db, pid)
+        assert len(rows) == 1
+        assert rows[0].tract_fips == "11001980000"
+        assert rows[0].total_population == 2750
 
 
 # ── Subtitle generation ───────────────────────────────────────────────────────
