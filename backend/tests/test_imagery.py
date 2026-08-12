@@ -315,7 +315,7 @@ def test_list_imagery_empty_returns_empty_list(client: TestClient, db: Session) 
 
     # Mock the sign URL calls (list_imagery is async and signs URLs)
     with patch("app.api.v1.imagery.stac_service.sign_pc_url", new_callable=AsyncMock) as mock_sign:
-        mock_sign.side_effect = lambda url: url  # identity
+        mock_sign.side_effect = lambda url, **_kwargs: url  # identity
         resp = client.get(f"/api/v1/parcels/{parcel_id}/imagery")
 
     assert resp.status_code == 200
@@ -352,7 +352,7 @@ def test_list_imagery_caps_rendered_preview_thumbnails(client: TestClient, db: S
     )
 
     with patch("app.api.v1.imagery.stac_service.sign_pc_url", new_callable=AsyncMock) as mock_sign:
-        mock_sign.side_effect = lambda url: url
+        mock_sign.side_effect = lambda url, **_kwargs: url
         resp = client.get(f"/api/v1/parcels/{parcel_id}/imagery")
 
     assert resp.status_code == 200
@@ -793,7 +793,7 @@ def test_signed_stac_item_502s_when_band_signing_fails(client: TestClient, db: S
         200, json=item, request=httpx.Request("GET", stac_url)
     )
 
-    async def _sign(url: str) -> str:
+    async def _sign(url: str, **_kwargs: object) -> str:
         if url.endswith("#green"):
             raise httpx.HTTPStatusError(
                 "429",
@@ -835,7 +835,7 @@ def test_list_imagery_omits_snapshots_it_cannot_sign(client: TestClient, db: Ses
     )
     _insert_snapshot(db, parcel_id, "sentinel2", _BLOB_URL)
 
-    async def _sign(url: str) -> str:
+    async def _sign(url: str, **_kwargs: object) -> str:
         if url == _BLOB_URL:
             raise httpx.RequestError("signer unreachable")
         return f"{url}?sig=ok"

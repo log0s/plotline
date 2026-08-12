@@ -1021,3 +1021,155 @@ async def test_sign_pc_url_caps_concurrency_at_semaphore_limit() -> None:
     assert mock_client.get.await_count == 20
     assert peak <= limit, f"{peak} concurrent signing calls exceeded the cap of {limit}"
     assert peak > 1, "sanity: the gather should actually have run calls in parallel"
+
+
+# ── SAS signing: wait budgets by context ─────────────────────────────────────
+
+
+def _token_response(status: int, token: str = "", retry_after: str | None = None) -> MagicMock:
+    """Mock a container-token response (or a 429 from that endpoint)."""
+    resp = MagicMock()
+    resp.status_code = status
+    resp.headers = {"retry-after": retry_after} if retry_after else {}
+    resp.json = MagicMock(return_value={"token": token, "msft:expiry": "2026-08-12T03:50:01Z"})
+    if status >= 400:
+        resp.raise_for_status = MagicMock(
+            side_effect=httpx.HTTPStatusError(f"{status}", request=MagicMock(), response=resp)
+        )
+    else:
+        resp.raise_for_status = MagicMock()
+    return resp
+
+
+@pytest.mark.asyncio
+async def test_request_context_gives_up_rather_than_sleeping_60s() -> None:
+    """A 429 with Retry-After: 60 must raise inside the request budget.
+
+    The tile path's end-to-end budget is ~30 s, so honouring a 60 s
+    Retry-After there converts every 429 into a client timeout and an
+    unexplained 502. Production, 2026-08-12: a 54 s backoff mid-storm.
+    """
+    from app.services.stac import SIGN_WAIT_REQUEST
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=_token_response(429, retry_after="60"))
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock) as sleep,
+        pytest.raises(httpx.HTTPStatusError),
+    ):
+        await sign_pc_url(
+            "https://landsateuwest.blob.core.windows.net/landsat-c2/red.tif",
+            wait_budget=SIGN_WAIT_REQUEST,
+        )
+
+    assert sleep.await_count == 0, "a 60s Retry-After overshoots the 2s request budget"
+    assert mock_client.get.await_count == 1, "one attempt, then raise — no long backoff"
+
+
+@pytest.mark.asyncio
+async def test_request_context_still_takes_a_short_retry() -> None:
+    """Within budget, the request profile does retry — it is fast, not brittle."""
+    from app.services.stac import SIGN_WAIT_REQUEST
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(
+        side_effect=[_token_response(429, retry_after="1"), _token_response(200, "sv=tok")]
+    )
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock) as sleep,
+    ):
+        result = await sign_pc_url(
+            "https://landsateuwest.blob.core.windows.net/landsat-c2/red.tif",
+            wait_budget=SIGN_WAIT_REQUEST,
+        )
+
+    assert result.endswith("?sv=tok")
+    assert [c.args[0] for c in sleep.await_args_list] == [1.0]
+
+
+@pytest.mark.asyncio
+async def test_batch_context_still_honours_a_long_retry_after() -> None:
+    """The worker's profile is unchanged: waiting beats dropping the year."""
+    from app.services.stac import SIGN_WAIT_BATCH
+
+    signed = "https://example.com/red.tif?sv=signed"
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(
+        side_effect=[_sign_response(429, retry_after="54"), _sign_response(200, signed)]
+    )
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock) as sleep,
+    ):
+        result = await sign_pc_url("https://example.com/red.tif", wait_budget=SIGN_WAIT_BATCH)
+
+    assert result == signed
+    assert [c.args[0] for c in sleep.await_args_list] == [54.0]
+
+
+# ── SAS signing: container tokens ────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_blob_urls_sign_from_one_container_token() -> None:
+    """Every asset in a container is signed by a single token request."""
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=_token_response(200, "se=2026&sig=abc"))
+
+    redis = _cache_miss_redis()
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=redis),
+    ):
+        first = await sign_pc_url(
+            "https://landsateuwest.blob.core.windows.net/landsat-c2/level-2/red.tif"
+        )
+        # Second call reads the token Redis cached on the first.
+        redis.get.return_value = b"se=2026&sig=abc"
+        second = await sign_pc_url(
+            "https://landsateuwest.blob.core.windows.net/landsat-c2/level-2/green.tif"
+        )
+
+    assert first.endswith("red.tif?se=2026&sig=abc")
+    assert second.endswith("green.tif?se=2026&sig=abc")
+    assert mock_client.get.await_count == 1, "the second asset must reuse the container token"
+    assert (
+        "/api/sas/v1/token/landsateuwest/landsat-c2" in mock_client.get.await_args_list[0].args[0]
+    )
+
+
+@pytest.mark.asyncio
+async def test_non_blob_urls_still_use_per_url_signing() -> None:
+    """USGS S3 and data-API hrefs have no container token; sign them per URL."""
+    from app.services.stac import PC_SIGN_URL
+
+    signed = "https://example.com/asset.tif?sv=signed"
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=_sign_response(200, signed))
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+    ):
+        result = await sign_pc_url("https://example.com/asset.tif")
+
+    assert result == signed
+    assert mock_client.get.await_args_list[0].args[0] == PC_SIGN_URL
+
+
+def test_blob_container_parses_account_and_container() -> None:
+    from app.services.stac import _blob_container
+
+    assert _blob_container(
+        "https://naipeuwest.blob.core.windows.net/naip/v002/ny/m_4007309.tif"
+    ) == ("naipeuwest", "naip")
+    assert _blob_container("https://prd-tnm.s3.amazonaws.com/topo.tif") is None
+    assert _blob_container("https://planetarycomputer.microsoft.com/api/data/v1/x") is None

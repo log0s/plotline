@@ -217,7 +217,10 @@ async def list_imagery(
 
     url_list = list(urls_to_sign)
     results = await asyncio.gather(
-        *(stac_service.sign_pc_url(u) for u in url_list),
+        *(
+            stac_service.sign_pc_url(u, wait_budget=stac_service.SIGN_WAIT_REQUEST)
+            for u in url_list
+        ),
         return_exceptions=True,
     )
     # Unsignable URLs are left out of the map rather than mapped to their
@@ -455,14 +458,17 @@ async def _proxy_cog_tile(
 
     if sign:
         try:
-            signed_url = await stac_service.sign_pc_url(source_url)
+            signed_url = await stac_service.sign_pc_url(
+                source_url, wait_budget=stac_service.SIGN_WAIT_REQUEST
+            )
         except (httpx.RequestError, httpx.HTTPStatusError) as exc:
             # Never fall back to the unsigned href: Planetary Computer's blob
             # storage is private, so an unsigned read is rejected with a 409
             # that Titiler surfaces as a 500 and the user sees as a broken
-            # tile. sign_pc_url has already retried 429s with backoff, so a
-            # failure here is terminal for this request — 502 it, and let the
-            # client retry the tile against a signer that may have recovered.
+            # tile. sign_pc_url has already retried 429s within the request
+            # wait budget, so a failure here is terminal for this request —
+            # 502 it while the client is still listening, and let it retry the
+            # tile against a signer that may have recovered.
             logger.warning(
                 "Tile signing failed after retries",
                 extra={"snapshot_id": str(snap.id), "source": snap.source, "error": str(exc)},
@@ -595,7 +601,9 @@ async def warmup_cog(
             source_url = snap.cog_url
             if snap.source != "usgs_topo":
                 try:
-                    source_url = await stac_service.sign_pc_url(source_url)
+                    source_url = await stac_service.sign_pc_url(
+                        source_url, wait_budget=stac_service.SIGN_WAIT_REQUEST
+                    )
                 except (httpx.RequestError, httpx.HTTPStatusError):
                     # Warming with an unsigned href only teaches Titiler's
                     # cache a 409. Skip the warmup; the tile request will
@@ -691,10 +699,17 @@ async def get_signed_stac_item(
     # blob URL, so serving it hands Titiler a guaranteed 409 — the shape the
     # 2026-08 ops audit traced from 12 band-signing failures to 37 Titiler
     # 500s. sign_pc_url has already retried 429s, so this is terminal.
+    #
+    # Request profile, and load-bearing: Titiler calls this endpoint from
+    # inside its own tile render, so any sleep here is spent inside the
+    # browser's tile deadline.
     assets = stac_item.get("assets", {})
     bands = [b for b in ("red", "green", "blue") if b in assets and "href" in assets[b]]
     sign_results = await asyncio.gather(
-        *(stac_service.sign_pc_url(assets[b]["href"]) for b in bands),
+        *(
+            stac_service.sign_pc_url(assets[b]["href"], wait_budget=stac_service.SIGN_WAIT_REQUEST)
+            for b in bands
+        ),
         return_exceptions=True,
     )
     failed_bands = [

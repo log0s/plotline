@@ -11,6 +11,7 @@ import logging
 from collections import defaultdict
 from datetime import date
 from typing import Any, cast
+from urllib.parse import urlsplit
 
 import httpx
 from shapely.geometry import Point
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 STAC_API = "https://planetarycomputer.microsoft.com/api/stac/v1"
 PC_SIGN_URL = "https://planetarycomputer.microsoft.com/api/sas/v1/sign"
+PC_TOKEN_URL = "https://planetarycomputer.microsoft.com/api/sas/v1/token"
 
 # Resolution in metres per source
 RESOLUTION_M: dict[str, float] = {
@@ -167,7 +169,25 @@ async def search_stac(
 # ── URL signing ───────────────────────────────────────────────────────────────
 
 
-_SAS_CACHE_TTL = 600  # 10 minutes (tokens last ~30 min)
+_SAS_CACHE_TTL = 1200  # 20 minutes (tokens last ~45 min, so this keeps margin)
+
+# How long a caller is willing to spend *sleeping* between signing retries.
+#
+# The batch profile is the worker's: validation runs behind no user, and
+# honouring a 60 s Retry-After is exactly right there — waiting beats reading a
+# rate-limit reply as "this asset is broken" and dropping the year.
+#
+# The request profile is for anything inside an HTTP request. The tile path's
+# end-to-end budget is ~30 s (the frontend's AbortSignal plus the Titiler proxy
+# timeout), so a 60 s backoff cannot help it — it converts a 429 into a client
+# timeout and a 502 with no message. In production on 2026-08-12 a Landsat
+# scrub burst did exactly that: 23 backoffs, one of them 54 s, and a 502 storm
+# while Titiler itself stayed healthy. With a 2 s budget the same 429 raises in
+# ~3 s and the route answers with its curated message instead.
+SIGN_WAIT_BATCH = 60.0
+SIGN_WAIT_REQUEST = 2.0
+
+_BLOB_HOST_SUFFIX = ".blob.core.windows.net"
 
 
 def _get_sign_client() -> httpx.AsyncClient:
@@ -227,62 +247,149 @@ def _retry_after_seconds(resp: httpx.Response) -> float | None:
         return None
 
 
-async def _request_signature(url: str) -> str:
-    """POST to the SAS endpoint, retrying 429s with bounded exponential backoff.
+async def _sas_get(
+    url: str,
+    params: dict[str, str] | None,
+    *,
+    wait_budget: float,
+) -> httpx.Response:
+    """GET a SAS API endpoint, retrying 429s within a bounded sleep budget.
 
-    The signing endpoint rate-limits blanket across the account, so a 429
-    means "slow down", not "this asset is broken" — retrying here keeps
+    The signing API rate-limits blanket across the account, so a 429 means
+    "slow down", not "this asset is broken" — retrying here keeps
     validate_landsat_item from failing an item (and burning its fallbacks
     against the same limit) over a transient burst.
+
+    ``wait_budget`` caps the *total* time spent sleeping across retries. A
+    backoff that would overshoot it is not taken: the last 429 is raised
+    instead, so a caller with a deadline fails fast enough to say why rather
+    than being killed mid-sleep by its own timeout. See ``SIGN_WAIT_BATCH`` /
+    ``SIGN_WAIT_REQUEST``.
     """
     from app.config import get_settings
 
     attempts = max(1, get_settings().pc_signing_attempts)
     delay = 1.0
+    spent = 0.0
     last_exc: httpx.HTTPStatusError | None = None
 
     for attempt in range(attempts):
         async with _get_sign_semaphore():
-            resp = await _get_sign_client().get(PC_SIGN_URL, params={"href": url})
+            resp = await _get_sign_client().get(url, params=params)
             if resp.status_code != 429:
                 resp.raise_for_status()
-                return str(resp.json()["href"])
+                return resp
             try:
                 resp.raise_for_status()
             except httpx.HTTPStatusError as exc:
                 last_exc = exc
-            wait = _retry_after_seconds(resp)
+            retry_after = _retry_after_seconds(resp)
 
-        if attempt < attempts - 1:
-            # Sleep outside the semaphore: holding a slot while backing off
-            # would idle the limiter instead of letting other callers through.
+        if attempt == attempts - 1:
+            break
+
+        wait = retry_after if retry_after is not None else delay
+        if spent + wait > wait_budget:
             logger.info(
-                "SAS signing rate-limited; backing off",
-                extra={"attempt": attempt + 1, "wait_s": wait if wait else delay},
+                "SAS rate-limited; backoff exceeds wait budget, giving up",
+                extra={"attempt": attempt + 1, "wait_s": wait, "budget_s": wait_budget},
             )
-            await asyncio.sleep(wait if wait is not None else delay)
-            delay *= 2
+            break
+
+        # Sleep outside the semaphore: holding a slot while backing off
+        # would idle the limiter instead of letting other callers through.
+        logger.info(
+            "SAS rate-limited; backing off",
+            extra={"attempt": attempt + 1, "wait_s": wait},
+        )
+        await asyncio.sleep(wait)
+        spent += wait
+        delay *= 2
 
     assert last_exc is not None  # only reached after a 429 on every attempt
     raise last_exc
 
 
-async def sign_pc_url(url: str) -> str:
-    """Sign a Planetary Computer asset URL for authenticated access.
+def _blob_container(url: str) -> tuple[str, str] | None:
+    """Split a PC blob asset URL into (storage account, container), or None.
 
-    Signed URLs are cached in Redis for 10 minutes to avoid redundant
-    roundtrips to the SAS signing endpoint. Tokens last ~30 min so
-    the 10-min TTL provides a safe margin.
+    Returns None for anything that is not an Azure blob href — the data-API
+    preview URLs, USGS S3 hrefs — which must go through per-URL signing (or
+    no signing at all) rather than a container token.
+    """
+    parts = urlsplit(url)
+    host, _, _ = parts.netloc.partition(":")
+    if not host.endswith(_BLOB_HOST_SUFFIX):
+        return None
+    account = host[: -len(_BLOB_HOST_SUFFIX)]
+    container = parts.path.lstrip("/").split("/", 1)[0]
+    if not account or not container:
+        return None
+    return account, container
 
-    Concurrency against the signing endpoint is capped (see
-    ``_get_sign_semaphore``) and 429s are retried with backoff. Both live
-    here rather than at the call sites so every path that signs —
-    validation, tile serving, thumbnails, preview rendering — shares one
-    limiter.
+
+async def _container_token(account: str, container: str, *, wait_budget: float) -> str:
+    """Return a cached SAS token granting read over one PC blob container.
+
+    Planetary Computer issues container-scoped tokens (``sr=c``) valid for
+    ~45 minutes, and one PC collection maps to one container — so a single
+    token signs every asset of a collection instead of one signing call per
+    URL. This is what keeps the signing endpoint far from its rate limit;
+    the semaphore and the 429 retry above are the belt to this braces.
     """
     from redis.exceptions import RedisError
 
     from app.db import get_async_redis
+
+    cache_key = f"sas-token:{account}/{container}"
+    redis = get_async_redis()
+    try:
+        cached = await redis.get(cache_key)
+        if cached:
+            return cached.decode() if isinstance(cached, bytes) else cached
+    except (RedisError, OSError) as exc:
+        logger.debug("SAS token cache read failed: %s", exc)
+
+    resp = await _sas_get(f"{PC_TOKEN_URL}/{account}/{container}", None, wait_budget=wait_budget)
+    token = str(resp.json()["token"])
+
+    try:
+        await redis.setex(cache_key, _SAS_CACHE_TTL, token.encode())
+    except (RedisError, OSError) as exc:
+        logger.debug("SAS token cache write failed: %s", exc)
+
+    return token
+
+
+async def _request_signature(url: str, *, wait_budget: float) -> str:
+    """Sign a single URL through the per-URL SAS endpoint."""
+    resp = await _sas_get(PC_SIGN_URL, {"href": url}, wait_budget=wait_budget)
+    return str(resp.json()["href"])
+
+
+async def sign_pc_url(url: str, *, wait_budget: float = SIGN_WAIT_BATCH) -> str:
+    """Sign a Planetary Computer asset URL for authenticated access.
+
+    Blob assets are signed by appending a container-scoped token (see
+    ``_container_token``); anything else falls back to the per-URL signing
+    endpoint. Both are cached in Redis for ``_SAS_CACHE_TTL``.
+
+    Concurrency against the SAS API is capped (see ``_get_sign_semaphore``)
+    and 429s are retried with backoff. Both live here rather than at the call
+    sites so every path that signs — validation, tile serving, thumbnails,
+    preview rendering — shares one limiter. ``wait_budget`` is the one thing
+    the call site must choose: pass ``SIGN_WAIT_REQUEST`` from anything
+    serving an HTTP request, ``SIGN_WAIT_BATCH`` (the default) from the
+    worker and offline scripts.
+    """
+    from redis.exceptions import RedisError
+
+    from app.db import get_async_redis
+
+    blob = _blob_container(url)
+    if blob is not None:
+        token = await _container_token(*blob, wait_budget=wait_budget)
+        return f"{url}{'&' if '?' in url else '?'}{token}"
 
     cache_key = f"sas:{url}"
     redis = get_async_redis()
@@ -293,7 +400,7 @@ async def sign_pc_url(url: str) -> str:
     except (RedisError, OSError) as exc:
         logger.debug("SAS cache read failed: %s", exc)
 
-    signed = await _request_signature(url)
+    signed = await _request_signature(url, wait_budget=wait_budget)
 
     try:
         await redis.setex(cache_key, _SAS_CACHE_TTL, signed.encode())
@@ -687,7 +794,7 @@ async def validate_landsat_item(item: dict[str, object]) -> bool:
 
     href = str(red["href"])
     try:
-        signed = await sign_pc_url(href)
+        signed = await sign_pc_url(href, wait_budget=SIGN_WAIT_BATCH)
     except (httpx.HTTPStatusError, httpx.RequestError) as exc:
         logger.info(
             "Landsat red band signing failed",

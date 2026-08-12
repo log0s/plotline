@@ -99,7 +99,11 @@ async def render_preview(
 
     async def _fetch_tile(client: httpx.AsyncClient, raw_url: str) -> Image.Image | None:
         try:
-            signed = await stac_service.sign_pc_url(raw_url)
+            # Batch profile: this runs from seed_featured.py, offline, behind
+            # no request deadline — waiting out a Retry-After is free here.
+            signed = await stac_service.sign_pc_url(
+                raw_url, wait_budget=stac_service.SIGN_WAIT_BATCH
+            )
         except (httpx.RequestError, httpx.HTTPStatusError) as exc:
             # Rendering from the unsigned href cannot work — the blob is
             # private — so it would burn a Titiler render to produce nothing.
