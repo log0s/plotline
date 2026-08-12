@@ -192,6 +192,79 @@ async def close_clients() -> None:
     sign = _sign_clients.pop(loop, None)
     if sign is not None:
         await sign.aclose()
+    _sign_semaphores.pop(loop, None)
+
+
+# Semaphores are keyed by event loop for the same reason the clients are:
+# asyncio.Semaphore binds to the loop that first awaits it and raises
+# "is bound to a different event loop" from any other, so a single
+# module-level instance would break the second Celery task in a worker.
+_sign_semaphores: dict[asyncio.AbstractEventLoop, asyncio.Semaphore] = {}
+
+
+def _get_sign_semaphore() -> asyncio.Semaphore:
+    """Bound concurrent calls to the PC SAS signing endpoint, per event loop."""
+    loop = asyncio.get_running_loop()
+    sem = _sign_semaphores.get(loop)
+    if sem is None:
+        from app.config import get_settings
+
+        sem = asyncio.Semaphore(max(1, get_settings().pc_signing_concurrency))
+        _sign_semaphores[loop] = sem
+    return sem
+
+
+def _retry_after_seconds(resp: httpx.Response) -> float | None:
+    """Parse a Retry-After header (delta-seconds form) into seconds."""
+    raw = resp.headers.get("retry-after")
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw.strip()))
+    except ValueError:
+        # HTTP-date form: rare from PC, and a bad parse should fall back to
+        # the caller's exponential backoff rather than raise.
+        return None
+
+
+async def _request_signature(url: str) -> str:
+    """POST to the SAS endpoint, retrying 429s with bounded exponential backoff.
+
+    The signing endpoint rate-limits blanket across the account, so a 429
+    means "slow down", not "this asset is broken" — retrying here keeps
+    validate_landsat_item from failing an item (and burning its fallbacks
+    against the same limit) over a transient burst.
+    """
+    from app.config import get_settings
+
+    attempts = max(1, get_settings().pc_signing_attempts)
+    delay = 1.0
+    last_exc: httpx.HTTPStatusError | None = None
+
+    for attempt in range(attempts):
+        async with _get_sign_semaphore():
+            resp = await _get_sign_client().get(PC_SIGN_URL, params={"href": url})
+            if resp.status_code != 429:
+                resp.raise_for_status()
+                return str(resp.json()["href"])
+            try:
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                last_exc = exc
+            wait = _retry_after_seconds(resp)
+
+        if attempt < attempts - 1:
+            # Sleep outside the semaphore: holding a slot while backing off
+            # would idle the limiter instead of letting other callers through.
+            logger.info(
+                "SAS signing rate-limited; backing off",
+                extra={"attempt": attempt + 1, "wait_s": wait if wait else delay},
+            )
+            await asyncio.sleep(wait if wait is not None else delay)
+            delay *= 2
+
+    assert last_exc is not None  # only reached after a 429 on every attempt
+    raise last_exc
 
 
 async def sign_pc_url(url: str) -> str:
@@ -200,6 +273,12 @@ async def sign_pc_url(url: str) -> str:
     Signed URLs are cached in Redis for 10 minutes to avoid redundant
     roundtrips to the SAS signing endpoint. Tokens last ~30 min so
     the 10-min TTL provides a safe margin.
+
+    Concurrency against the signing endpoint is capped (see
+    ``_get_sign_semaphore``) and 429s are retried with backoff. Both live
+    here rather than at the call sites so every path that signs —
+    validation, tile serving, thumbnails, preview rendering — shares one
+    limiter.
     """
     from redis.exceptions import RedisError
 
@@ -214,9 +293,7 @@ async def sign_pc_url(url: str) -> str:
     except (RedisError, OSError) as exc:
         logger.debug("SAS cache read failed: %s", exc)
 
-    resp = await _get_sign_client().get(PC_SIGN_URL, params={"href": url})
-    resp.raise_for_status()
-    signed = str(resp.json()["href"])
+    signed = await _request_signature(url)
 
     try:
         await redis.setex(cache_key, _SAS_CACHE_TTL, signed.encode())

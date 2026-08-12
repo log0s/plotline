@@ -842,3 +842,182 @@ async def test_validate_landsat_selection_tolerates_empty_group() -> None:
 
     assert len(result) == 1
     assert result[0][0]["id"] == "good"
+
+
+# ── SAS signing: 429 throttling ──────────────────────────────────────────────
+
+
+def _sign_response(status: int, href: str = "", retry_after: str | None = None) -> MagicMock:
+    """Build a mock SAS signing response with a real integer status_code."""
+    resp = MagicMock()
+    resp.status_code = status
+    resp.headers = {"retry-after": retry_after} if retry_after else {}
+    resp.json = MagicMock(return_value={"href": href})
+    if status >= 400:
+        resp.raise_for_status = MagicMock(
+            side_effect=httpx.HTTPStatusError(f"{status}", request=MagicMock(), response=resp)
+        )
+    else:
+        resp.raise_for_status = MagicMock()
+    return resp
+
+
+def _cache_miss_redis() -> AsyncMock:
+    redis = AsyncMock()
+    redis.get.return_value = None
+    redis.setex.return_value = None
+    return redis
+
+
+@pytest.mark.asyncio
+async def test_sign_pc_url_retries_429_then_succeeds() -> None:
+    """Two 429s followed by a 200 should return the signed href, not raise."""
+    signed = "https://example.com/red.tif?sv=signed"
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(
+        side_effect=[
+            _sign_response(429),
+            _sign_response(429),
+            _sign_response(200, signed),
+        ]
+    )
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock) as sleep,
+    ):
+        result = await sign_pc_url("https://example.com/red.tif")
+
+    assert result == signed
+    assert mock_client.get.await_count == 3
+    # Exponential: 1s then 2s
+    assert [c.args[0] for c in sleep.await_args_list] == [1.0, 2.0]
+
+
+@pytest.mark.asyncio
+async def test_sign_pc_url_honours_retry_after_header() -> None:
+    """A Retry-After header takes precedence over the exponential delay."""
+    signed = "https://example.com/red.tif?sv=signed"
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(
+        side_effect=[_sign_response(429, retry_after="7"), _sign_response(200, signed)]
+    )
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock) as sleep,
+    ):
+        result = await sign_pc_url("https://example.com/red.tif")
+
+    assert result == signed
+    assert sleep.await_args_list[0].args[0] == 7.0
+
+
+@pytest.mark.asyncio
+async def test_sign_pc_url_raises_after_exhausting_429_retries() -> None:
+    """Persistent 429s still surface as an HTTPStatusError once attempts run out."""
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=_sign_response(429))
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock),
+        pytest.raises(httpx.HTTPStatusError),
+    ):
+        await sign_pc_url("https://example.com/red.tif")
+
+
+@pytest.mark.asyncio
+async def test_landsat_item_validates_through_429_burst() -> None:
+    """A 429 burst during signing must not fail the item over to a fallback.
+
+    This is the production defect: 21 consecutive signing 429s dropped 20 of
+    43 Landsat years because a rate-limit reply was read as "asset broken".
+    """
+    from app.services.stac import validate_landsat_selection
+
+    signed = "https://example.com/red.tif?sv=signed"
+    sign_client = AsyncMock()
+    sign_client.get = AsyncMock(
+        side_effect=[
+            _sign_response(429),
+            _sign_response(429),
+            _sign_response(200, signed),
+        ]
+    )
+
+    head_resp = MagicMock()
+    head_resp.status_code = 200
+    search_client = AsyncMock()
+    search_client.head = AsyncMock(return_value=head_resp)
+
+    selected = {
+        "id": "selected",
+        "properties": {"datetime": "1994-06-01T00:00:00Z", "eo:cloud_cover": 5},
+        "assets": {"red": {"href": "https://example.com/red.tif"}},
+    }
+    fallback = {
+        "id": "fallback",
+        "properties": {"datetime": "1994-08-01T00:00:00Z", "eo:cloud_cover": 40},
+        "assets": {"red": {"href": "https://example.com/red2.tif"}},
+    }
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=sign_client),
+        patch("app.services.stac._get_search_client", return_value=search_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await validate_landsat_selection([[selected]], [selected, fallback])
+
+    assert len(result) == 1
+    assert result[0][0]["id"] == "selected", "should retry, not fail over to the fallback"
+
+
+@pytest.mark.asyncio
+async def test_sign_pc_url_caps_concurrency_at_semaphore_limit() -> None:
+    """No more than PC_SIGNING_CONCURRENCY signing calls may be in flight."""
+    import asyncio as _asyncio
+
+    from app.services import stac as stac_module
+
+    limit = 4
+    in_flight = 0
+    peak = 0
+
+    async def slow_get(*_args: object, **_kwargs: object) -> MagicMock:
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        try:
+            await _asyncio.sleep(0.01)
+            return _sign_response(200, "https://example.com/signed.tif")
+        finally:
+            in_flight -= 1
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=slow_get)
+
+    settings = MagicMock()
+    settings.pc_signing_concurrency = limit
+    settings.pc_signing_attempts = 4
+
+    stac_module._sign_semaphores.clear()
+    try:
+        with (
+            patch("app.services.stac._get_sign_client", return_value=mock_client),
+            patch("app.config.get_settings", return_value=settings),
+            patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        ):
+            await _asyncio.gather(
+                *(sign_pc_url(f"https://example.com/asset-{i}.tif") for i in range(20))
+            )
+    finally:
+        stac_module._sign_semaphores.clear()
+
+    assert mock_client.get.await_count == 20
+    assert peak <= limit, f"{peak} concurrent signing calls exceeded the cap of {limit}"
+    assert peak > 1, "sanity: the gather should actually have run calls in parallel"

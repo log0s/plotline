@@ -68,6 +68,15 @@ class Settings(BaseSettings):
     # Celery worker. Disabled in tests.
     rate_limit_enabled: bool = True
 
+    # ── Planetary Computer SAS signing ────────────────────────────────────────
+    # The signing endpoint limits request *rate*, not volume. Unbounded
+    # asyncio.gather over a parcel's Landsat years produced ~1 request per
+    # 185ms and 21 consecutive 429s in production, silently dropping 20 of
+    # 43 years. Cap concurrent signs and retry 429s rather than treating
+    # them as "item is broken".
+    pc_signing_concurrency: int = 4
+    pc_signing_attempts: int = 4
+
     # ── Imagery / Titiler ─────────────────────────────────────────────────────
     titiler_url: str = "http://titiler:80"
     # Internal URL Titiler uses to call back to the API (for signed STAC items).
