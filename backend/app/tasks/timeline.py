@@ -284,6 +284,25 @@ async def _search_and_persist_source(
         selected_groups: list[list[dict[str, object]]] = source_cfg["selector"](
             raw_items, viewport_bbox
         )
+        # The viewport selector optimises coverage *area*, so a year with no
+        # covering tile in the collection is served as the nearest
+        # neighbours — a whole mosaic of the wrong place. Suppress the year
+        # instead; a gap in the timeline is honest.
+        if lat is not None and lng is not None:
+            selected_groups, uncovered = stac_service.filter_groups_containing_point(
+                selected_groups, lat, lng
+            )
+            for group in uncovered:
+                logger.warning(
+                    "Suppressing imagery year with no covering tile",
+                    extra={
+                        "parcel_id": str(parcel_id),
+                        "source": source_name,
+                        "year": stac_service.extract_capture_date(group[0]).year,
+                        "reason": "no selected tile's footprint contains the parcel",
+                        "tile_ids": [str(i.get("id")) for i in group],
+                    },
+                )
     else:
         selected_groups = source_cfg["selector"](raw_items)
 

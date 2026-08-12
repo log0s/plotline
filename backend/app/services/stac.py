@@ -467,6 +467,34 @@ def filter_items_containing_point(
     return result
 
 
+def filter_groups_containing_point(
+    groups: list[list[dict[str, object]]],
+    lat: float,
+    lng: float,
+) -> tuple[list[list[dict[str, object]]], list[list[dict[str, object]]]]:
+    """Split selected mosaic groups into (covering, non-covering).
+
+    The NAIP path selects tiles by how much of the *viewport* they cover and
+    never asks whether any of them covers the address. When a year has no
+    covering tile in the collection, that optimises happily over the nearest
+    neighbours: the 2026-08 audit found both 350 5th Ave parcels served a
+    2023 mosaic composed entirely of New Jersey quads for a Midtown
+    Manhattan address, because PC has no covering 2023 tile at all.
+
+    A group survives only if at least one of its tiles contains the point.
+    The caller suppresses the rest — a missing year is honest, the wrong
+    state is not.
+    """
+    covering: list[list[dict[str, object]]] = []
+    missing: list[list[dict[str, object]]] = []
+    for group in groups:
+        if group and filter_items_containing_point(group, lat, lng):
+            covering.append(group)
+        elif group:
+            missing.append(group)
+    return covering, missing
+
+
 def _bbox_intersection_area(
     a: tuple[float, float, float, float],
     b: tuple[float, float, float, float],

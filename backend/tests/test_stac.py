@@ -1350,3 +1350,73 @@ def test_blob_container_parses_account_and_container() -> None:
     ) == ("naipeuwest", "naip")
     assert _blob_container("https://prd-tnm.s3.amazonaws.com/topo.tif") is None
     assert _blob_container("https://planetarycomputer.microsoft.com/api/data/v1/x") is None
+
+
+# ── NAIP point-coverage gate ─────────────────────────────────────────────────
+
+# The three items Planetary Computer returns for NAIP 2023 over Midtown
+# Manhattan, captured verbatim. Every one is a New Jersey quad, and none
+# contains 350 5th Ave — there is no covering 2023 tile in the collection, so
+# the viewport selector served a mosaic of the wrong state. Hudson Yards, half
+# a mile west, *is* contained by nj_m_4007416_se: same year, same three
+# candidates, opposite verdict. That is the whole gate in one fixture.
+_NAIP_2023_4007309_SW = {
+    "id": "nj_m_4007309_sw_18_030_20230820_20231019",
+    "bbox": [-74.001268, 40.749189, -73.936174, 40.813311],
+    "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [-73.937188, 40.749189],
+                [-73.936174, 40.812737],
+                [-74.000316, 40.813311],
+                [-74.001268, 40.749761],
+                [-73.937188, 40.749189],
+            ]
+        ],
+    },
+    "properties": {"datetime": "2023-08-20T00:00:00Z"},
+}
+
+_NAIP_2023_4007416_SE = {
+    "id": "nj_m_4007416_se_18_030_20230820_20231019",
+    "bbox": [-74.063709, 40.749223, -73.998731, 40.813276],
+    "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [-73.999684, 40.749223],
+                [-73.998731, 40.812738],
+                [-74.062817, 40.813276],
+                [-74.063709, 40.749761],
+                [-73.999684, 40.749223],
+            ]
+        ],
+    },
+    "properties": {"datetime": "2023-08-20T00:00:00Z"},
+}
+
+_EMPIRE_STATE = {"lat": 40.7484, "lng": -73.9857}  # 350 5th Ave
+_HUDSON_YARDS = {"lat": 40.7539, "lng": -74.0019}  # 500 W 33rd St
+
+
+def test_naip_year_suppressed_when_no_tile_covers_the_point() -> None:
+    """A mosaic can cover the viewport and still be the wrong place entirely."""
+    from app.services.stac import filter_groups_containing_point
+
+    mosaic = [_NAIP_2023_4007309_SW, _NAIP_2023_4007416_SE]
+    covering, missing = filter_groups_containing_point([mosaic], **_EMPIRE_STATE)
+
+    assert covering == [], "no 2023 tile contains 350 5th Ave — suppress the year"
+    assert len(missing) == 1
+
+
+def test_naip_year_kept_when_one_mosaic_tile_covers_the_point() -> None:
+    """The same mosaic, half a mile west: one tile covers, so the year stays."""
+    from app.services.stac import filter_groups_containing_point
+
+    mosaic = [_NAIP_2023_4007309_SW, _NAIP_2023_4007416_SE]
+    covering, missing = filter_groups_containing_point([mosaic], **_HUDSON_YARDS)
+
+    assert len(covering) == 1, "the second tile contains Hudson Yards — this is the mosaic working"
+    assert missing == []
