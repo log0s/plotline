@@ -828,6 +828,104 @@ async def test_validate_landsat_selection_drops_year_with_no_valid() -> None:
     assert len(result) == 0
 
 
+# ── validate_sentinel_selection (the Landsat twin) ───────────────────────────
+
+
+def _s2_item(item_id: str, dt: str, cloud: float) -> dict:
+    return {
+        "id": item_id,
+        "properties": {"datetime": dt, "eo:cloud_cover": cloud},
+        "assets": {"visual": {"href": f"https://example.com/{item_id}.tif"}},
+    }
+
+
+@pytest.mark.asyncio
+async def test_validate_sentinel_selection_swaps_same_quarter_fallback() -> None:
+    from app.services.stac import validate_sentinel_selection
+
+    bad = _s2_item("bad", "2020-07-01T00:00:00Z", 5.0)
+    good = _s2_item("good", "2020-08-01T00:00:00Z", 10.0)
+
+    async def mock_validate(item):
+        return item["id"] != "bad"
+
+    with patch("app.services.stac.validate_sentinel_item", side_effect=mock_validate):
+        result = await validate_sentinel_selection([[bad]], [bad, good])
+
+    assert [g[0]["id"] for g in result] == ["good"]
+
+
+@pytest.mark.asyncio
+async def test_validate_sentinel_selection_ignores_other_quarters() -> None:
+    """The fallback walk is scoped to the quarter S2 selects on, not the year."""
+    from app.services.stac import validate_sentinel_selection
+
+    bad = _s2_item("bad", "2020-07-01T00:00:00Z", 5.0)
+    other_quarter = _s2_item("q4", "2020-11-01T00:00:00Z", 1.0)
+
+    async def mock_validate(item):
+        return item["id"] != "bad"
+
+    with patch("app.services.stac.validate_sentinel_item", side_effect=mock_validate):
+        result = await validate_sentinel_selection([[bad]], [bad, other_quarter])
+
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_validate_sentinel_selection_drops_quarter_with_no_valid() -> None:
+    from app.services.stac import validate_sentinel_selection
+
+    bad = _s2_item("bad", "2020-07-01T00:00:00Z", 5.0)
+
+    async def always_invalid(item):
+        return False
+
+    with patch("app.services.stac.validate_sentinel_item", side_effect=always_invalid):
+        result = await validate_sentinel_selection([[bad]], [bad])
+
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_validate_sentinel_selection_tolerates_empty_group() -> None:
+    from app.services.stac import validate_sentinel_selection
+
+    good = _s2_item("good", "2020-07-01T00:00:00Z", 5.0)
+
+    async def always_valid(item):
+        return True
+
+    with patch("app.services.stac.validate_sentinel_item", side_effect=always_valid):
+        result = await validate_sentinel_selection([[], [good]], [good])
+
+    assert [g[0]["id"] for g in result] == ["good"]
+
+
+@pytest.mark.asyncio
+async def test_validate_sentinel_item_checks_the_visual_asset() -> None:
+    """S2 tiles render from `visual`; a missing one is not servable."""
+    from app.services.stac import validate_sentinel_item
+
+    head_resp = MagicMock()
+    head_resp.status_code = 200
+    search_client = AsyncMock()
+    search_client.head = AsyncMock(return_value=head_resp)
+
+    with (
+        patch(
+            "app.services.stac.sign_pc_url",
+            new_callable=AsyncMock,
+            return_value="https://signed.example.com/visual.tif",
+        ),
+        patch("app.services.stac._get_search_client", return_value=search_client),
+    ):
+        assert await validate_sentinel_item(_s2_item("ok", "2020-07-01T00:00:00Z", 1.0)) is True
+
+    no_visual = {"id": "x", "assets": {"B04": {"href": "https://example.com/B04.tif"}}}
+    assert await validate_sentinel_item(no_visual) is False
+
+
 # ── close_clients ────────────────────────────────────────────────────────────
 
 

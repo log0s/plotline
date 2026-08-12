@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
 from datetime import date
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -809,25 +810,27 @@ def extract_capture_date(item: dict[str, object]) -> date:
     return _capture_date(item)
 
 
-async def validate_landsat_item(item: dict[str, object]) -> bool:
-    """Sign and HEAD the red band asset to verify the item is accessible.
-
-    Older Landsat scenes (1984–1990s) sometimes have broken or expired
-    assets on Planetary Computer.  A single-band canary check is enough
-    because all bands share the same storage container.
-    """
+async def _validate_asset(item: dict[str, object], asset_key: str, source: str) -> bool:
+    """Sign and HEAD one asset to verify the item is actually servable."""
     assets: dict[str, dict[str, object]] = item.get("assets", {})  # type: ignore[assignment]  # STAC item "assets" is a dict of asset objects
-    red = assets.get("red")
-    if not red or not red.get("href"):
-        logger.info("Landsat item missing red band", extra={"item_id": item.get("id")})
+    asset = assets.get(asset_key)
+    if not asset or not asset.get("href"):
+        logger.info(
+            "%s item missing %s asset",
+            source,
+            asset_key,
+            extra={"item_id": item.get("id")},
+        )
         return False
 
-    href = str(red["href"])
+    href = str(asset["href"])
     try:
         signed = await sign_pc_url(href, wait_budget=SIGN_WAIT_BATCH)
     except (httpx.HTTPStatusError, httpx.RequestError) as exc:
         logger.info(
-            "Landsat red band signing failed",
+            "%s %s asset signing failed",
+            source,
+            asset_key,
             extra={"item_id": item.get("id"), "error": str(exc)},
         )
         return False
@@ -836,13 +839,17 @@ async def validate_landsat_item(item: dict[str, object]) -> bool:
         resp = await _get_search_client().head(signed, follow_redirects=True)
         if resp.status_code >= 400:
             logger.info(
-                "Landsat red band inaccessible",
+                "%s %s asset inaccessible",
+                source,
+                asset_key,
                 extra={"item_id": item.get("id"), "status": resp.status_code},
             )
             return False
     except httpx.RequestError as exc:
         logger.info(
-            "Landsat red band HEAD failed",
+            "%s %s asset HEAD failed",
+            source,
+            asset_key,
             extra={"item_id": item.get("id"), "error": str(exc)},
         )
         return False
@@ -850,36 +857,56 @@ async def validate_landsat_item(item: dict[str, object]) -> bool:
     return True
 
 
-async def validate_landsat_selection(
+async def validate_landsat_item(item: dict[str, object]) -> bool:
+    """Sign and HEAD the red band asset to verify the item is accessible.
+
+    Older Landsat scenes (1984–1990s) sometimes have broken or expired
+    assets on Planetary Computer.  A single-band canary check is enough
+    because all bands share the same storage container.
+    """
+    return await _validate_asset(item, "red", "Landsat")
+
+
+async def validate_sentinel_item(item: dict[str, object]) -> bool:
+    """Sign and HEAD the visual (TCI) asset — the only one S2 tiles read."""
+    return await _validate_asset(item, "visual", "Sentinel-2")
+
+
+async def _validate_selection(
     selected_groups: list[list[dict[str, object]]],
     raw_items: list[dict[str, object]],
+    *,
+    period: Callable[[date], object],
+    validate: Callable[[dict[str, object]], Awaitable[bool]],
+    source: str,
 ) -> list[list[dict[str, object]]]:
-    """Validate selected Landsat items and swap in fallbacks for broken ones.
+    """Validate each selected item, swapping in same-period fallbacks.
 
-    For each selected item, HEAD-checks the red band asset.  If it fails,
-    iterates through same-year candidates from *raw_items* (ranked by cloud
-    cover) until a valid one is found.  Years with no valid candidate are
-    dropped entirely — better a gap than a 502.
+    For each selected item, HEAD-checks its canary asset.  If it fails,
+    iterates through candidates from the same period in *raw_items* (ranked
+    by cloud cover) until a valid one is found.  Periods with no valid
+    candidate are dropped entirely — better a gap than a 502.
+
+    ``period`` is whatever grouping the source selects on: the year for
+    Landsat, the calendar quarter for Sentinel-2, matching their selectors.
     """
-    by_year: dict[int, list[dict[str, object]]] = defaultdict(list)
+    by_period: dict[object, list[dict[str, object]]] = defaultdict(list)
     for item in raw_items:
         if not _has_capture_date(item):
             continue
-        by_year[_capture_date(item).year].append(item)
-    for year_items in by_year.values():
-        year_items.sort(key=_cloud_cover)
+        by_period[period(_capture_date(item))].append(item)
+    for period_items in by_period.values():
+        period_items.sort(key=_cloud_cover)
 
     # Filter once and zip over the filtered list. Validating `if g` while
     # zipping over the unfiltered groups made strict=True raise ValueError —
-    # failing the whole Landsat source — the first time any selector emitted
-    # an empty group. No selector does today; that is what makes it a
-    # landmine rather than a bug.
+    # failing the whole source — the first time any selector emitted an
+    # empty group. No selector does today; that is what makes it a landmine
+    # rather than a bug.
     non_empty = [g for g in selected_groups if g]
 
     # Validate all selected items in parallel
-    valid_flags = await asyncio.gather(
-        *(validate_landsat_item(g[0]) for g in non_empty),
-    )
+    valid_flags = await asyncio.gather(*(validate(g[0]) for g in non_empty))
 
     validated: list[list[dict[str, object]]] = []
     for group, is_valid in zip(non_empty, valid_flags, strict=True):
@@ -888,22 +915,24 @@ async def validate_landsat_selection(
             validated.append(group)
             continue
 
-        year = _capture_date(item).year
+        key = period(_capture_date(item))
         selected_id = item.get("id")
         logger.warning(
-            "Landsat item failed validation; trying fallbacks",
-            extra={"year": year, "item_id": selected_id},
+            "%s item failed validation; trying fallbacks",
+            source,
+            extra={"period": str(key), "item_id": selected_id},
         )
 
         found = False
-        for candidate in by_year.get(year, []):
+        for candidate in by_period.get(key, []):
             if candidate.get("id") == selected_id:
                 continue
-            if await validate_landsat_item(candidate):
+            if await validate(candidate):
                 logger.info(
-                    "Landsat fallback found",
+                    "%s fallback found",
+                    source,
                     extra={
-                        "year": year,
+                        "period": str(key),
                         "original_id": selected_id,
                         "fallback_id": candidate.get("id"),
                     },
@@ -913,9 +942,44 @@ async def validate_landsat_selection(
                 break
 
         if not found:
-            logger.warning("No valid Landsat item for year %d; skipping", year)
+            logger.warning("No valid %s item for %s; skipping", source, key)
 
     return validated
+
+
+async def validate_landsat_selection(
+    selected_groups: list[list[dict[str, object]]],
+    raw_items: list[dict[str, object]],
+) -> list[list[dict[str, object]]]:
+    """Validate selected Landsat items and swap in same-year fallbacks."""
+    return await _validate_selection(
+        selected_groups,
+        raw_items,
+        period=lambda d: d.year,
+        validate=validate_landsat_item,
+        source="Landsat",
+    )
+
+
+async def validate_sentinel_selection(
+    selected_groups: list[list[dict[str, object]]],
+    raw_items: list[dict[str, object]],
+) -> list[list[dict[str, object]]]:
+    """Validate selected Sentinel-2 items and swap in same-quarter fallbacks.
+
+    The twin of ``validate_landsat_selection``. S2 had no validation pass at
+    all, so a quarter whose lowest-cloud granule is unservable was persisted
+    anyway and became a broken tile, where the same failure on Landsat costs
+    at worst a gap. Same walk, same cloud ranking, grouped by the quarter S2
+    selects on rather than the year.
+    """
+    return await _validate_selection(
+        selected_groups,
+        raw_items,
+        period=lambda d: (d.year, (d.month - 1) // 3 + 1),
+        validate=validate_sentinel_item,
+        source="Sentinel-2",
+    )
 
 
 def extract_bbox_wkt(item: dict[str, object]) -> str | None:
