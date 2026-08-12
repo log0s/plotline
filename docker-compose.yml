@@ -29,6 +29,11 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      # Parity with the Fly build: local images report "dev" rather than a
+      # SHA, which is exactly what /api/v1/health should say about them.
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+        BUILT_AT: ${BUILT_AT:-dev}
     env_file:
       - .env
     environment:
@@ -55,6 +60,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+        BUILT_AT: ${BUILT_AT:-dev}
     env_file:
       - .env
     environment:

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, Response
 
+from app.config import Settings, get_settings
 from app.db import check_db_connection, check_redis_connection
-from app.schemas.parcels import HealthResponse
+from app.schemas.parcels import HealthResponse, VersionInfo
 
 router = APIRouter()
 
@@ -14,11 +15,15 @@ router = APIRouter()
     "/health",
     response_model=HealthResponse,
     summary="Health check",
-    description="Returns connectivity status for the database and Redis.",
+    description=(
+        "Returns connectivity status for the database and Redis, plus the "
+        "git SHA and build time of the running image."
+    ),
     responses={503: {"description": "One or more dependencies are unhealthy"}},
 )
 def health_check(
     response: Response,
+    settings: Settings = Depends(get_settings),
 ) -> HealthResponse:
     db_status = "connected" if check_db_connection() else "error"
     redis_status = "connected" if check_redis_connection() else "error"
@@ -27,4 +32,9 @@ def health_check(
     if overall != "ok":
         response.status_code = 503
 
-    return HealthResponse(status=overall, db=db_status, redis=redis_status)
+    return HealthResponse(
+        status=overall,
+        db=db_status,
+        redis=redis_status,
+        version=VersionInfo(sha=settings.git_sha, built=settings.built_at),
+    )

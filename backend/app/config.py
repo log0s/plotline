@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     app_env: Literal["development", "staging", "production"] = "development"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
+    # ── Build identity ────────────────────────────────────────────────────────
+    # Baked into the image (ARG → ENV) and reported by /api/v1/health, so what
+    # is running in production is readable rather than inferred from image
+    # build dates. Both default to "unknown": a build that didn't pass them
+    # must still boot and still pass its health check.
+    git_sha: str = "unknown"
+    built_at: str = "unknown"
+
     # ── Database ──────────────────────────────────────────────────────────────
     database_url: str = Field(
         ...,

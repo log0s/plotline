@@ -33,6 +33,14 @@ RUN chmod +x /app/entrypoint.sh && cp /app/entrypoint.sh /entrypoint.sh
 
 ENV PYTHONPATH=/app
 
+# Build identity, surfaced by GET /api/v1/health. CI passes both via
+# `flyctl deploy --build-arg` (see .github/workflows/deploy.yml); a build
+# without them reports "unknown" rather than failing.
+ARG GIT_SHA=unknown
+ARG BUILT_AT=unknown
+ENV GIT_SHA=${GIT_SHA} \
+    BUILT_AT=${BUILT_AT}
+
 EXPOSE 8000
 
 ENTRYPOINT ["/entrypoint.sh"]

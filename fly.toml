@@ -3,6 +3,10 @@ app = "log0s-plotline-api"
 
    [build]
      dockerfile = "Dockerfile.fly"
+     # GIT_SHA / BUILT_AT deliberately live in the deploy command, not in a
+     # [build.args] table here: a value committed to this file is a constant,
+     # so it would either go stale immediately or mask the SHA the CLI passes.
+     # CI supplies both via `flyctl deploy --build-arg` (deploy.yml).
 
    [env]
      APP_ENV = "production"

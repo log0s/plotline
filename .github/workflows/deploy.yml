@@ -74,7 +74,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only
+      # --build-arg stamps the image with the commit it was built from, so
+      # GET /api/v1/health reports what is actually deployed.
+      - run: |
+          flyctl deploy --remote-only \
+            --build-arg GIT_SHA=${{ github.sha }} \
+            --build-arg BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
@@ -85,7 +90,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only --config fly.worker.toml
+      - run: |
+          flyctl deploy --remote-only --config fly.worker.toml \
+            --build-arg GIT_SHA=${{ github.sha }} \
+            --build-arg BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 

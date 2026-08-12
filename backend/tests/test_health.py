@@ -20,7 +20,45 @@ def test_health_ok(client: TestClient) -> None:
     assert body["status"] == "ok"
     assert body["db"] == "connected"
     assert body["redis"] == "connected"
-    assert "version" in body
+    assert set(body["version"]) == {"sha", "built"}
+
+
+def test_health_reports_build_identity(client: TestClient) -> None:
+    """The health body carries the image's git SHA and build time."""
+    from app.config import Settings, get_settings
+
+    stamped = Settings(
+        database_url="postgresql://test:test@localhost/test",
+        git_sha="abc1234",
+        built_at="2026-08-11T00:00:00Z",
+    )
+    client.app.dependency_overrides[get_settings] = lambda: stamped  # type: ignore[attr-defined]  # TestClient.app is typed as the ASGI protocol, not FastAPI
+
+    with (
+        patch("app.api.v1.health.check_db_connection", return_value=True),
+        patch("app.api.v1.health.check_redis_connection", return_value=True),
+    ):
+        response = client.get("/api/v1/health")
+
+    assert response.json()["version"] == {"sha": "abc1234", "built": "2026-08-11T00:00:00Z"}
+
+
+def test_health_survives_missing_build_identity(client: TestClient) -> None:
+    """An image built without the build args still reports healthy."""
+    from app.config import Settings
+
+    unstamped = Settings(database_url="postgresql://test:test@localhost/test")
+    assert unstamped.git_sha == "unknown"
+    assert unstamped.built_at == "unknown"
+
+    with (
+        patch("app.api.v1.health.check_db_connection", return_value=True),
+        patch("app.api.v1.health.check_redis_connection", return_value=True),
+    ):
+        response = client.get("/api/v1/health")
+
+    assert response.status_code == 200
+    assert response.json()["version"] == {"sha": "unknown", "built": "unknown"}
 
 
 def test_health_db_down(client: TestClient) -> None:

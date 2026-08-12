@@ -24,10 +24,22 @@ class ParcelResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class VersionInfo(BaseModel):
+    """Build identity of the running image.
+
+    Both fields are baked in at image build time. They read "unknown" when
+    the build didn't pass them (local `docker build`, a bare `uvicorn`) —
+    the endpoint never fails over a missing SHA.
+    """
+
+    sha: str = Field(description="Git SHA the image was built from, or 'unknown'")
+    built: str = Field(description="Image build timestamp (UTC ISO 8601), or 'unknown'")
+
+
 class HealthResponse(BaseModel):
     """Response body for GET /api/v1/health."""
 
     status: str = Field(description="Overall health status: 'ok' or 'degraded'")
     db: str = Field(description="'connected' or 'error'")
     redis: str = Field(description="'connected' or 'error'")
-    version: str = Field(default="0.1.0")
+    version: VersionInfo

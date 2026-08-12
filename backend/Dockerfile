@@ -29,6 +29,13 @@ RUN chmod +x /entrypoint.sh
 # Make scripts directory available
 ENV PYTHONPATH=/app
 
+# Build identity, surfaced by GET /api/v1/health. Last so a new SHA doesn't
+# invalidate the dependency and source layers above it.
+ARG GIT_SHA=unknown
+ARG BUILT_AT=unknown
+ENV GIT_SHA=${GIT_SHA} \
+    BUILT_AT=${BUILT_AT}
+
 EXPOSE 8000
 
 ENTRYPOINT ["/entrypoint.sh"]

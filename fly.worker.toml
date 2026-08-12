@@ -8,6 +8,8 @@ primary_region = 'lax'
 
 [build]
   dockerfile = 'Dockerfile.fly'
+  # GIT_SHA / BUILT_AT are passed by CI on the deploy command rather than
+  # pinned in a [build.args] table — see fly.toml for why.
 
 [env]
   APP_ENV = 'production'
