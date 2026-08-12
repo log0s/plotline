@@ -350,3 +350,124 @@ that would have been a line nothing reads (see item 2 on
 
 The operational conclusion is unaffected: no environment variable available
 to this deployment bounds the STAC item cache.
+
+---
+
+## Addendum, 2026-08-12 — §4.2 fixed; prediction for the post-fix boundary
+
+§4.2 recorded the absence of single-flight on `_container_token` as open. It is
+now fixed in `2168124`, with a separate `e8c857c` changing the cadence at which
+the herd it coalesces arrives. Both are **committed and not deployed** as of
+writing. Nothing above is edited; §4.2 stands as the statement of the defect.
+
+### Minting topology, as built
+
+| Call site | Process | Reaches `_container_token` via | `wait_budget` |
+|---|---|---|---|
+| `imagery.py:221` list_imagery | API | `sign_pc_url`, `asyncio.gather` over a parcel's URLs | `SIGN_WAIT_REQUEST` |
+| `imagery.py:462` `_proxy_cog_tile` | API | `sign_pc_url` | `SIGN_WAIT_REQUEST` |
+| `imagery.py:520` `_landsat_stac_url` | API | `container_token_expiry` | `SIGN_WAIT_REQUEST` |
+| `imagery.py:651` `warmup_cog` | API | `sign_pc_url` | `SIGN_WAIT_REQUEST` |
+| `imagery.py:782` `/imagery/{id}/stac` | API | `sign_pc_url`, `asyncio.gather` over 3 bands | `SIGN_WAIT_REQUEST` |
+| `preview_renderer.py:105` | offline (`seed_featured.py`) | `sign_pc_url` | `SIGN_WAIT_BATCH` |
+| `stac.py:1009` `_validate_asset` (validation) | worker | `sign_pc_url` | `SIGN_WAIT_BATCH` |
+
+One Redis key per container, `sas-token:{account}/{container}`, written with
+`setex`. API and worker read and write the **same** key — one Redis, no
+namespacing — so a warm token minted by either serves the other. What they do
+not share is the in-process flight: coalescing is per event loop, so the bound
+is one mint per process per container, and with two API machines plus the
+worker the worst case at a boundary is three rather than one. The observed
+boundary had the worker at 0 mints and the second API machine at 0, so this
+bound has not yet been the binding term.
+
+Two properties of the topology decided where the seam went. First, every
+API-side path passes `SIGN_WAIT_REQUEST` and every batch path passes
+`SIGN_WAIT_BATCH`, so processes are budget-homogeneous and a follower
+inheriting the leader's budget cannot turn a 2 s-budget request into a 60 s
+wait; mixing budgets in one process would break that, and the invariant is
+noted at `_container_token`. Second, two of the seven call sites gather —
+which is why the seam is inside `_container_token` and not above the gather.
+
+### Why 1200 s
+
+Not a measured freshness margin. `9ea33d9` (2026-03-26) introduced
+`_SAS_CACHE_TTL = 600` with the comment "tokens last ~30 min"; `3b7b10e`
+(2026-08-11) doubled it to 1200 with "tokens last ~45", the commit body reading
+"Also raise the SAS cache TTL from 10 to 20 minutes". The constant tracks a
+rule of thumb — roughly half the believed token life — and the believed life
+itself was wrong until this investigation pinned it at exactly 45 minutes.
+
+What actually bounds the margin from below is the longest path from issuing a
+signed URL to reading the blob. Every such path is a single request: the
+`/stac` callback signs and Titiler's GDAL reads inside the same render (30 s
+client timeout, `imagery.py:324`); Titiler's item LRU has no expiry but its key
+carries `?v={se}`, so an item stops being addressed the moment the Redis entry
+rotates, plus one in-flight render; the `/stac` `Cache-Control` is already
+capped at the token's own remaining life less 300 s (`imagery.py:672-695`), so
+an intermediate cache cannot extend a token past its expiry either; worker
+validation and the preview renderer sign and immediately HEAD/GET inside a 10 s
+timeout. Nothing needs 25 minutes. `e8c857c` therefore sets the container-token
+TTL to `se − 300 s` — ~10× the longest of those paths, and the same figure
+`_STAC_CACHE_MARGIN_S` already uses. `_SAS_CACHE_TTL` survives for the per-URL
+`sas:{url}` cache, which signs through a different endpoint.
+
+### The `?v`/body race, confirmed in code
+
+`?v` reads Redis at time *t₁* (`container_token_expiry` → `_container_token`);
+the callback reads it again at *t₂ > t₁*, one Titiler round-trip later. The
+cached value only ever moves forward — a key either still holds the token `?v`
+named, or has been replaced by a fresher mint — so the item can only receive a
+token at least as fresh as the one `?v` names. §4's argument holds. Worst-case
+skew is bounded by *t₂ − t₁*, one tile render inside the 30 s Titiler timeout,
+which is far shorter than a rotation interval: at most one generation, so an
+item keyed on `se_N` can carry a token expiring one interval later, never
+earlier. The 19:56:48–49Z observation in `BOUNDARY-BASELINE.md` §4 — three
+bands carrying tokens 1 s apart — is the degenerate case of this, two mints of
+the same generation rather than two generations.
+
+### Prediction, for post-deploy scoring
+
+Written before deploy. Not to be edited afterward — the observed result goes
+beside it with a verdict. Counted on the `30caec4` log line
+(`SAS container token minted container=<c> se=<ts> ms=<n>`), across **all**
+containers, not Landsat alone.
+
+1. **At most one mint per rotation boundary, per process, per container.**
+   Grouping mint lines by machine id and container within any 5-minute boundary
+   window yields no group larger than 1. The 6-mint landsat-c2 signature of
+   `BOUNDARY-BASELINE.md` §3, and the 13 on `sentinel2-l2` / 8 on `naip`,
+   should not recur. Two machines browsing the same container across one
+   boundary may still produce 2 lines with distinct machine ids; that is the
+   accepted bound, not a failure of the prediction.
+2. **`K` stays 0.** No `backoff exceeds wait budget` and no
+   `SAS rate-limited; backing off` at a boundary. It was already 0 at 6, 13 and
+   8 concurrent mints, so this predicts no regression, not an improvement.
+3. **The latency spike is unchanged in shape.** Single-flight removes duplicate
+   *mints*, not the *refetch*. Every `/stac` key still rotates together and
+   every Titiler item is still refetched once, which is inherent to the `?v`
+   fix and correct. Expect the same ~4.2× one-wave median rise decaying inside
+   ~60 s. A materially smaller spike would mean the mints, not the refetches,
+   had been the dominant cost — which the 670–830 ms mint latency against a
+   2138 ms median argues against.
+4. **With `e8c857c`, the boundary cadence moves from ~20 min of traffic to
+   ~40.** Consecutive mints for one container should fall ~45 − 5 = 40 min
+   apart rather than 20, still demand-triggered, so an idle period defers the
+   boundary as before. `?v` samples 21 min apart should now agree, where
+   `BOUNDARY-BASELINE.md` §5 notes they differed.
+
+### Refresh-ahead: rejected
+
+Not implemented, and not deferred. Refreshing a container token before its
+expiry would trade a synchronous mint on the cold path for a background one,
+and the baseline selects against it on both of its usual justifications:
+reliability, because `K` = 0 and no 429s appeared even at 13 concurrent mints,
+so there is no failure to prevent; and latency, because the boundary cost is
+the Titiler item refetch, which refresh-ahead cannot remove — a warm token does
+not spare Titiler the refetch its rotated cache key demands. It would add a
+timer, a second write path to the token key, and a mint that no request is
+waiting for, to buy nothing measured. What would reopen it: `K` > 0 or 429s
+from `/api/sas/v1/token/...` at a boundary *after* `2168124` and `e8c857c` are
+deployed — that would mean one mint per process per container is itself over
+the limit, and the remedy would then be to stop minting on the request path at
+all rather than to mint more often.
