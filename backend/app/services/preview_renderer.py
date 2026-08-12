@@ -100,9 +100,12 @@ async def render_preview(
     async def _fetch_tile(client: httpx.AsyncClient, raw_url: str) -> Image.Image | None:
         try:
             signed = await stac_service.sign_pc_url(raw_url)
-        except Exception as exc:
-            logger.warning("URL signing failed for %s, using unsigned", loc.slug, exc_info=exc)
-            signed = raw_url
+        except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+            # Rendering from the unsigned href cannot work — the blob is
+            # private — so it would burn a Titiler render to produce nothing.
+            # Drop the tile; the caller reports when every tile failed.
+            logger.warning("Signing failed for %s; skipping tile", loc.slug, exc_info=exc)
+            return None
         resp = await client.get(
             titiler_png_url,
             params={"url": signed, "bidx": [1, 2, 3], "rescale": "0,255"},

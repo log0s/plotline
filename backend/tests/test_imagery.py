@@ -721,3 +721,129 @@ def test_stac_host_allowlist() -> None:
     assert not _is_allowed_stac_host("http://169.254.169.254/latest/meta-data/")
     # A host that merely ends with the allowed name must not pass.
     assert not _is_allowed_stac_host("https://planetarycomputer.microsoft.com.evil.test/x")
+
+
+# ── Signing failures never leak an unsigned href ─────────────────────────────
+
+_BLOB_URL = "https://landsateuwest.blob.core.windows.net/landsat-c2/naip_2020.tif"
+
+
+def _insert_snapshot(db: Session, parcel_id: uuid.UUID, source: str, cog_url: str) -> uuid.UUID:
+    from app.services.imagery import get_imagery_snapshots, upsert_imagery_snapshot
+
+    upsert_imagery_snapshot(
+        db,
+        parcel_id=parcel_id,
+        source=source,
+        capture_date=date(2020, 7, 15),
+        stac_item_id=f"{source}_2020_item",
+        stac_collection="naip" if source == "naip" else "landsat-c2-l2",
+        cog_url=cog_url,
+        thumbnail_url=None,
+        resolution_m=1.0,
+    )
+    return get_imagery_snapshots(db, parcel_id=parcel_id, source=source)[0].id
+
+
+def test_tile_proxy_502s_when_signing_fails(client: TestClient, db: Session) -> None:
+    """A terminal signing failure 502s instead of handing Titiler an
+    unsigned href — which Planetary Computer rejects with a 409 that
+    surfaces to the user as a broken tile."""
+    import httpx
+
+    from app.api.v1.imagery import _snapshot_cache
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id, "Unsigned Ave")
+    snapshot_id = _insert_snapshot(db, parcel_id, "naip", _BLOB_URL)
+    _snapshot_cache.clear()
+
+    with (
+        patch("app.api.v1.imagery.stac_service.sign_pc_url", new_callable=AsyncMock) as mock_sign,
+        patch("app.api.v1.imagery._get_titiler_client") as mock_titiler,
+    ):
+        mock_sign.side_effect = httpx.RequestError("signer unreachable")
+        resp = client.get(f"/api/v1/imagery/{snapshot_id}/tiles/12/100/200")
+
+    assert resp.status_code == 502
+    assert "blob.core.windows.net" not in resp.text
+    assert _BLOB_URL not in resp.text
+    mock_titiler.assert_not_called()
+
+
+def test_signed_stac_item_502s_when_band_signing_fails(client: TestClient, db: Session) -> None:
+    """One unsignable band fails the whole item rather than serving a
+    private blob href Titiler can only 409 on."""
+    import httpx
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id, "Band St")
+    stac_url = (
+        "https://planetarycomputer.microsoft.com/api/stac/v1/collections/"
+        "landsat-c2-l2/items/LT05_2020"
+    )
+    snapshot_id = _insert_snapshot(db, parcel_id, "landsat", stac_url)
+
+    item = {
+        "id": "LT05_2020",
+        "assets": {band: {"href": f"{_BLOB_URL}#{band}"} for band in ("red", "green", "blue")},
+    }
+    fetch_client = AsyncMock()
+    fetch_client.get.return_value = httpx.Response(
+        200, json=item, request=httpx.Request("GET", stac_url)
+    )
+
+    async def _sign(url: str) -> str:
+        if url.endswith("#green"):
+            raise httpx.HTTPStatusError(
+                "429",
+                request=httpx.Request("GET", url),
+                response=httpx.Response(429, request=httpx.Request("GET", url)),
+            )
+        return f"{url}?sig=ok"
+
+    with (
+        patch("app.api.v1.imagery._get_stac_fetch_client", return_value=fetch_client),
+        patch("app.api.v1.imagery.stac_service.sign_pc_url", side_effect=_sign),
+    ):
+        resp = client.get(f"/api/v1/imagery/{snapshot_id}/stac")
+
+    assert resp.status_code == 502
+    assert "blob.core.windows.net" not in resp.text
+
+
+def test_list_imagery_omits_snapshots_it_cannot_sign(client: TestClient, db: Session) -> None:
+    """An unsignable snapshot is left out of the listing, not returned with
+    a private blob URL the browser could only fail on."""
+    import httpx
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id, "Partial Way")
+    good_url = "https://example.blob.core.windows.net/good.tif"
+    from app.services.imagery import upsert_imagery_snapshot
+
+    upsert_imagery_snapshot(
+        db,
+        parcel_id=parcel_id,
+        source="naip",
+        capture_date=date(2018, 7, 15),
+        stac_item_id="naip_2018",
+        stac_collection="naip",
+        cog_url=good_url,
+        thumbnail_url=None,
+        resolution_m=1.0,
+    )
+    _insert_snapshot(db, parcel_id, "sentinel2", _BLOB_URL)
+
+    async def _sign(url: str) -> str:
+        if url == _BLOB_URL:
+            raise httpx.RequestError("signer unreachable")
+        return f"{url}?sig=ok"
+
+    with patch("app.api.v1.imagery.stac_service.sign_pc_url", side_effect=_sign):
+        resp = client.get(f"/api/v1/parcels/{parcel_id}/imagery")
+
+    assert resp.status_code == 200
+    snapshots = resp.json()["snapshots"]
+    assert [s["cog_url"] for s in snapshots] == [f"{good_url}?sig=ok"]
+    assert _BLOB_URL not in resp.text

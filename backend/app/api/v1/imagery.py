@@ -220,9 +220,18 @@ async def list_imagery(
         *(stac_service.sign_pc_url(u) for u in url_list),
         return_exceptions=True,
     )
+    # Unsignable URLs are left out of the map rather than mapped to their
+    # unsigned selves: a private blob href that reached the browser could
+    # only fail, so a snapshot missing its signature is dropped below.
     signed_map: dict[str, str] = {
-        u: (r if isinstance(r, str) else u) for u, r in zip(url_list, results, strict=False)
+        u: r for u, r in zip(url_list, results, strict=False) if isinstance(r, str)
     }
+    unsignable = len(url_list) - len(signed_map)
+    if unsignable:
+        logger.warning(
+            "Dropping imagery whose URLs could not be signed",
+            extra={"parcel_id": str(parcel_id), "unsigned_urls": unsignable},
+        )
 
     snapshot_responses: list[ImagerySnapshotResponse] = []
     for snap in snapshots:
@@ -230,9 +239,13 @@ async def list_imagery(
             signed_cog = snap.cog_url
             signed_extras: list[str] | None = snap.additional_cog_urls
         else:
-            signed_cog = signed_map.get(snap.cog_url, snap.cog_url)
+            if snap.cog_url not in signed_map:
+                continue
+            signed_cog = signed_map[snap.cog_url]
+            # A mosaic component that didn't sign is dropped from the group;
+            # the remaining tiles still render, just with a gap.
             signed_extras = (
-                [signed_map.get(u, u) for u in snap.additional_cog_urls]
+                [signed_map[u] for u in snap.additional_cog_urls if u in signed_map]
                 if snap.additional_cog_urls
                 else None
             )
@@ -243,7 +256,9 @@ async def list_imagery(
         elif _is_pc_preview(snap.thumbnail_url):
             signed_thumb = _bounded_preview_url(snap.thumbnail_url)
         else:
-            signed_thumb = signed_map.get(snap.thumbnail_url, snap.thumbnail_url)
+            # Thumbnails are optional in the UI — an unsigned one is a broken
+            # <img>, a missing one is the placeholder the Timeline already has.
+            signed_thumb = signed_map.get(snap.thumbnail_url)
 
         snapshot_responses.append(
             ImagerySnapshotResponse(
@@ -442,8 +457,20 @@ async def _proxy_cog_tile(
         try:
             signed_url = await stac_service.sign_pc_url(source_url)
         except (httpx.RequestError, httpx.HTTPStatusError) as exc:
-            logger.warning("URL signing failed, falling back to unsigned", exc_info=exc)
-            signed_url = source_url
+            # Never fall back to the unsigned href: Planetary Computer's blob
+            # storage is private, so an unsigned read is rejected with a 409
+            # that Titiler surfaces as a 500 and the user sees as a broken
+            # tile. sign_pc_url has already retried 429s with backoff, so a
+            # failure here is terminal for this request — 502 it, and let the
+            # client retry the tile against a signer that may have recovered.
+            logger.warning(
+                "Tile signing failed after retries",
+                extra={"snapshot_id": str(snap.id), "source": snap.source, "error": str(exc)},
+                exc_info=exc,
+            )
+            raise HTTPException(
+                status_code=502, detail="Could not sign imagery for this tile"
+            ) from exc
     else:
         signed_url = source_url
 
@@ -570,7 +597,14 @@ async def warmup_cog(
                 try:
                     source_url = await stac_service.sign_pc_url(source_url)
                 except (httpx.RequestError, httpx.HTTPStatusError):
-                    source_url = snap.cog_url
+                    # Warming with an unsigned href only teaches Titiler's
+                    # cache a 409. Skip the warmup; the tile request will
+                    # sign again (and 502 honestly if that fails too).
+                    logger.info(
+                        "Skipping warmup — signing failed",
+                        extra={"snapshot_id": str(snap.id)},
+                    )
+                    return Response(status_code=204)
             await _get_titiler_client().get(
                 f"{settings.titiler_url}/cog/info",
                 params={"url": source_url},
@@ -652,24 +686,35 @@ async def get_signed_stac_item(
         except (RedisError, OSError) as exc:
             logger.debug("STAC item cache write failed: %s", exc)
 
-    # Sign the band assets Titiler will read (concurrently). Per-band
-    # isolation: a single band failing to sign falls back to its
-    # unsigned href instead of breaking all three.
+    # Sign the band assets Titiler will read (concurrently). A band that
+    # cannot be signed fails the whole item: its unsigned href is a private
+    # blob URL, so serving it hands Titiler a guaranteed 409 — the shape the
+    # 2026-08 ops audit traced from 12 band-signing failures to 37 Titiler
+    # 500s. sign_pc_url has already retried 429s, so this is terminal.
     assets = stac_item.get("assets", {})
     bands = [b for b in ("red", "green", "blue") if b in assets and "href" in assets[b]]
     sign_results = await asyncio.gather(
         *(stac_service.sign_pc_url(assets[b]["href"]) for b in bands),
         return_exceptions=True,
     )
+    failed_bands = [
+        b for b, r in zip(bands, sign_results, strict=True) if isinstance(r, BaseException)
+    ]
+    if failed_bands:
+        first_error = next(r for r in sign_results if isinstance(r, BaseException))
+        logger.error(
+            "Band signing failed after retries",
+            extra={
+                "bands": failed_bands,
+                "snapshot_id": str(snapshot_id),
+                "error": str(first_error),
+            },
+            exc_info=first_error,
+        )
+        raise HTTPException(status_code=502, detail="Could not sign imagery for this snapshot")
+
     for band, result in zip(bands, sign_results, strict=True):
-        if isinstance(result, BaseException):
-            logger.warning(
-                "Band signing failed; using unsigned href",
-                extra={"band": band, "snapshot_id": str(snapshot_id)},
-                exc_info=result,
-            )
-        else:
-            assets[band]["href"] = result
+        assets[band]["href"] = result
 
     return Response(
         content=json.dumps(stac_item),
