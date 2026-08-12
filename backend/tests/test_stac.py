@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1371,6 +1372,143 @@ async def test_container_token_mint_logs_once_per_pc_call(
             "https://landsateuwest.blob.core.windows.net/landsat-c2/level-2/green.tif"
         )
         assert "SAS container token minted" not in caplog.text
+
+
+# ── SAS signing: single-flight on a cold container token (G7) ────────────────
+
+# (account, container, one band href in it) for two of the three containers the
+# 2026-08-12 baseline saw minting: sentinel2-l2 fanned out to 13 tokens in one
+# cold window, landsat-c2 to 6. The fix is per-container, not Landsat-specific.
+_SINGLE_FLIGHT_CONTAINERS = [
+    (
+        "landsateuwest/landsat-c2",
+        "https://landsateuwest.blob.core.windows.net/landsat-c2/level-2/{band}.tif",
+    ),
+    (
+        "sentinel2l2a01/sentinel2-l2",
+        "https://sentinel2l2a01.blob.core.windows.net/sentinel2-l2/tiles/{band}.tif",
+    ),
+]
+
+
+def _slow_token_client(token: str) -> AsyncMock:
+    """A token endpoint that takes a tick to answer, so callers really overlap.
+
+    The production fan-out window is the mint latency (670–830 ms observed):
+    every caller arriving inside it finds no cached token. An instant mock
+    would close that window before the second caller ran and pass with or
+    without the fix.
+    """
+
+    async def _get(*_args: object, **_kwargs: object) -> MagicMock:
+        await asyncio.sleep(0.05)
+        return _token_response(200, token)
+
+    client = AsyncMock()
+    client.get = AsyncMock(side_effect=_get)
+    return client
+
+
+@pytest.mark.parametrize(("container", "href"), _SINGLE_FLIGHT_CONTAINERS)
+@pytest.mark.asyncio
+async def test_concurrent_misses_mint_one_container_token(
+    container: str, href: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """N concurrent requests on a cold container mint exactly one token.
+
+    Delete the single-flight in ``_container_token`` and this fails at 8 PC
+    calls and 8 mint log lines instead of 1 — the 6-mint production signature
+    of BOUNDARY-BASELINE.md §3, in a harness.
+    """
+    token = "se=2026-08-12T21:02:06Z&sr=c&sig=abc"
+    client = _slow_token_client(token)
+
+    with (
+        caplog.at_level(logging.INFO, logger="app.services.stac"),
+        patch("app.services.stac._get_sign_client", return_value=client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+    ):
+        signed = await asyncio.gather(*(sign_pc_url(href.format(band=f"b{i}")) for i in range(8)))
+
+    assert all(u.endswith(f"?{token}") for u in signed)
+    assert client.get.await_count == 1, "concurrent misses must coalesce onto one mint"
+    mints = [r for r in caplog.records if "SAS container token minted" in r.getMessage()]
+    assert len(mints) == 1
+    assert f"container={container}" in mints[0].getMessage()
+
+
+@pytest.mark.parametrize(("container", "href"), _SINGLE_FLIGHT_CONTAINERS)
+@pytest.mark.asyncio
+async def test_one_requests_band_signings_mint_one_container_token(
+    container: str, href: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The 19:56Z shape: one request's three band signings race each other.
+
+    A single ``/stac`` callback gathers red/green/blue and minted three tokens
+    on 2026-08-12 — a request concurrent with itself. This is why the seam is
+    inside ``_container_token`` and not above the gather.
+    """
+    token = "se=2026-08-12T21:02:06Z&sr=c&sig=abc"
+    client = _slow_token_client(token)
+
+    with (
+        caplog.at_level(logging.INFO, logger="app.services.stac"),
+        patch("app.services.stac._get_sign_client", return_value=client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+    ):
+        signed = await asyncio.gather(
+            *(sign_pc_url(href.format(band=b)) for b in ("red", "green", "blue"))
+        )
+
+    assert len({u.split("?")[1] for u in signed}) == 1, "all three bands carry one token"
+    assert client.get.await_count == 1
+    mints = [r for r in caplog.records if "SAS container token minted" in r.getMessage()]
+    assert len(mints) == 1
+    assert f"container={container}" in mints[0].getMessage()
+
+
+@pytest.mark.asyncio
+async def test_single_flight_is_per_container() -> None:
+    """Two containers missing at once still mint one token each, not one total."""
+    client = _slow_token_client("se=2026-08-12T21:02:06Z&sr=c&sig=abc")
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+    ):
+        await asyncio.gather(
+            *(sign_pc_url(href.format(band="red")) for _, href in _SINGLE_FLIGHT_CONTAINERS)
+        )
+
+    assert client.get.await_count == len(_SINGLE_FLIGHT_CONTAINERS)
+
+
+@pytest.mark.asyncio
+async def test_failed_mint_does_not_wedge_the_container() -> None:
+    """A mint that raises propagates to every follower and clears the flight."""
+    client = AsyncMock()
+    client.get = AsyncMock(
+        side_effect=[
+            httpx.ConnectError("signer down"),
+            _token_response(200, "se=2026-08-12T21:02:06Z&sr=c&sig=abc"),
+        ]
+    )
+    href = "https://landsateuwest.blob.core.windows.net/landsat-c2/level-2/{band}.tif"
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+    ):
+        results = await asyncio.gather(
+            *(sign_pc_url(href.format(band=b)) for b in ("red", "green")),
+            return_exceptions=True,
+        )
+        assert all(isinstance(r, httpx.ConnectError) for r in results)
+
+        # The next caller mints afresh rather than awaiting a dead future.
+        retried = await sign_pc_url(href.format(band="blue"))
+
+    assert retried.endswith("?se=2026-08-12T21:02:06Z&sr=c&sig=abc")
 
 
 def test_blob_container_parses_account_and_container() -> None:

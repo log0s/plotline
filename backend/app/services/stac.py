@@ -220,6 +220,7 @@ async def close_clients() -> None:
     if sign is not None:
         await sign.aclose()
     _sign_semaphores.pop(loop, None)
+    _token_flights.pop(loop, None)
 
 
 # Semaphores are keyed by event loop for the same reason the clients are:
@@ -335,31 +336,41 @@ def _blob_container(url: str) -> tuple[str, str] | None:
     return account, container
 
 
-async def _container_token(account: str, container: str, *, wait_budget: float) -> str:
-    """Return a cached SAS token granting read over one PC blob container.
+# One in-flight mint per container, per event loop.
+#
+# Keyed by event loop for the same reason the semaphores are (see
+# _get_sign_semaphore): a Task binds to the loop that created it, so a single
+# module-level dict of tasks would break the second Celery task in a worker.
+_token_flights: dict[asyncio.AbstractEventLoop, dict[str, asyncio.Task[str]]] = {}
 
-    Planetary Computer issues container-scoped tokens (``sr=c``) valid for
-    ~45 minutes, and one PC collection maps to one container — so a single
-    token signs every asset of a collection instead of one signing call per
-    URL. This is what keeps the signing endpoint far from its rate limit;
-    the semaphore and the 429 retry above are the belt to this braces.
-    """
+
+async def _cached_container_token(cache_key: str) -> str | None:
+    """Read a container token out of Redis, or None on a miss or a dead cache."""
     from redis.exceptions import RedisError
 
     from app.db import get_async_redis
 
-    cache_key = f"sas-token:{account}/{container}"
-    redis = get_async_redis()
     try:
-        cached = await redis.get(cache_key)
-        if cached:
-            return cached.decode() if isinstance(cached, bytes) else cached
+        cached = await get_async_redis().get(cache_key)
     except (RedisError, OSError) as exc:
         logger.debug("SAS token cache read failed: %s", exc)
+        return None
+    if not cached:
+        return None
+    return cached.decode() if isinstance(cached, bytes) else cached
 
-    # Logged per mint, not per cache write: concurrent misses each reach this
-    # line, and counting the duplicates at a 45-minute token boundary is how
-    # single-flighting this function gets scored (G7).
+
+async def _mint_container_token(
+    account: str, container: str, cache_key: str, *, wait_budget: float
+) -> str:
+    """Mint one container token from PC and cache it. One caller at a time."""
+    from redis.exceptions import RedisError
+
+    from app.db import get_async_redis
+
+    # Logged per mint, not per cache write: this line is the G7 instrument, and
+    # its whole point is that duplicate mints at a token boundary each appear.
+    # Under the single-flight above it now fires once per cold miss.
     started = time.monotonic()
     resp = await _sas_get(f"{PC_TOKEN_URL}/{account}/{container}", None, wait_budget=wait_budget)
     token = str(resp.json()["token"])
@@ -371,11 +382,59 @@ async def _container_token(account: str, container: str, *, wait_budget: float) 
     )
 
     try:
-        await redis.setex(cache_key, _SAS_CACHE_TTL, token.encode())
+        await get_async_redis().setex(cache_key, _SAS_CACHE_TTL, token.encode())
     except (RedisError, OSError) as exc:
         logger.debug("SAS token cache write failed: %s", exc)
 
     return token
+
+
+async def _container_token(account: str, container: str, *, wait_budget: float) -> str:
+    """Return a cached SAS token granting read over one PC blob container.
+
+    Planetary Computer issues container-scoped tokens (``sr=c``) valid for
+    ~45 minutes, and one PC collection maps to one container — so a single
+    token signs every asset of a collection instead of one signing call per
+    URL. This is what keeps the signing endpoint far from its rate limit;
+    the semaphore and the 429 retry above are the belt to this braces.
+
+    Concurrent misses coalesce onto one mint. The seam is here, below the
+    per-request band gather, because a single request is already concurrent
+    with itself: the ``/stac`` callback signs three bands with
+    ``asyncio.gather``, and on 2026-08-12 one such callback minted three
+    tokens. Coalescing anywhere above the gather would not have caught that.
+
+    The bound is one mint per process per container per boundary, not one
+    globally — two API machines can still mint two. Deliberate: a Redis
+    ``SET NX`` lock would add a poll loop and a Redis-down failure mode to the
+    cold path to remove a second mint that measured harmless (13 concurrent
+    mints on ``sentinel2-l2`` drew no 429s;
+    docs/audits/2026-08-titiler-cache/BOUNDARY-BASELINE.md §3).
+
+    A follower inherits the leader's ``wait_budget``. Harmless because
+    processes are budget-homogeneous — every API call site passes
+    ``SIGN_WAIT_REQUEST``, the worker and the offline preview renderer pass
+    ``SIGN_WAIT_BATCH`` — so a 2 s-budget request cannot end up waiting on a
+    60 s-budget mint. Mixing budgets in one process would break that.
+    """
+    cache_key = f"sas-token:{account}/{container}"
+    cached = await _cached_container_token(cache_key)
+    if cached:
+        return cached
+
+    loop = asyncio.get_running_loop()
+    flights = _token_flights.setdefault(loop, {})
+    flight = flights.get(cache_key)
+    if flight is None:
+        flight = loop.create_task(
+            _mint_container_token(account, container, cache_key, wait_budget=wait_budget)
+        )
+        flights[cache_key] = flight
+        flight.add_done_callback(lambda _t: flights.pop(cache_key, None))
+
+    # Shielded: a follower that gives up — client disconnect, its own timeout —
+    # must not cancel the mint every other follower is waiting on.
+    return await asyncio.shield(flight)
 
 
 def _token_expiry(token: str) -> str | None:
