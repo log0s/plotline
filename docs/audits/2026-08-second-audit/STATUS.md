@@ -354,3 +354,15 @@ Each is evidenced in `../2026-08-geometry-audit/HEAL-SCORECARD.md` §4.
 - **Test coverage.** `maybe_refetch_for_backfill` gained two cases via 256ed32
   and two more with the cooldown; its full decision table is still not
   covered.
+- **The census upsert did not refresh `tract_fips`.** Found while triaging the
+  phantom net-loss flag (`docs/audits/2026-08-geometry-audit/CENSUS_TRIAGE.md`
+  §4), not by either audit. `demographics.py` refreshed all eleven demographic
+  columns and `raw_data` on conflict but left `tract_fips` at its first-written
+  value, so a re-run resolving a different ancestor tract for a year would
+  overwrite the numbers while keeping the old tract's label. **Fixed in
+  386f3e3**, with a regression test for the changed-tract case
+  (`test_census.py::test_upsert_relabels_when_tract_changes`); the pre-existing
+  idempotency test passed the same tract twice and never reached it. No
+  existing row is mislabeled — see that commit message for why the pre-fix code
+  paths cannot have produced one, and why no query can prove it directly.
+  Unrelated to M4: no new occurrence data came out of the triage.
