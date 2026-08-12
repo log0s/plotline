@@ -36,7 +36,13 @@ plotline/
 ├── .github/workflows/deploy.yml # CI: backend tests + Fly.io deploys on push to main
 ├── Makefile
 ├── README.md
-├── DEVELOPMENT.md               # Claude Code process journal — never edit or commit this file
+├── DEVELOPMENT.md               # Process journal + analysis. Build Log entries are FROZEN —
+│                                #   never rewrite them; add dated "Later:" notes only. The
+│                                #   analysis section and structure are editable under explicit
+│                                #   instruction from Ryan, never on your own initiative.
+├── docs/
+│   ├── audits/                  # Frozen findings docs + STATUS.md (the living ledger)
+│   └── provenance/              # Git-history analysis behind DEVELOPMENT.md's numbers
 ├── SUPPORTED_COUNTIES.md        # County data source documentation
 ├── prompts/                     # Phase prompts used to build the project
 ├── backend/
@@ -78,7 +84,10 @@ plotline/
 └── scripts/
     ├── seed.py                  # Seed example parcels
     ├── seed_featured.py         # Pre-compute featured location timelines
-    └── revalidate_landsat.py    # Re-queue timelines to replace broken Landsat scenes
+    ├── revalidate_landsat.py    # Re-queue timelines to replace broken Landsat scenes
+    ├── heal_county_fallback.py  # Data heal: NULL out tract-name garbage in parcels.county
+    ├── heal_tract_vintage_gaps.py # Data heal: backfill ACS years lost to the 2020 tract split
+    └── requeue_parcels.py       # Re-queue specific parcels (deployment-gated — see docstring)
 
 ## Code Standards
 
@@ -97,3 +106,49 @@ plotline/
 - Environment-based config: all secrets/URLs via environment variables, validated by pydantic-settings
 - Error handling: don't let raw 500s escape (e.g. Geocoder down? Return a clear 502 with a message. Bad address? 422 with details)
 - Logging: use structured logging (structlog or just Python's logging with JSON formatter). Log geocoder calls, DB writes, job status changes
+
+## The record moves with the code
+
+STATUS.md (docs/audits/2026-08-second-audit/STATUS.md) is the living ledger of
+every audit finding, deferred decision, and accepted risk. Findings documents
+under docs/audits/ are frozen records — never edited, only annotated with
+dated additions (e.g. "**Resolved:** <hash>, <date>"). DEVELOPMENT.md's Build
+Log is frozen the same way.
+
+A change is not complete until the record reflects it. Concretely:
+
+1. **Fixing anything a finding describes** → the same batch adds the Resolved
+   annotation (with the real commit hash — verify it exists and is an ancestor
+   of HEAD; amended commits change hashes) and updates the STATUS.md row.
+2. **Deciding not to fix something** → STATUS.md records it as accepted, with
+   the one-sentence rationale that would survive a skeptical reader. If the
+   rationale rests on a load-bearing assumption (topology, scale, upstream
+   behavior), that assumption also lands as a code comment at the site where
+   someone would act on it.
+3. **Discovering something new** (a defect, a tried-and-rejected approach, a
+   mechanism that explains observed behavior) → it enters STATUS.md in the
+   same batch, even if unfixed. Especially if unfixed: undocumented knowledge
+   of a live issue is how 131-day residents happen.
+4. **Predictions before actions**: any heal, sweep, or migration with an
+   expected outcome gets that expectation written into STATUS.md before the
+   run. Afterward, the observed result lands next to it with a verdict
+   (confirmed / deviation / falsified). Never edit the prediction to match
+   the outcome.
+5. **Deploy-state honesty**: "Resolved" means the fix is in the code. If a
+   fix is committed but known to be undeployed at writing time, say so
+   ("committed, not yet deployed as of <date>") — a mitigation that isn't
+   running isn't mitigating.
+
+Before reporting any task complete, check: does STATUS.md (or the relevant
+doc) still say something this batch made false? If yes, the batch isn't done.
+Prose written *about* code drifts; prose written *alongside* code in the same
+commit is the only kind that stays true. When you cannot update the record
+(out of scope, uncertain finding), say so explicitly in your report rather
+than leaving it silently stale.
+
+## Commit conventions
+
+Conventional commits (feat:/fix:/docs:/chore:). Every commit carries the
+Co-Authored-By trailer for the model that wrote it — the repo's own
+provenance analysis documents what the 31% unstamped era cost. Never push;
+push, deploy, and heal execution belong to Ryan.
