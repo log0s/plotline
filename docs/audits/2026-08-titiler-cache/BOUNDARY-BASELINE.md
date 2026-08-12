@@ -267,3 +267,207 @@ available. Nothing here rate-limited: `K=0`, and the only 429 backoff lines in
 the capture are pre-deploy backlog from 18:45Z.
 
 BASELINE: 6 minted + 0 exhausted at boundary 2026-08-12T20:17:06Z; worker mints: none; ms range: 670–830
+
+---
+
+# Addendum, 2026-08-12 — the post-fix boundary
+
+The same observation, repeated against `b2019e4` (`2168124` + `e8c857c`
+deployed), scoring the four-clause prediction in `FINDINGS.md`'s
+2026-08-12 addendum. Nothing above is edited; §1–§6 stand as the record of the
+unfixed behaviour.
+
+Observation only. All production access was `GET`s against the public API,
+`fly logs`, and `fly image show`. No queueing, no heal script, no deploy, no DB
+write, no direct call to Planetary Computer's token endpoint — every mint
+counted below was triggered server-side by tile browsing.
+
+## A0. Gate
+
+| Check | Result |
+|---|---|
+| `GET /api/v1/health` | `sha=b2019e483b5913890f4e242e2b3f0687cc19b52c`, built `2026-08-12T21:13:32Z` |
+| `fly image show -a log0s-plotline-api` | `GH_SHA=b2019e4…` (`825d69b7e46618`, `48e0de9a713918`) |
+| `fly image show -a plotline-worker` | `GH_SHA=b2019e4…` (`e2862966b306d8`, `e7845415f57728`) |
+
+Gate passed on both apps, both machines.
+
+## A0.1 Capture coverage
+
+Four independent captures, all started before the boundary:
+
+| Capture | Span |
+|---|---|
+| `fly logs` streams, both apps | 21:28:00Z → 22:11:00Z |
+| `fly logs` streams under a pty, both apps | 21:52:53Z → 22:11:00Z |
+| `--no-tail` polls @55 s, both apps | 21:28:13Z → 22:10:51Z (45 files/app) |
+| `--no-tail` polls @25 s, both apps | 21:53:14Z → 22:10:59Z (41 files/app) |
+
+**No gaps in the measured window.** The boundary window (22:04:12Z ±5 min =
+21:59:12Z–22:09:12Z) sits entirely inside every capture, and **all four
+independently contain both** 22:04:12Z mint lines. The counts below are exact,
+not floors.
+
+One instrumentation scare, recorded so the next observer does not repeat it:
+the plain `fly logs` streams wrote nothing for 25 minutes, which read as the
+block-buffering failure `HEAL-SCORECARD` §0 warns about. Duplicate pty-backed
+streams were started at 21:52:53Z on that suspicion. The suspicion was wrong —
+this API emits **no log lines at all during normal tile serving**; between
+21:24:12Z and 22:04:12Z the only lines of any kind, from any capture, are the
+mints themselves. The plain streams were quiet, not stuck, and hold both
+boundary mints. Silence in this log is not evidence of a dead stream, and the
+mint line is the only heartbeat available.
+
+## A1. Boundary location, and the cadence claim
+
+The landsat-c2 token in force at the start of observation was minted at
+**21:24:12Z** with `se=2026-08-12T22:09:12Z`. Under `e8c857c` its Redis key
+dies at `se − 300 s` = **22:04:12Z**, and that is where the boundary was
+planned and where it landed — to the second.
+
+| | Mint | `se` | Key dies | Next mint |
+|---|---|---|---|---|
+| Pre-fix (§1) | 20:17:06Z | 21:02:06Z | 20:37:06Z (mint + 20:00) | 20:47:41Z (deferred) |
+| **Post-fix** | **21:24:12Z** | **22:09:12Z** | **22:04:12Z (mint + 40:00)** | **22:04:12Z** |
+
+Consecutive landsat-c2 mints fell **exactly 40 min 0 s apart** (21:24:12Z →
+22:04:12Z), against 20 min under the fixed TTL. The keepalive (one tile request
+every ~2 min, 20 requests, all 200) held demand continuous across the whole
+interval, so this is the demand-saturated cadence, not a deferred one — the
+distinction §1 had to make for the 20:37:06Z expiry does not arise here.
+
+## A2. The herd
+
+From **22:01:12Z to 22:09:24Z** — ~3 min before the 22:04:12Z boundary through
+~5 min after — the same 18 distinct Landsat snapshots (3 each across all six
+featured parcels) were browsed at concurrency 6 with a 0.3 s per-request
+stagger and 20 s between waves.
+
+**288 requests, 288 × 200 OK, 0 non-200.** No client-side error of any kind, so
+no bodies to record.
+
+Protocol deviation from §2, stated because it bears on the decay reading: 16
+waves at ~28 s spacing here, against §2's 24 waves at ~21 s. Concurrency,
+stagger and URL set are identical; the wider spacing is per-request `curl`
+subprocess overhead in this run's harness. Wave *counts* either side of the
+boundary are therefore the like-for-like comparison, and wall-clock decay reads
+~33% long against §2 for that reason alone.
+
+| Wave | Time | Median ms | p90 | Max |
+|---|---|---|---|---|
+| 1 | 22:02:18Z | 1736 | 3226 | 4387 |
+| 2 | 22:02:47Z | 1372 | 2691 | 3173 |
+| 3 | 22:03:15Z | 1335 | 1829 | 1923 |
+| 4 | 22:03:43Z | 455 | 1577 | 1700 |
+| **5** | **22:04:11Z** | **1960** | **2630** | **3318** |
+| 6 | 22:04:41Z | 1530 | 2024 | 2734 |
+| 7 | 22:05:09Z | 1383 | 1915 | 2472 |
+| 8 | 22:05:36Z | 1236 | 1622 | 1887 |
+| 9 | 22:06:04Z | 367 | 1526 | 1663 |
+| 10 | 22:06:32Z | 348 | 1387 | 1563 |
+| 11 | 22:07:00Z | 369 | 1441 | 1869 |
+| 12 | 22:07:28Z | 455 | 1481 | 1859 |
+| 13 | 22:07:56Z | 504 | 1773 | 2699 |
+| 14 | 22:08:22Z | 450 | 1471 | 2914 |
+| 15 | 22:08:50Z | 424 | 1422 | 1529 |
+| 16 | 22:09:18Z | 448 | 1390 | 1634 |
+
+Wave 4 was the last wave before the key died; wave 5 straddles it. Median rose
+**4.3×** (455 → 1960 ms) for exactly one wave, then decayed monotonically
+across waves 6–8 and was back at baseline by wave 9.
+
+Waves 1–3 are the cold-LRU shape §2 saw in its wave 1, stretched over three
+waves because this run's keepalive touched only one of the 18 keys every 2 min
+and so left most of the item cache cold. Their decay (1736 → 1372 → 1335 → 455)
+is nearly identical in shape to the post-boundary decay (1960 → 1530 → 1383 →
+1236 → 367), which is what §4.1's model predicts: a rotation *is* a cold LRU for
+every key at once, so the two curves should coincide. They do.
+
+## A3. Counts at the boundary (22:04:12Z ±5 min)
+
+| Quantity | Count | Detail |
+|---|---|---|
+| **M** — "SAS container token minted" (landsat-c2) | **2** | both at 22:04:12Z, both `se=2026-08-12T22:49:12Z`; one per machine — `48e0de9a713918` `ms=238`, `825d69b7e46618` `ms=657` |
+| Mints per (machine, container) | **1** | max group size, both groups |
+| **K** — exhausted-backoff / signing-failure lines | **0** | no `backoff exceeds wait budget`, no `Band signing failed after retries` |
+| "SAS rate-limited; backing off" | **0** | — |
+| Titiler 500s (log-side) | **0** | no `Titiler request failed`; zero `error` or `warning` level lines in the window from any capture |
+| API 502s (client-side) | **0** | of 288 herd requests + 20 keepalive requests |
+| "SAS token expiry unavailable" | **0** | the 120 s fallback bucket never ran |
+| Worker mints | **0** | `plotline-worker` logged 0 mint lines for the entire session |
+
+**The single-flight signature, in production.** §3's six concurrent mints
+returning the identical `se` from one machine are gone: an 18-key rotation now
+costs one mint per machine. Both machines participated, which is the accepted
+per-process bound `2168124` documents, not a miss.
+
+The cold-start window at 21:23–21:24Z, captured incidentally before the herd,
+is the sharper comparison because §3's largest herds were also cold starts:
+
+| Container | Cold-start mints, pre-fix (§3) | Cold-start mints, post-fix (21:23–21:24Z) |
+|---|---|---|
+| `sentinel2l2a01/sentinel2-l2` | 13 | **1** |
+| `naipeuwest/naip` | 8 | **1** |
+| `landsateuwest/landsat-c2` | 6 | **2** (1 per machine) |
+
+Both non-Landsat containers reached their own key-death moment inside the
+capture (`se=22:08:25Z`, so keys died at 22:03:25Z) and minted **nothing**,
+because no sentinel2 or NAIP request arrived — the herd and keepalive are
+Landsat-only. Their post-fix boundary is therefore *not* exercised by this run;
+the 1-and-1 above are cold-start mints, not boundary mints. Recorded as
+unexercised rather than passed.
+
+## A4. Rotation check
+
+Same snapshot as §4 (`cf46ed63…`'s 1984 Landsat item, `4eb53b4e…`), read from
+the `se` on the signed band hrefs:
+
+| Sample | `se` on band hrefs | `Cache-Control` |
+|---|---|---|
+| 21:28:20Z (before boundary) | `2026-08-12T22:09:12Z` | `private, max-age=900` |
+| 21:52:06Z (before boundary) | `2026-08-12T22:09:12Z` | `private, max-age=724` |
+| 22:07:35Z (after boundary) | `2026-08-12T22:49:12Z` | `private, max-age=900` |
+
+- Two samples inside one token's life → **same** value. ✅
+- Samples spanning the boundary → **different** values. ✅
+- Post-boundary value **equals the `se` on the boundary mint lines**
+  (`22:49:12Z`). ✅
+- No `?v=t…` fallback form, 0 expiry-unavailable warnings. ✅
+
+The middle sample is the cadence claim tested directly: **23 min 46 s** after
+the first, and unchanged. Under the fixed 1200 s TTL that key would have died
+at 21:44:12Z and this sample would have carried a different `se` — §5's "what
+§5 did not anticipate" item 1, now inverted by `e8c857c`.
+
+§4's curiosity is also gone: all three bands returned the **identical** `se` in
+all three samples, where §4 recorded one `/stac` callback producing tokens 1 s
+apart on green vs red/blue. That is `2168124` coalescing the intra-request band
+race the seam was placed below, visible in the response body.
+
+## A5. Verdict
+
+| Prediction clause | Verdict |
+|---|---|
+| 1. ≤1 mint per boundary, per process, per container | **CONFIRMED** — 2 landsat-c2 mints at 22:04:12Z, max group size 1 per (machine, container). Cold-start comparison: sentinel2-l2 13 → 1, naip 8 → 1. |
+| 2. `K` stays 0 | **CONFIRMED** — K = 0, no 429 backoff lines, 0 error/warning lines, 0 non-200 of 308 client requests. |
+| 3. Latency spike unchanged in shape | **CONFIRMED on magnitude, DEVIATION on decay** — 4.3× vs the predicted ~4.2×, one wave, as predicted; decay took 113 s (4 waves) against §2's ~60 s (3 waves). See below. |
+| 4. Cadence moves ~20 min → ~40 | **CONFIRMED** — consecutive landsat-c2 mints exactly 40 min 0 s apart, under continuous demand; `se` samples 23 min 46 s apart agree. |
+
+**Clause 3, the deviation.** The magnitude clause is the load-bearing one and it
+held almost exactly: 4.3× against a predicted 4.2×, for exactly one wave. The
+decay clause did not: 113 s to return to baseline against §2's ~60 s. Recorded
+as a deviation and not as a pass, though two things argue it is measurement and
+not regression. This run's waves are ~28 s apart against §2's ~21 s, so the
+same *three*-wave decay would already read ~84 s; and the observed decay is
+four waves, one more than §2's three. The residual is consistent with this
+run's colder item cache — waves 1–3 show the same four-wave shape from a cold
+start with no rotation involved at all. What it is *not* consistent with is
+mints dominating: mint latency fell from 670–830 ms to 238/657 ms and the count
+fell from 6 to 2, so if mints had been the dominant term the spike would have
+shrunk. It did not, which is the prediction's own stated reasoning holding.
+
+No clause was falsified. Refresh-ahead stays rejected on its own terms: the
+reopening evidence `FINDINGS.md` names — `K` > 0 or 429s at a boundary after
+both fixes are deployed — did not appear.
+
+POST-FIX: 2 minted (1 per machine) + 0 exhausted at boundary 2026-08-12T22:04:12Z; worker mints: none; ms: 238, 657; cadence 40 min 0 s; spike 4.3× one wave, decayed in 113 s

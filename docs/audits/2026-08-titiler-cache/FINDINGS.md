@@ -471,3 +471,9 @@ from `/api/sas/v1/token/...` at a boundary *after* `2168124` and `e8c857c` are
 deployed — that would mean one mint per process per container is itself over
 the limit, and the remedy would then be to stop minting on the request path at
 all rather than to mint more often.
+
+**Scored 2026-08-12**, against `b2019e4` deployed at 21:13Z, at the
+22:04:12Z boundary: `BOUNDARY-BASELINE.md` §A5. Clauses 1, 2 and 4 confirmed;
+clause 3 confirmed on magnitude (4.3× vs ~4.2×, one wave) and a deviation on
+decay (113 s vs ~60 s). Refresh-ahead's reopening evidence did not appear, so
+it stays rejected. The prediction above is unedited.
