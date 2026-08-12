@@ -19,7 +19,10 @@ primary_region = 'lax'
   worker = 'celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2'
 
 [[vm]]
-  memory = '512mb'
+  # 1 GB, not 512 MB: the 2026-08 ops audit caught a live OOM kill of a
+  # ForkPoolWorker inside a 20-minute log window (total-vm 766 MB against a
+  # 512 MB machine), and a SIGKILLed worker leaves its request rows stranded.
+  memory = '1024mb'
   cpu_kind = 'shared'
   cpus = 1
-  memory_mb = 512
+  memory_mb = 1024
