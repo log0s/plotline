@@ -1,17 +1,20 @@
 # Audits
 
-Five reviews of this codebase, each stored as the prompt that commissioned it
+Six reviews of this codebase, each stored as the prompt that commissioned it
 and the findings it returned: two architecture audits (2026-05, 2026-08), a
 reconciliation of SUPPORTED_COUNTIES.md against the adapter code it describes,
 `2026-08-ops-audit/` — a read-only audit of *running production* rather
 than of the code, which found that the signing throttle recorded as mitigating
 M4 was committed but never deployed, and traced the broken map tiles in
-production to the unsigned-href fallback — and
+production to the unsigned-href fallback —
 `2026-08-geometry-audit/`, a read-only measurement of a single hypothesis
 against every imagery row in the database, which found 33 timeline cards
 serving a granule whose footprint excludes the address they are about, and
-refuted two of the remedies proposed for it. The git analysis behind
-DEVELOPMENT.md's numbers lives in `../provenance/`.
+refuted two of the remedies proposed for it — and
+`2026-08-titiler-cache/`, which traced a reported Landsat 502 to a third
+distinct cause: Titiler's TTL-less STAC item cache pinning a SAS token under a
+URL that never changed. The git analysis behind DEVELOPMENT.md's numbers lives
+in `../provenance/`.
 
 These are records of what was found at the time, not living status documents.
 A finding describes the code at the audit's SHA — `c1ac879` (2026-05-22) for the
@@ -37,4 +40,8 @@ copied verbatim and undamaged, and its PROMPT.md is a summary that says so.
 That redaction
 removed two exploitation passages that themselves contained reconstruction
 markers, so a redacted document may carry fewer markers than the reconstruction
-it was made from.
+it was made from. The titiler-cache investigation is the one dir with a
+verbatim PROMPT.md and a first-hand FINDINGS.md: it was not commissioned as an
+audit but as a bug report ("Seeing a lot of 502s for Landsat imagery in the
+Rodanthe featured area"), so both prompts survive verbatim and the findings
+were written as the work was done rather than reconstructed from a report.
