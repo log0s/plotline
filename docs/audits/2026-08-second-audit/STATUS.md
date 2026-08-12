@@ -60,7 +60,7 @@ an explicit deferral, both recorded below — never an unfinished edit.
 | M1 Geocoder decode | Resolved (949c1b3) | `geocoder.py:158,196`. The finding's retry-asymmetry aside (only timeouts retried) is unchanged; it was flagged as defensible, not as a defect. |
 | M2 Rate limiting | Partially resolved (ae5793a) | INCR and EXPIRE now ship in one pipeline with `EXPIRE … NX`, so a death between them can no longer leave an immortal counter. The X-Forwarded-For handling is accepted — see below. |
 | M3 Backfill scope | Partially resolved (ae5793a) | A cooldown (`backfill_cooldown_hours`, default 6) bounds the per-visit cost and logs each suppression. The cooldown is dispatch-anchored — it reads the latest `TimelineRequest.created_at`, which includes a request the current visit may have just created — not completion-anchored; correct for cost-bounding, and the per-source work inherits it unless it deliberately changes it. Per-source scope is deferred, not accepted — see below. |
-| M4 Partial census/Landsat failures | Open | `timeline.py:234-259`, `:588-658` (the census year loop moved into `_fetch_census_years` in b5a306a) — failures counted, never persisted, so nothing can target the gaps. Sharper than the finding states on the census half: a year the API has no data for returns `{}` and is skipped by `if data:` (`:598` decennial, `:625` ACS5) **without** incrementing `failed_requests` (`:612`, `:639`), so the all-failed check at `:651` cannot see it either. The gap is not merely unpersisted — it is invisible to the task's own failure arithmetic, which is why a parcel could sit at `complete` with four of six ACS years missing. One instance of that shape — years lost to the 2020 tract redistricting — is healed by b5a306a and its `scripts/heal_tract_vintage_gaps.py`; the general problem of persisting per-year failures is untouched. **Observed in production three times, from three independent upstreams.** (1) 2026-08-11: a burst of 21 SAS signing 429s in four seconds cost one parcel 20 of its 43 Landsat years. (2) 2026-08-12 00:45Z: a second parcel (Ocean County NJ) lost 8 Landsat years — after the incident, and **on production that did not have a536d07**. The throttle was committed 2026-08-11 and left unpushed; CI deploys on push, so the running release was still pre-throttle when those years were lost. Whatever else a536d07 does, it demonstrably did not prevent this: the loss is post-commit and pre-deploy, and no signing-throttle event appears in any log buffer. (3) 2026-08-12 01:25Z: four `httpx.ReadTimeout`s against `api.census.gov` cost a Maricopa parcel its acs5 2021 and decennial 2020 rows — the Census API, not our signing, so no throttle could have helped. Each of the three ended `complete`, and backfill only triggers on failed/missing tasks, so none of them has a healing path. **This row is not "mitigated".** Capping our own call rate narrows one of three doors; a year lost to a Census timeout, a TNM endpoint returning non-JSON (see the zero-topo parcel in the ops audit's §8), or any upstream we have not met yet is still silently dropped under a `complete` task. M4's per-year failure persistence is the actual fix, and it is now scheduled work rather than deferred design — see below. Evidence: `docs/audits/2026-08-ops-audit/FINDINGS.md` §0, HIGH-2, MEDIUM-2. |
+| M4 Partial census/Landsat failures | Open | `timeline.py:234-259`, `:588-658` (the census year loop moved into `_fetch_census_years` in b5a306a) — failures counted, never persisted, so nothing can target the gaps. Sharper than the finding states on the census half: a year the API has no data for returns `{}` and is skipped by `if data:` (`:598` decennial, `:625` ACS5) **without** incrementing `failed_requests` (`:612`, `:639`), so the all-failed check at `:651` cannot see it either. The gap is not merely unpersisted — it is invisible to the task's own failure arithmetic, which is why a parcel could sit at `complete` with four of six ACS years missing. One instance of that shape — years lost to the 2020 tract redistricting — is healed by b5a306a and its `scripts/heal_tract_vintage_gaps.py`; the general problem of persisting per-year failures is untouched. **Observed in production three times, from three independent upstreams.** (1) 2026-08-11: a burst of 21 SAS signing 429s in four seconds cost one parcel 20 of its 43 Landsat years. (2) 2026-08-12 00:45Z: a second parcel (Ocean County NJ) lost 8 Landsat years — after the incident, and **on production that did not have a536d07**. The throttle was committed 2026-08-11 and left unpushed; CI deploys on push, so the running release was still pre-throttle when those years were lost. Whatever else a536d07 does, it demonstrably did not prevent this: the loss is post-commit and pre-deploy, and no signing-throttle event appears in any log buffer. (3) 2026-08-12 01:25Z: four `httpx.ReadTimeout`s against `api.census.gov` cost a Maricopa parcel its acs5 2021 and decennial 2020 rows — the Census API, not our signing, so no throttle could have helped. Each of the three ended `complete`, and backfill only triggers on failed/missing tasks, so none of them has a healing path. **This row is not "mitigated".** Capping our own call rate narrows one of three doors; a year lost to a Census timeout, a TNM endpoint returning non-JSON (see the zero-topo parcel in the ops audit's §8), or any upstream we have not met yet is still silently dropped under a `complete` task. M4's per-year failure persistence is the actual fix, and it is now scheduled work rather than deferred design — see below. Evidence: `docs/audits/2026-08-ops-audit/FINDINGS.md` §0, HIGH-2, MEDIUM-2. **(4) 2026-08-12, from the geometry sweep: one parcel — `2f1b332e`, Racebrook Road, Orange, Connecticut — still holds only 5 census years (decennial 2010; acs5 2012, 2015, 2018, 2023) against 7–9 for its peers, *after* a full re-run. It is the sharpest instance yet, because nothing in the system can say whether those years re-failed or were never published: the task ended `complete`, no failure was recorded, and the 63 `Census API: no data for tract` 404s observed during the sweep are indistinguishable from genuine absence. Connecticut's 2022 county-to-planning-region change makes genuine absence entirely plausible — which is the point. Telling the two apart is exactly what per-year persistence would buy, and no heal script can be written until it can. Only 3 census rows across 2 parcels were gained sweep-wide, so the opportunistic ride-along did not reach it.** Evidence: `docs/audits/2026-08-geometry-audit/HEAL-SCORECARD.md` §6. |
 | M5 Sync I/O on the loop | Open | `geocode.py:55-57,146-151`; `timeline.py:310-360`. The worker half is accepted; the autocomplete half is not. |
 | M6 Redis socket timeouts | Resolved (dd99cee) | `socket_timeout` and `socket_connect_timeout` of 2s on both clients, matching the DB probe's `statement_timeout`. |
 | M7 ORM/schema drift | Open | Partial indexes in `0009:49`, `0010:67,83` absent from `models/parcels.py`; `conftest.py:55-190` still hand-written DDL. |
@@ -121,7 +121,7 @@ file is where the fix commits get cited.
 | O2 Stranded rows | Resolved (2afdfb5) | **New finding.** Eleven task rows sat non-terminal forever: three `processing` under failed "Task timed out" requests, eight `queued` under complete April requests. An OOM kill is a SIGKILL, so the soft-limit handler never runs. A `worker_ready` janitor now fails both shapes past the 45-minute threshold. Note the shape: the parent *requests* were already terminal, so a sweep of in-flight requests alone would have caught none of them. |
 | O3 Worker OOM | Resolved (01cfdd6) | **New finding.** A live OOM kill inside a 20-minute log sample, on a 512 MB machine. `fly.worker.toml` now asks for 1 GB. Whether `WorkerLostError` should fail the request promptly is untouched; O2's janitor bounds the damage either way. |
 | O4 Deployed-SHA visibility | Resolved (ba62922) | **New finding, and the process gap behind HIGH-1.** Nothing recorded what was deployed, so the audit had to infer the running release from image build dates — which is how it discovered that a536d07 was committed but never pushed. `GET /api/v1/health` now reports the image's git SHA and build time. |
-| O5 Damaged parcels | Open — needs a run | `7397388e` (Denver, 20 Landsat years) and `e0cb3db9` (Ocean NJ, 8) are still damaged. `scripts/requeue_parcels.py` (d1fadd4) takes ids and re-runs them; it has deliberately **not** been run. Heal only after the throttle is deployed, or the re-run rolls the same dice. The ops audit's Appendix A lists three more candidates (a census-gapped parcel, a vintage-break residue, a zero-topo parcel). |
+| O5 Damaged parcels | **Resolved 2026-08-12** | Both are now at the full 43-year CONUS span, healed by a `requeue_parcels.py` run at **03:32:22Z** — six minutes *before* the geometry sweep, which added zero rows to either and therefore deserves no credit for it. `7397388e` (`3890 W 44th`) took 40 new Landsat rows across 23:00Z and 03:00Z; `e0cb3db9` (`141 rainbow drive brick`) took 27 at 01:00Z and 16 at 03:00Z. The prescribed ordering held: the throttle was deployed first, and neither re-run re-rolled the dice. Verified by DB, `HEAL-SCORECARD.md`. Original finding follows. `7397388e` (Denver, 20 Landsat years) and `e0cb3db9` (Ocean NJ, 8) were damaged. `scripts/requeue_parcels.py` (d1fadd4) takes ids and re-runs them; it has deliberately **not** been run. Heal only after the throttle is deployed, or the re-run rolls the same dice. The ops audit's Appendix A lists three more candidates (a census-gapped parcel, a vintage-break residue, a zero-topo parcel). |
 | O7 Second worker machine "stopped since Aug 4" | **Struck — no action** | The ops audit's Appendix flagged `e7845415f57728` as possibly-unintentional half capacity. It is Fly's standby machine: the hardware-failover twin Fly provisions alongside the primary and keeps stopped until it is needed. Nothing was left behind on Aug 4 and there is nothing to start. The MEDIUM-1 sizing conclusion is unaffected — that was about the live machine's 512 MB, fixed in 01cfdd6. |
 | O6 Sentinel-2 unassessed | Open | The audit declined to apply a flat "healthy ≈ 30 quarters" threshold: observed counts run 13–35 in a smooth continuum with no bimodality, and cloud-cover filtering makes the expected count location-dependent. Sentinel-2 damage is unassessed, not cleared. Doing it properly needs a per-parcel expectation — available scenes versus selected. |
 
@@ -152,6 +152,13 @@ decides the Ocean NJ question below.
 | Point filter tests `item["geometry"]`, falls back to bbox when absent | 2039e64 |
 | Sentinel-2 gains Landsat's validation fallback walk | e7d4c6d |
 | NAIP year suppressed when no selected tile contains the point | 14b59af |
+
+**Heal executed 2026-08-12** — full-fleet revalidate sweep, 57 parcels,
+03:38:30Z → 03:52:16.9Z, zero task failures. Scored against the prediction
+below in `../2026-08-geometry-audit/HEAL-SCORECARD.md`. The geometry half
+landed; the NAIP half did not fire at all and needs a second pass — the gate
+is prospective-only, so the two known-wrong 350 5th Ave 2023 cards are still
+being served.
 
 **Remedies rejected on evidence — do not re-propose these without new
 numbers.** Both were plausible and both are refuted in the report's §6:
@@ -195,6 +202,35 @@ catalogue has moved since these rows were written), so 33 is the
 fix-attributable floor. The worker logs after the heal confirm or falsify
 this paragraph.
 
+**Observed, 2026-08-12 — heal executed, sweep 03:38:30Z → 03:52:16.9Z, 57
+parcels, 0 failures.** Full scoring in
+`../2026-08-geometry-audit/HEAL-SCORECARD.md`; deduped capture at
+`/tmp/sweep-capture.log` (≈half the sweep window has no log coverage, so
+volume numbers are DB-derived). 119 Landsat rows and 55 Sentinel-2 rows
+written; Landsat is **exactly conserved** — 2,451 rows = 57 × 43, every
+parcel at 43, zero duplicate year groups — so the one-for-one claim and
+"no timeline loses a card" both hold, and Landsat deletions are exactly 119.
+Of those, 15 are capture-year 2026 recency and 104 are selection-changing.
+On the featured parcels **13 of the 15 named cards were replaced at exactly
+the named years**, the only extra year anywhere is 2026, and both parcels
+the audit called clean came back clean (Navy Yard: untouched). **Verdict:
+confirmed-with-noted-deviation on the geometry half, falsified on the NAIP
+half.** Two deviations: Rodanthe's sentinel2 2015 Q3 was not healed (its
+covering sibling is in a different quarter group, so the quarter-scoped
+selector never had to choose), and the count "33" was measured on the
+41-parcel *local* database — none of Appendix A's parcel ids exist in
+production, which has 57 parcels and different UUIDs; deduplicated by
+address the prod-side target was 22, not 33. **The NAIP prediction is
+falsified: zero NAIP rows were created or deleted and both 350 5th Ave
+cards survive** — 14b59af drops the uncovered year from the selection, and
+`reconcile_source_snapshots` never deletes an *absent* group, so the gate is
+prospective-only and cannot clear rows that already exist. Hudson Yards
+keeping 2023 is confirmed (its row carries a 3-tile mosaic). The original
+pre-revision prediction additionally missed **fallback-upgrade churn** —
+parcels whose prior run predated the throttle re-selecting primaries over
+stored fallbacks, the mechanism Ocean's `deleted:8` exposed; here it shows
+up as 40 of the 55 Sentinel-2 additions landing on just seven parcels.
+
 **Ocean NJ (`e0cb3db9`) — the geometry defect did not cause its gaps.**
 Structural, not observational: the bbox filter cannot delete a year, so the
 missing years are the signing incident, as O5 has it. Its *surviving* years
@@ -202,6 +238,18 @@ are unassessed and it has exactly the coastal, boundary-adjacent profile
 that failed at Rodanthe and Hudson Yards. Heal it after the fix is
 deployed — `scripts/requeue_parcels.py`'s `--require-sha` gate exists to
 make that ordering mechanical rather than remembered.
+
+**Open items the 2026-08-12 sweep surfaced — flagged, not investigated.**
+Each is evidenced in `../2026-08-geometry-audit/HEAL-SCORECARD.md` §4.
+
+| # | Item |
+|---|---|
+| G1 | **NAIP suppression is prospective-only.** 14b59af removes an uncovered year from the selection; `reconcile_source_snapshots` deliberately never deletes an *absent* group, because absence usually means a failed search. The two rules compose into a hole: the gate cannot clear a wrong card that already exists, which is every parcel the audit identified. Both 350 5th Ave 2023 cards still serve `nj_m_4007309_sw`. |
+| G2 | **Rodanthe sentinel2 2015 Q3 unhealed.** Still the 25.04 % non-covering granule from Appendix A. Its 1.01 % covering sibling sits in Q4, a different quarter group, so the quarter-scoped selector never had to choose. 1 of the 15 featured cards remains wrong. |
+| G3 | **One duplicate S2 quarter group.** Green Valley Ranch holds two 2026-Q1 rows, created 2026-06-12 and -06-17 — *before* this sweep and not caused by it. 2026-Q1 was not in the run's selection, so the absent-group rule left it alone; re-running cannot clear it. |
+| G4 | **Signing storm on the request path during the sweep.** 41 × `SAS rate-limited; backoff exceeds wait budget, giving up`, 17 × `Band signing failed after retries`, 115 Titiler 500s across 5 snapshots. This is O1's act-two mismatch running the other way: the batch path exhausts PC's limit while the request path's 2 s `SIGN_WAIT_REQUEST` gives up at once. A user browsing during a sweep gets 500s. |
+| G5 | **At least one Titiler 500 is an expired SAS token, not rate limiting** — `se=2026-08-12T00:00:52Z`, three hours stale at time of use. Distinct cause, identical symptom. |
+| G6 | **An ArcGIS query hit its row cap** (DC property layer, cap 20, 03:48:33Z). This is the evidence the counties reconciliation's item 13 said it was waiting for; pagination is no longer building against an unconfirmed hypothesis. |
 
 ## Accepted, with reasons
 
