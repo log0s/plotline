@@ -9,6 +9,11 @@ not by trusting the annotations. The fourteen items triaged FIX NOW were then
 executed in the five commits cited below, and their rows reflect that. Line
 numbers are HEAD's, not the audit's.
 
+The 2026-08-12 operational audit (`../2026-08-ops-audit/`) has its own section
+below. Its findings are about the running system rather than the code, but two
+of them bear directly on rows here — M4 above all — so they are tracked
+together rather than in a second living document.
+
 Nothing was incidentally resolved between the audit and the verification pass.
 M6, L2, L5 and all six L12 items were checked specifically against the commits
 most likely to have caught them — the Redis, reconciliation, and
@@ -53,7 +58,7 @@ an explicit deferral, both recorded below — never an unfinished edit.
 | M1 Geocoder decode | Resolved (949c1b3) | `geocoder.py:158,196`. The finding's retry-asymmetry aside (only timeouts retried) is unchanged; it was flagged as defensible, not as a defect. |
 | M2 Rate limiting | Partially resolved (ae5793a) | INCR and EXPIRE now ship in one pipeline with `EXPIRE … NX`, so a death between them can no longer leave an immortal counter. The X-Forwarded-For handling is accepted — see below. |
 | M3 Backfill scope | Partially resolved (ae5793a) | A cooldown (`backfill_cooldown_hours`, default 6) bounds the per-visit cost and logs each suppression. The cooldown is dispatch-anchored — it reads the latest `TimelineRequest.created_at`, which includes a request the current visit may have just created — not completion-anchored; correct for cost-bounding, and the per-source work inherits it unless it deliberately changes it. Per-source scope is deferred, not accepted — see below. |
-| M4 Partial census/Landsat failures | Open | `timeline.py:234-259`, `:588-658` (the census year loop moved into `_fetch_census_years` in b5a306a) — failures counted, never persisted, so nothing can target the gaps. Sharper than the finding states on the census half: a year the API has no data for returns `{}` and is skipped by `if data:` (`:598` decennial, `:625` ACS5) **without** incrementing `failed_requests` (`:612`, `:639`), so the all-failed check at `:651` cannot see it either. The gap is not merely unpersisted — it is invisible to the task's own failure arithmetic, which is why a parcel could sit at `complete` with four of six ACS years missing. One instance of that shape — years lost to the 2020 tract redistricting — is healed by b5a306a and its `scripts/heal_tract_vintage_gaps.py`; the general problem of persisting per-year failures is untouched. **Observed in production 2026-08-11**: a burst of 21 SAS signing 429s in four seconds cost one parcel 20 of its 43 Landsat years — the task reported `complete`, and because backfill only triggers on failed/missing tasks, no healing path exists for it. a536d07 mitigates the trigger (signing concurrency capped, 429s retried with backoff) but not the defect: a year lost for any other reason is still silently dropped under a `complete` task. M4's per-year failure persistence remains the actual fix. |
+| M4 Partial census/Landsat failures | Open | `timeline.py:234-259`, `:588-658` (the census year loop moved into `_fetch_census_years` in b5a306a) — failures counted, never persisted, so nothing can target the gaps. Sharper than the finding states on the census half: a year the API has no data for returns `{}` and is skipped by `if data:` (`:598` decennial, `:625` ACS5) **without** incrementing `failed_requests` (`:612`, `:639`), so the all-failed check at `:651` cannot see it either. The gap is not merely unpersisted — it is invisible to the task's own failure arithmetic, which is why a parcel could sit at `complete` with four of six ACS years missing. One instance of that shape — years lost to the 2020 tract redistricting — is healed by b5a306a and its `scripts/heal_tract_vintage_gaps.py`; the general problem of persisting per-year failures is untouched. **Observed in production three times, from three independent upstreams.** (1) 2026-08-11: a burst of 21 SAS signing 429s in four seconds cost one parcel 20 of its 43 Landsat years. (2) 2026-08-12 00:45Z: a second parcel (Ocean County NJ) lost 8 Landsat years — after the incident, and **on production that did not have a536d07**. The throttle was committed 2026-08-11 and left unpushed; CI deploys on push, so the running release was still pre-throttle when those years were lost. Whatever else a536d07 does, it demonstrably did not prevent this: the loss is post-commit and pre-deploy, and no signing-throttle event appears in any log buffer. (3) 2026-08-12 01:25Z: four `httpx.ReadTimeout`s against `api.census.gov` cost a Maricopa parcel its acs5 2021 and decennial 2020 rows — the Census API, not our signing, so no throttle could have helped. Each of the three ended `complete`, and backfill only triggers on failed/missing tasks, so none of them has a healing path. **This row is not "mitigated".** Capping our own call rate narrows one of three doors; a year lost to a Census timeout, a TNM endpoint returning non-JSON (see the zero-topo parcel in the ops audit's §8), or any upstream we have not met yet is still silently dropped under a `complete` task. M4's per-year failure persistence is the actual fix, and it is now scheduled work rather than deferred design — see below. Evidence: `docs/audits/2026-08-ops-audit/FINDINGS.md` §0, HIGH-2, MEDIUM-2. |
 | M5 Sync I/O on the loop | Open | `geocode.py:55-57,146-151`; `timeline.py:310-360`. The worker half is accepted; the autocomplete half is not. |
 | M6 Redis socket timeouts | Resolved (dd99cee) | `socket_timeout` and `socket_connect_timeout` of 2s on both clients, matching the DB probe's `statement_timeout`. |
 | M7 ORM/schema drift | Open | Partial indexes in `0009:49`, `0010:67,83` absent from `models/parcels.py`; `conftest.py:55-190` still hand-written DDL. |
@@ -100,6 +105,22 @@ registry that is now 3 ArcGIS, 1 CKAN, 1 Socrata), `parse_date`'s docstring
 (`:59`), and DC's unused `APPRAISED_VALUE_CURRENT_TOTAL` (`:434`) remain open.
 e1006df separately fixed the frontend's hardcoded county list, which the
 reconciliation flagged in spirit (item 15) but not as a code finding.
+
+## Ops audit (2026-08-12)
+
+A separate read-only audit of *running production*, recorded in
+`docs/audits/2026-08-ops-audit/`. Its findings are not second-audit findings;
+they are tracked here because two of them change rows above, and because this
+file is where the fix commits get cited.
+
+| # | Status | Where it stands |
+|---|---|---|
+| O1 Unsigned-href fallback | Resolved (c645208) | **New finding.** A signing failure fell back to the unsigned href at five call sites. Planetary Computer blob storage is private, so that href can only be rejected with a 409 — the audit tied 37 Titiler 500s across 10 snapshots to it, each preceded seconds earlier by a band-signing failure on the same snapshot id. The first audit read this fallback as graceful degradation; it is not degradation, it is a guaranteed user-visible failure manufactured out of a retryable one. Both tile paths now 502 with a curated message; the listing omits what it cannot sign; warmup and the preview renderer skip rather than render. `imagery.py` (API) and `preview_renderer.py:100-106`. No unsigned-fallback site remained in `stac.py` — every signing call there already goes through `sign_pc_url`, which carries the a536d07 limiter and retries. |
+| O2 Stranded rows | Resolved (2afdfb5) | **New finding.** Eleven task rows sat non-terminal forever: three `processing` under failed "Task timed out" requests, eight `queued` under complete April requests. An OOM kill is a SIGKILL, so the soft-limit handler never runs. A `worker_ready` janitor now fails both shapes past the 45-minute threshold. Note the shape: the parent *requests* were already terminal, so a sweep of in-flight requests alone would have caught none of them. |
+| O3 Worker OOM | Resolved (01cfdd6) | **New finding.** A live OOM kill inside a 20-minute log sample, on a 512 MB machine. `fly.worker.toml` now asks for 1 GB. Whether `WorkerLostError` should fail the request promptly is untouched; O2's janitor bounds the damage either way. |
+| O4 Deployed-SHA visibility | Resolved (ba62922) | **New finding, and the process gap behind HIGH-1.** Nothing recorded what was deployed, so the audit had to infer the running release from image build dates — which is how it discovered that a536d07 was committed but never pushed. `GET /api/v1/health` now reports the image's git SHA and build time. |
+| O5 Damaged parcels | Open — needs a run | `7397388e` (Denver, 20 Landsat years) and `e0cb3db9` (Ocean NJ, 8) are still damaged. `scripts/requeue_parcels.py` (d1fadd4) takes ids and re-runs them; it has deliberately **not** been run. Heal only after the throttle is deployed, or the re-run rolls the same dice. The ops audit's Appendix A lists three more candidates (a census-gapped parcel, a vintage-break residue, a zero-topo parcel). |
+| O6 Sentinel-2 unassessed | Open | The audit declined to apply a flat "healthy ≈ 30 quarters" threshold: observed counts run 13–35 in a smooth continuum with no bimodality, and cloud-cover filtering makes the expected count location-dependent. Sentinel-2 damage is unassessed, not cleared. Doing it properly needs a per-parcel expectation — available scenes versus selected. |
 
 ## Accepted, with reasons
 
@@ -157,9 +178,39 @@ reconciliation flagged in spirit (item 15) but not as a code finding.
   vs P1_001N (2020), and an unavailable variable makes the API reject the
   whole request. Worth doing: it would extend the Housing chart from ~2009
   back to 1990.
-- **M4, M7, M8, M5 (autocomplete half), L1, L3, L8, L10 hygiene, L12
+- **M7, M8, M5 (autocomplete half), L1, L3, L8, L10 hygiene, L12
   Dockerfile.** Real, and larger than a one-liner or touching shared surface.
   See the second audit's triage for the design decision each one turns on.
+
+## Scheduled
+
+- **M4, per-year failure persistence.** No longer deferred design — it is the
+  next piece of real work. Three production instances from three independent
+  upstreams (see the M4 row) have now produced the same permanent gap under a
+  `complete` task, and the response to each has been a hand-written heal
+  script. The recurring chore is the argument: `revalidate_landsat.py`,
+  `requeue_empty_property.py`, `heal_tract_vintage_gaps.py` and now
+  `requeue_parcels.py` all exist because a task cannot say which years it
+  failed to fetch. The open design question is where per-year outcomes live —
+  a column on `timeline_request_tasks`, or a per-year row — and it should be
+  answered against what backfill needs to read, not what is cheapest to write.
+
+## To investigate
+
+- **Adams County property returns empty, every time.** The single Adams parcel
+  has run five property tasks across two months — two of them after the H4
+  fix shipped — and every one reported `complete` with `items_found: 0`.
+  `property_events` for Adams holds zero rows, ever. H4's fix only fails a
+  task when *all* queries fail, so a silently-empty adapter is
+  indistinguishable from a genuinely empty result, and the database cannot
+  tell them apart no matter what is queried. **This needs a ten-minute manual
+  check against the county's portal before any code is written** — the answer
+  determines whether this is an adapter bug, a retired endpoint, or a parcel
+  with genuinely no records. Santa Clara is weaker but similar: two parcels,
+  one event between them. Ops audit MEDIUM-3.
+- **Incidental, from the same finding:** the 2026-08-11 incident parcel
+  recorded `property complete:0` during the burst window while its five Denver
+  peers hold 10–33 events each. Suggestive, not conclusive.
 
 ## Notes for future readers
 
