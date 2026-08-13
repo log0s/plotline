@@ -457,6 +457,22 @@ async def _search_and_persist_topo(
                 continue
 
             publication_date = topo_service.extract_publication_date(item)
+            # A product whose publicationDate will not parse has no year to
+            # stand on. It used to be minted as 1900, which is indistinguishable
+            # on the timeline from a genuine 1900 sheet. Skip it, as the
+            # id-less case below does — one dropped sheet is a gap, not a
+            # failure, so the task still completes.
+            if publication_date is None:
+                logger.warning(
+                    "Skipping topo product with unparseable publicationDate",
+                    extra={
+                        "parcel_id": str(parcel_id),
+                        "cog_url": cog_url,
+                        "publication_date": str(item.get("publicationDate")),
+                    },
+                )
+                continue
+
             source_id = topo_service.extract_source_id(item)
             # An id-less product would upsert as stac_item_id="", and the
             # conflict target is (parcel_id, stac_item_id) — so every id-less

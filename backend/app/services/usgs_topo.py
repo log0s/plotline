@@ -81,6 +81,21 @@ async def search_usgs_topo(
     data = resp.json()
 
     items: list[dict[str, object]] = data.get("items", [])
+    # Same instrument the county clients carry (arcgis/ckan/socrata): a
+    # response holding exactly its cap is indistinguishable from a complete
+    # answer, and TNM's ordering is unspecified, so a truncated pool could
+    # silently drop whole decades. Pagination is deliberately not built —
+    # see the L6 accept and counties item 13 in the second audit's STATUS.md.
+    if len(items) >= max_items:
+        logger.warning(
+            "TNM query hit its row cap — results are truncated",
+            extra={
+                "resource": "Historical Topographic Maps",
+                "cap": max_items,
+                "bbox": params["bbox"],
+            },
+        )
+
     return [
         item
         for item in items
@@ -125,9 +140,16 @@ def extract_geotiff_url(item: dict[str, object]) -> str | None:
     return None
 
 
-def extract_publication_date(item: dict[str, object]) -> date:
-    """Return the publication year as a date (Jan 1 of that year)."""
-    year = _publication_year(item) or 1900
+def extract_publication_date(item: dict[str, object]) -> date | None:
+    """Return the publication year as a date (Jan 1 of that year), or None.
+
+    None means the product carries no parseable ``publicationDate``. The
+    caller skips it rather than persisting a date we invented: this used to
+    fall back to 1900, which renders on the timeline as a real 1900 map.
+    """
+    year = _publication_year(item)
+    if year is None:
+        return None
     return date(year, 1, 1)
 
 

@@ -1091,3 +1091,61 @@ async def test_fetch_usgs_topo_skips_products_without_source_id() -> None:
     assert count == 1
     assert mock_upsert.call_count == 1
     assert mock_upsert.call_args.kwargs["stac_item_id"] == "SRC-1"
+
+
+@pytest.mark.asyncio
+async def test_fetch_usgs_topo_skips_products_with_unparseable_date(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A product whose publicationDate will not parse is skipped and logged.
+
+    It used to be minted as 1900 and persisted, which renders on the timeline
+    as a genuine 1900 sheet. The real extract_publication_date runs here — only
+    the selector is stubbed, so the guard in the persistence loop is what is
+    under test.
+    """
+    import logging
+
+    from app.tasks.timeline import _fetch_usgs_topo
+
+    req_id = uuid.uuid4()
+    parcel_id = uuid.uuid4()
+
+    mock_task_row = MagicMock()
+    mock_db = MagicMock()
+    mock_db.__enter__ = MagicMock(return_value=mock_db)
+    mock_db.__exit__ = MagicMock(return_value=False)
+    mock_db.execute.return_value.scalars.return_value.first.return_value = mock_task_row
+
+    items: list[dict[str, object]] = [
+        {"id": "good", "sourceId": "SRC-GOOD", "publicationDate": "1965-01-01"},
+        {"id": "bad", "sourceId": "SRC-BAD", "publicationDate": "n/a"},
+    ]
+
+    with (
+        patch("app.db.SessionLocal", return_value=mock_db),
+        patch(
+            "app.tasks.timeline.topo_service.search_usgs_topo",
+            new_callable=AsyncMock,
+            return_value=items,
+        ),
+        patch("app.tasks.timeline.topo_service.select_topo_items", return_value=items),
+        patch(
+            "app.tasks.timeline.topo_service.extract_geotiff_url",
+            side_effect=lambda i: f"https://example.com/{i['id']}.tif",
+        ),
+        patch("app.tasks.timeline.topo_service.extract_bbox_wkt", return_value=None),
+        patch(
+            "app.tasks.timeline.imagery_service.upsert_imagery_snapshot", return_value=True
+        ) as mock_upsert,
+        patch("app.tasks.timeline.imagery_service.reconcile_source_snapshots"),
+        patch("app.tasks.timeline.imagery_service.update_request_task"),
+        caplog.at_level(logging.WARNING, logger="app.tasks.timeline"),
+    ):
+        count = await _fetch_usgs_topo((-105, 39, -104, 40), parcel_id, req_id)
+
+    assert count == 1
+    assert mock_upsert.call_count == 1
+    assert mock_upsert.call_args.kwargs["stac_item_id"] == "SRC-GOOD"
+    assert mock_upsert.call_args.kwargs["capture_date"] == date(1965, 1, 1)
+    assert "Skipping topo product with unparseable publicationDate" in caplog.text
