@@ -14,20 +14,20 @@ Plotline turns a US address into a rich, scrollable timeline (decades of satelli
 
 ## What it does
 
-Enter any US address. Plotline geocodes it, then searches public archives for every piece of history it can find — aerial photos from NAIP going back to 2003, Landsat and Sentinel-2 satellite imagery reaching back into the 1980s, USGS historical topographic maps stretching back more than a century, Census demographic data across four decades, and county property sales and building permits. It stitches all of it into a single interactive timeline synced to a zoomable map, so you can scrub through time and watch the landscape change while the data tells you who lived there, what they paid, and what they built.
+Enter any US address. Plotline geocodes it, then searches public archives for every piece of history it can find — aerial photos from NAIP going back to 2010, Landsat and Sentinel-2 satellite imagery reaching back into the 1980s, USGS historical topographic maps stretching back more than a century, Census demographic data across four decades, and county property sales and building permits. It stitches all of it into a single interactive timeline synced to a zoomable map, so you can scrub through time and watch the landscape change while the data tells you who lived there, what they paid, and what they built.
 
 
 ## Featured Examples
 
 These locations are pre-loaded and ready to explore:
 
-**✈️ Stapleton / Central Park, Denver** — Denver's closed airport became the largest urban redevelopment in US history. NAIP imagery from 2003 shows runways being demolished; by 2023, the 4,700-acre site is a dense neighborhood with schools, parks, and thousands of homes.
+**✈️ Stapleton / Central Park, Denver** — Denver's closed airport became the largest urban redevelopment in US history. Annual Landsat imagery starts in 1984, a decade before the airport closed; NAIP aerials cover 2011–2023 across the 4,700-acre site, and USGS topo sheets reach back to 1890.
 
 **🏗️ RiNo Art District, Denver** — An industrial corridor of rail yards and warehouses transformed into Denver's trendiest neighborhood. Demolition and new construction permits cluster between 2014–2020, and median home values tripled in a decade.
 
-**🏘️ Green Valley Ranch, Denver** — Open prairie east of Denver exploded into a planned community in 15 years. NAIP imagery from 2003 shows empty grassland; by 2023 it's a dense subdivision with schools, parks, and tens of thousands of residents.
+**🏘️ Green Valley Ranch, Denver** — Open prairie east of Denver exploded into a planned community in 15 years. Annual Landsat imagery reaches back to 1984 and NAIP aerials cover 2011–2023, alongside four decades of Census data on the population growth.
 
-**🏟️ Navy Yard / Capitol Riverfront, DC** — Washington's Navy shipyard and industrial waterfront on the Anacostia became one of DC's fastest-growing neighborhoods after Nationals Park opened in 2008. NAIP imagery from the early 2000s shows rail yards and warehouses; by 2024 the area is dense with residential towers, offices, and mixed-use developments.
+**🏟️ Navy Yard / Capitol Riverfront, DC** — Washington's Navy shipyard and industrial waterfront on the Anacostia became one of DC's fastest-growing neighborhoods after Nationals Park opened in 2008. Annual Landsat imagery reaches back to 1984 and NAIP aerials cover 2011–2023, spanning the years when residential towers, offices, and mixed-use development filled in.
 
 **🌊 Rodanthe, Outer Banks** — Decades of coastal erosion reshaped the Outer Banks barrier islands. Satellite imagery reveals the shoreline migrating westward, with houses lost to the surf and NC-12 repeatedly relocated as the island rolls over itself.
 
@@ -74,7 +74,7 @@ A user enters an address. The API geocodes it via the Census Geocoder, stores th
 
 | Source | What it provides | Coverage |
 |--------|-----------------|----------|
-| [NAIP](https://planetarycomputer.microsoft.com/dataset/naip) via Planetary Computer | Aerial imagery, ~1m resolution | Continental US, 2003–present |
+| [NAIP](https://planetarycomputer.microsoft.com/dataset/naip) via Planetary Computer | Aerial imagery, ~1m resolution | Continental US, 2010–present |
 | [Landsat](https://planetarycomputer.microsoft.com/dataset/landsat-c2-l2) via Planetary Computer | Satellite imagery, 30m resolution | Global, 1984–present |
 | [Sentinel-2](https://planetarycomputer.microsoft.com/dataset/sentinel-2-l2a) via Planetary Computer | Satellite imagery, 10m resolution | Global, 2015–present |
 | [USGS Historical Topographic Maps](https://www.usgs.gov/programs/national-geospatial-program/historical-topographic-maps-preserving-past) via The National Map | Scanned topo maps, one per decade | US, 1880s–2006 |
@@ -206,7 +206,7 @@ This project was built using [Claude Code](https://claude.com/claude-code) as th
 
 **Income and home values are nominal dollars.** The demographic charts show dollar values as reported in each year's Census data, not adjusted for inflation. A median income of $40,000 in 1990 is not directly comparable to $75,000 in 2023. This is noted in the UI.
 
-**Imagery availability varies by location.** NAIP coverage starts around 2003 and is limited to the continental US. Landsat goes back to 1984 but at 30m resolution — you can see land use changes but not individual buildings. Historical topo maps exist for most of the US, but publication dates vary by quad — some areas have a sheet per decade, others long gaps. Very rural areas may have sparse NAIP coverage. Areas outside the US have no NAIP or Census data.
+**Imagery availability varies by location.** NAIP coverage starts in 2010 and is limited to the continental US — the NAIP program itself dates to 2003, but the Planetary Computer collection Plotline reads begins 2010, and many states fly on a two-year cycle, so a given parcel's first aerial is often 2011 or 2012. Landsat goes back to 1984 but at 30m resolution — you can see land use changes but not individual buildings. Historical topo maps exist for most of the US, but publication dates vary by quad — some areas have a sheet per decade, others long gaps. Very rural areas may have sparse NAIP coverage. Areas outside the US have no NAIP or Census data.
 
 **Cross-source comparison is imperfect.** Each imagery source has its own footprint, resolution, and acquisition geometry. A 1m NAIP tile and a 30m Landsat scene cover very different areas at very different detail, and successive NAIP acquisitions don't always cover the exact same extent. The timeline reprojects and crops to a shared bounding box, but comparing fine-grained change over a specific parcel across sources can still be difficult.
 

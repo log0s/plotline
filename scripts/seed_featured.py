@@ -28,7 +28,9 @@ FEATURED_LOCATIONS = [
         "description": (
             "Denver's Stapleton International Airport closed in 1995 and was replaced "
             "by one of the most ambitious urban redevelopment projects in the country. "
-            "NAIP imagery from 2003 shows demolition; by 2023, it's a dense neighborhood."
+            "Annual Landsat imagery starts in 1984, a decade before the airport "
+            "closed; NAIP aerials cover 2011–2023 across the 4,700-acre site, and "
+            "USGS topo sheets reach back to 1890."
         ),
         "display_order": 1,
     },
@@ -53,8 +55,9 @@ FEATURED_LOCATIONS = [
         "key_stat": "Population grew thousands of percent since 2000",
         "description": (
             "The area east of Denver near E-470 was open prairie and farmland in the "
-            "early 2000s. NAIP imagery shows the rapid development of subdivisions, "
-            "schools, and commercial centers that now house tens of thousands."
+            "early 2000s. Annual Landsat imagery reaches back to 1984 and NAIP "
+            "aerials cover 2011–2023, alongside four decades of Census data on the "
+            "population growth."
         ),
         "display_order": 3,
     },
