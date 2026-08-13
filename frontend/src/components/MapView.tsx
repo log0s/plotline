@@ -14,7 +14,7 @@ import {
 } from "framer-motion";
 import { Info, LocateFixed } from "lucide-react";
 import maplibregl from "maplibre-gl";
-import { SOURCE_LABELS } from "../constants";
+import { SOURCE_LABELS, TOPO_DATE_CAVEAT } from "../constants";
 import { useAppStore } from "../store";
 import { applyImageryLayer } from "../utils/applyImageryLayer";
 import { scheduleWarmup } from "../utils/warmup";
@@ -281,7 +281,7 @@ function InfoChip({
             : (SOURCE_LABELS[chip.source] ?? chip.source)}
         </span>
         <span>·</span>
-        <span>{isTopo ? year : chip.capture_date}</span>
+        <span>{isTopo ? `Published ${year}` : chip.capture_date}</span>
         {isTopo && (
           <>
             <span>·</span>
@@ -307,7 +307,7 @@ function InfoChip({
           This is a scanned USGS topographic map, not a photograph. It shows
           terrain, roads, and land use as surveyed by cartographers at the time.
           Features include contour lines (brown), vegetation (green), water
-          (blue), and man-made structures (black).
+          (blue), and man-made structures (black). {TOPO_DATE_CAVEAT}
         </div>
       )}
     </div>

@@ -18,6 +18,13 @@ export const SOURCE_LABELS: Record<string, string> = {
   property: "Property",
 };
 
+// Topo sheets carry only a publication date — TNM exposes no survey or
+// photorevision date, and the FGDC XML tags its date range as the publication
+// date too. The surveyed conditions can predate publication by a decade, so
+// the card must not render a topo date the way it renders a capture date.
+export const TOPO_DATE_CAVEAT =
+  "Publication date, not survey date — the mapped conditions may predate it by years.";
+
 interface EventTypeConfig {
   label: string;
   color: string;

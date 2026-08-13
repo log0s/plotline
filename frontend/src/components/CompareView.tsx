@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LocateFixed } from "lucide-react";
 import maplibregl from "maplibre-gl";
-import { SOURCE_LABELS } from "../constants";
+import { SOURCE_LABELS, TOPO_DATE_CAVEAT } from "../constants";
 import { useAppStore } from "../store";
 import { applyImageryLayer } from "../utils/applyImageryLayer";
 import { scheduleWarmup } from "../utils/warmup";
@@ -300,15 +300,22 @@ function SnapshotLabel({
   snapshot: ImagerySnapshot;
   side: "A" | "B";
 }) {
+  const isTopo = snapshot.source === "usgs_topo";
+
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-navy-900/90 backdrop-blur-sm border border-navy-700/60 text-xs">
+    <div
+      className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-navy-900/90 backdrop-blur-sm border border-navy-700/60 text-xs"
+      title={isTopo ? TOPO_DATE_CAVEAT : undefined}
+    >
       <span className="text-amber-400 font-bold">{side}</span>
       <span className="text-slate-300 font-mono">
         {SOURCE_LABELS[snapshot.source] ?? snapshot.source}
       </span>
       <span className="text-slate-500">·</span>
       <span className="text-slate-300">
-        {formatDate(snapshot.capture_date)}
+        {isTopo
+          ? `Published ${snapshot.capture_date.slice(0, 4)}`
+          : formatDate(snapshot.capture_date)}
       </span>
     </div>
   );

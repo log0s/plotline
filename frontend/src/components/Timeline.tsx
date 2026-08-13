@@ -11,7 +11,11 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Map, SplitSquareHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EVENT_TYPE_CONFIG, SOURCE_LABELS } from "../constants";
+import {
+  EVENT_TYPE_CONFIG,
+  SOURCE_LABELS,
+  TOPO_DATE_CAVEAT,
+} from "../constants";
 import { usePropertyEventsQuery } from "../hooks/queries";
 import { useAppStore } from "../store";
 import type {
@@ -42,6 +46,12 @@ type TimelineItem =
 function formatDate(isoDate: string): string {
   const d = new Date(isoDate + "T00:00:00");
   return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
+
+// Topo rows store the publication year as Jan 1 of that year, so the
+// capture-date format ("Jan 1965") would assert a month that does not exist.
+function formatPublicationYear(isoDate: string): string {
+  return `Published ${isoDate.slice(0, 4)}`;
 }
 
 function progressLabel(
@@ -593,11 +603,17 @@ function SnapshotCard({
       transition={{ duration: 0.2 }}
       onClick={() => onSelect(snapshot)}
       className={`relative flex flex-col items-center gap-1 shrink-0 group focus:outline-none`}
-      title={`${SOURCE_LABELS[source]} \u00b7 ${snapshot.capture_date}${
-        snapshot.cloud_cover_pct != null
-          ? ` \u00b7 ${snapshot.cloud_cover_pct.toFixed(0)}% cloud`
-          : ""
-      }`}
+      title={
+        isTopo
+          ? `${SOURCE_LABELS[source]} \u00b7 ${formatPublicationYear(
+              snapshot.capture_date,
+            )} \u00b7 ${TOPO_DATE_CAVEAT}`
+          : `${SOURCE_LABELS[source]} \u00b7 ${snapshot.capture_date}${
+              snapshot.cloud_cover_pct != null
+                ? ` \u00b7 ${snapshot.cloud_cover_pct.toFixed(0)}% cloud`
+                : ""
+            }`
+      }
     >
       {/* Thumbnail */}
       <div
@@ -659,7 +675,9 @@ function SnapshotCard({
 
       {/* Date label */}
       <span className="text-[10px] md:text-[9px] font-mono text-slate-500 leading-none">
-        {formatDate(snapshot.capture_date)}
+        {isTopo
+          ? formatPublicationYear(snapshot.capture_date)
+          : formatDate(snapshot.capture_date)}
       </span>
     </motion.button>
   );
