@@ -6,6 +6,7 @@ isolation, and status transitions (queued → processing → complete/failed).
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -318,6 +319,138 @@ async def test_fetch_source_chunk_by_year_skips_failed_years() -> None:
         )
 
     assert count == 1
+
+
+# ── cap-saturation instrument ────────────────────────────────────────────────
+
+
+async def _run_fetch_source(source_cfg: dict, mock_search) -> None:
+    """Drive _fetch_source with a stubbed search and no persistence.
+
+    The selectors return no groups, so nothing is written — these tests are
+    about what the *search* logged, upstream of selection.
+    """
+    from app.tasks.timeline import _fetch_source
+
+    mock_db = MagicMock()
+    mock_db.__enter__ = MagicMock(return_value=mock_db)
+    mock_db.__exit__ = MagicMock(return_value=False)
+    mock_db.execute.return_value.scalars.return_value.first.return_value = MagicMock()
+
+    with (
+        patch("app.db.SessionLocal", return_value=mock_db),
+        patch(
+            "app.tasks.timeline._search_stac_with_retry",
+            new_callable=AsyncMock,
+            side_effect=mock_search,
+        ),
+        patch(
+            "app.tasks.timeline.stac_service.filter_items_containing_point",
+            side_effect=lambda items, lat, lng: items,
+        ),
+        patch(
+            "app.tasks.timeline.stac_service.validate_landsat_selection",
+            new_callable=AsyncMock,
+            side_effect=lambda groups, raw: groups,
+        ),
+        patch("app.tasks.timeline.imagery_service.reconcile_source_snapshots"),
+        patch("app.tasks.timeline.imagery_service.count_imagery_snapshots", return_value=0),
+        patch("app.tasks.timeline.imagery_service.update_request_task"),
+    ):
+        await _fetch_source(
+            source_cfg,
+            (-105, 39, -104, 40),
+            (-105, 39, -104, 40),
+            uuid.uuid4(),
+            uuid.uuid4(),
+            lat=39.5,
+            lng=-104.5,
+        )
+
+
+def _naip_cfg(max_items: int) -> dict:
+    return {
+        "source": "naip",
+        "collection": "naip",
+        "datetime_range": "2010-01-01/2026-12-31",
+        "max_items": max_items,
+        "query": None,
+        "selector": lambda items: [],
+        "selection_scope": "year",
+        "resolution_m": 1.0,
+        "chunk_by_year": False,
+        "use_viewport_filter": False,
+    }
+
+
+def _item(item_id: str) -> dict:
+    return {
+        "id": item_id,
+        "properties": {"datetime": "2021-07-01T00:00:00Z"},
+        "assets": {},
+        "bbox": [-105, 39, -104, 40],
+    }
+
+
+@pytest.mark.asyncio
+async def test_naip_search_at_its_cap_warns(caplog: pytest.LogCaptureFixture) -> None:
+    """A pool holding exactly its cap is indistinguishable from a complete one."""
+
+    async def mock_search(**kwargs):
+        return [_item(f"naip_{i}") for i in range(3)]
+
+    with caplog.at_level(logging.WARNING, logger="app.tasks.timeline"):
+        await _run_fetch_source(_naip_cfg(3), mock_search)
+
+    assert "STAC search hit its item cap" in caplog.text
+    record = next(r for r in caplog.records if "hit its item cap" in r.getMessage())
+    assert record.cap == 3  # type: ignore[attr-defined]  # logged via extra=
+    assert record.collection == "naip"  # type: ignore[attr-defined]  # logged via extra=
+    assert record.datetime_range == "2010-01-01/2026-12-31"  # type: ignore[attr-defined]  # logged via extra=
+
+
+@pytest.mark.asyncio
+async def test_naip_search_below_its_cap_does_not_warn(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def mock_search(**kwargs):
+        return [_item(f"naip_{i}") for i in range(2)]
+
+    with caplog.at_level(logging.WARNING, logger="app.tasks.timeline"):
+        await _run_fetch_source(_naip_cfg(3), mock_search)
+
+    assert "hit its item cap" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_saturated_landsat_year_does_not_warn(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Chunked sources saturate their per-year pools as normal operation.
+
+    Warning on those would bury the NAIP signal this instrument exists for.
+    """
+    cfg = {
+        "source": "landsat",
+        "collection": "landsat-c2-l2",
+        "start_year": 2020,
+        "end_year": 2021,
+        "max_items_per_year": 2,
+        "query": None,
+        "selector": lambda items: [],
+        "selection_scope": "year",
+        "resolution_m": 30.0,
+        "chunk_by_year": True,
+        "use_viewport_filter": False,
+    }
+
+    async def mock_search(**kwargs):
+        return [_item(f"LC09_{i}") for i in range(2)]
+
+    with caplog.at_level(logging.WARNING, logger="app.tasks.timeline"):
+        await _run_fetch_source(cfg, mock_search)
+
+    assert "hit its item cap" not in caplog.text
 
 
 # ── _fetch_census ─────────────────────────────────────────────────────────────

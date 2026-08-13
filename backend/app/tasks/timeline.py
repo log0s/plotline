@@ -45,7 +45,15 @@ _SOURCES: list[dict[str, Any]] = [
     {
         "source": "naip",
         "collection": "naip",
-        "start_date": "2003-01-01",  # end resolved to the current year at fetch time
+        # The PC `naip` collection's own temporal extent starts 2010-01-01
+        # (verified 2026-08-13 against /api/stac/v1/collections/naip:
+        # interval [["2010-01-01T00:00:00Z", "2023-12-31T00:00:00Z"]]), so the
+        # 2003 start this used to carry queried six years the source never
+        # had. That floor — not truncation, not flight cycles — is what the
+        # fleet-wide 2010 histogram floor measures (STATUS.md T4).
+        # The end stays open, resolved to the current year at fetch time: the
+        # collection's extent end trails the data as new flights land.
+        "start_date": "2010-01-01",
         "max_items": 50,
         "query": None,
         "selector": stac_service.select_naip_items,
@@ -218,9 +226,11 @@ async def _search_and_persist_source(
     t0 = time.perf_counter()
 
     # Search STAC (async HTTP, outside any DB session).
-    # For sources with a wide historical range we chunk by year so the
-    # default "newest first" ordering doesn't cap us at the most recent
-    # 100 scenes and miss older years entirely.
+    # For sources with a wide historical range we chunk by year. We send no
+    # `sortby`, and STAC leaves the ordering of an unsorted search
+    # unspecified — so chunking is what bounds the candidate pool *per year*
+    # regardless of how the server happens to order results, rather than
+    # trusting a whole-range search to hand back the years we want.
     if source_cfg.get("chunk_by_year"):
         start_year = int(source_cfg["start_year"])
         end_year = int(source_cfg.get("end_year") or date.today().year)
@@ -262,13 +272,34 @@ async def _search_and_persist_source(
             source_cfg.get("datetime_range")
             or f"{source_cfg['start_date']}/{date.today().year}-12-31"
         )
+        max_items = int(source_cfg["max_items"])
         raw_items = await _search_stac_with_retry(
             collection=collection,
             bbox=search_bbox,
             datetime_range=datetime_range,
-            max_items=source_cfg["max_items"],
+            max_items=max_items,
             query=source_cfg.get("query"),
         )
+        # Same instrument the TNM and county clients carry: a response
+        # holding exactly its cap is indistinguishable from a complete
+        # answer, and with no `sortby` the ordering that decides *which*
+        # items survive the cap is unspecified — so a saturated pool could
+        # silently drop whole years. It lives on this branch, not inside
+        # search_stac, because only the un-chunked sources can be truncated
+        # in a way that costs coverage: Landsat and Sentinel-2 saturate
+        # their 20-item per-year pools as normal operation on dense years,
+        # and warning there would drown this signal. Pagination is
+        # deliberately not built — see T4 in the second audit's STATUS.md.
+        if len(raw_items) >= max_items:
+            logger.warning(
+                "STAC search hit its item cap — results are truncated",
+                extra={
+                    "source": source_name,
+                    "collection": collection,
+                    "cap": max_items,
+                    "datetime_range": datetime_range,
+                },
+            )
 
     # Spatial filter. NAIP uses the looser "intersects viewport" filter so
     # adjacent tiles can contribute to a mosaic; Landsat/S2 use strict
