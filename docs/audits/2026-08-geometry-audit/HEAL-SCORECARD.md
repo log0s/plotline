@@ -255,3 +255,98 @@ The NAIP prediction is falsified outright, and usefully so: the gate is
 prospective and the absent-group rule protects the very rows it was meant to
 remove. That is a composition bug between two individually correct rules, and
 it would not have been visible without running the heal and looking.
+
+---
+
+# ADDENDUM 2026-08-12 — §3/§4.1: the two cards get deleted, not re-run
+
+§3 said the gate is prospective only and flagged the pair for its own pass.
+This is that pass. Nothing here was run against production; the production
+execution is Ryan's, post-push.
+
+## The condemnation still holds (re-verified live, 2026-08-12)
+
+Read-only STAC search against Planetary Computer, production parameters
+(`collection=naip`, `bbox=point_to_bbox(lat, lng, 1500)`, the full
+`2003-01-01/2026-12-31` range NAIP actually searches, and the
+`2023-01-01/2023-12-31` slice separately). Both parcels, same answer:
+
+| Item | contains point? |
+|---|---|
+| `nj_m_4007424_ne_18_030_20230820_20231019` | No |
+| `nj_m_4007416_se_18_030_20230820_20231019` | No |
+| `nj_m_4007309_sw_18_030_20230820_20231019` | No |
+
+Three items in 2023, all New Jersey quads, **none containing the point** —
+unchanged from the audit's 2026-08-11 check. All three intersect the
+viewport, which is why the greedy area scorer took them. Still a data gap,
+so the remedy is deletion, not re-selection.
+
+## Why deletion is permanent rather than a dice re-roll
+
+Traced end to end, and confirmed by replaying the real selection against
+live PC for parcel `81b2d663`:
+
+1. `timeline.py:292` calls `stac_service.filter_groups_containing_point`
+   (`stac.py:623`, which delegates to the geometry-audit's own point test at
+   `stac.py:570`) on the NAIP selection. Replayed: years selected before the
+   gate `[2010, 2011, 2013, 2015, 2017, 2019, 2021, 2022, 2023]`; after the
+   gate, the same list **without 2023**, with the suppressed group logged as
+   `nj_m_4007309_sw…` + `nj_m_4007424_ne…`.
+2. Only surviving groups reach `selected_refs` (`timeline.py:380`), so the
+   `groups` set `reconcile_source_snapshots` builds (`imagery.py:626-628`)
+   contains no 2023 bucket. Its stale test (`imagery.py:646`) requires
+   `bucket(captured) in groups`, so a 2023 row is never stale — and nothing
+   re-inserts one. Replayed: `2023 in reconcile groups: False`.
+
+So after deletion, a re-run neither restores the row nor cascades into the
+years around it.
+
+## The tool
+
+`scripts/remove_uncovered_snapshots.py` (`56a82ec`). Named targets only,
+dry-run by default, and `--execute` gated on fetching every tile of each
+target row's mosaic from PC and proving the footprint excludes the parcel
+point. Unresolvable evidence refuses the run rather than deleting on
+partial proof. Tested at `backend/tests/test_remove_uncovered_snapshots.py`
+(13 tests).
+
+The guard is not decorative. Run against Hudson Yards' 2023 row
+(`5c27245c`, whose primary is the *same* `nj_m_4007309_sw` item), it
+refuses: that parcel's point is inside both `nj_m_4007309_sw` and
+`nj_m_4007416_se`. §4 of FINDINGS.md predicted the rescue from
+`nj_m_4007416_se` alone; the live check says the primary covers it too.
+Either way the row is not condemnable, and the tool says so rather than
+trusting the item id.
+
+## Local execution (evidence, not the score)
+
+Run against the **local** database, both parcels, `--execute`: 2 rows
+deleted (`80052bfa…`, `ac877b2d…`), NAIP row count 300 → 298, Hudson
+Yards' 2023 row intact. Per §5 this database is not production and the
+counts do not transfer; what transfers is that the path works end to end
+against live PC evidence.
+
+## Prediction for the production run — written before it happens
+
+Command: `--parcel-id <prod 350 5th Ave> --source naip --year 2023`,
+dry-run first, then `--execute`.
+
+1. **Exactly 2 rows deleted, one per parcel, both `naip` 2023**, both
+   `stac_item_id = nj_m_4007309_sw_18_030_20230820_20231019`. If production
+   holds only one `350 5th Ave` parcel (§5 says production deduplicates the
+   local pair), then **exactly 1** — the invariant is one row per parcel
+   named, never more.
+2. **Both timelines lose exactly the 2023 card** and nothing else: adjacent
+   NAIP years, Landsat, Sentinel-2, topo and census untouched.
+3. **Hudson Yards and every other NAIP row untouched.** No parcel other
+   than those named is read or written.
+4. **A subsequent re-run creates no `naip` 2023 group for either parcel** —
+   the year is suppressed at selection and the absent group is never
+   re-inserted. The re-run's log should carry
+   `Suppressing imagery year with no covering tile` for
+   `source=naip year=2023`.
+
+Falsification conditions, stated in advance: any deletion outside the named
+(parcel, source, year); a re-run that re-creates a 2023 NAIP row; or a
+`--execute` that proceeds while any fetched tile contains the point.
