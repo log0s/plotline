@@ -42,6 +42,17 @@ services:
       TITILER_URL: http://titiler:80
       API_INTERNAL_URL: http://api:8000
       CENSUS_API_KEY: ${CENSUS_API_KEY:-}
+      # Keep tool caches off the bind mount. The container runs as root and
+      # ./backend is mounted at /app, so `make lint` and `make test` write
+      # root-owned .ruff_cache / .mypy_cache / .pytest_cache into backend/ —
+      # after which running the same tools on the *host* fails with EACCES.
+      # ruff says "Failed to initialize cache"; mypy reports a bare INTERNAL
+      # ERROR with no cause, which is a genuinely misleading way to learn the
+      # problem is a directory owner. /tmp is container-local, so these leave
+      # nothing behind in the repo.
+      RUFF_CACHE_DIR: /tmp/ruff_cache
+      MYPY_CACHE_DIR: /tmp/mypy_cache
+      PYTEST_ADDOPTS: -o cache_dir=/tmp/pytest_cache
     volumes:
       - ./backend:/app
       - ./scripts:/app/scripts
