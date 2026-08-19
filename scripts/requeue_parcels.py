@@ -16,10 +16,14 @@ Deployment gate
 ---------------
 Re-queuing re-runs scene selection against whatever code the worker is
 currently running, so a heal is only as good as the deploy behind it. The
-imagery point filter tests each STAC item's *bbox envelope* rather than its
-real footprint (``stac.py``), which admits granules whose footprint excludes
-the address — so a re-queue against an un-fixed deploy re-selects the same
-wrong granules and heals the parcel straight back into the defect.
+selection rules this gate exists for landed in 2039e64 (the point filter
+tests each STAC item's real footprint rather than its bbox envelope, which
+used to admit granules whose footprint excludes the address), e7d4c6d
+(Sentinel-2 gained the validation fallback walk Landsat already had) and
+14b59af (a NAIP year with no covering tile is suppressed rather than
+mosaicked from its neighbours). All three are selection-time behaviour, so a
+re-queue against a deploy predating them re-selects by the old rules and
+heals the parcel straight back into the defect.
 
 To make the ordering mechanical rather than a thing the operator has to
 remember, the script requires the operator to pass *exactly one* of two flags, and

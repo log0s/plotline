@@ -1,7 +1,9 @@
-"""Celery application and task stubs.
+"""Celery application and worker lifecycle signals.
 
-Phase 1: The worker is wired up and running, but tasks are no-ops.
-Phase 2 will add real tasks for fetching NAIP/Landsat imagery.
+The app itself is small: broker/backend configuration plus three signal
+handlers (structlog routing, prefork engine disposal, and the stranded-work
+janitor). The only registered task is
+``app.tasks.timeline.fetch_imagery_timeline``, pulled in via ``include``.
 """
 
 from __future__ import annotations

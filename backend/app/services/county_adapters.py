@@ -1,8 +1,10 @@
 """County open data adapters for property history.
 
-Each adapter isolates a county's Socrata API quirks (field names, resource IDs,
-data formats) behind a common interface. This makes it straightforward to add
-new counties without changing the core pipeline.
+Each adapter isolates one county's portal quirks — platform, field names,
+resource IDs, date formats — behind a common interface, so adding a county
+doesn't change the core pipeline. The registry spans three platforms:
+ArcGIS Feature Services (Denver, Adams, DC), CKAN (Santa Clara / San Jose)
+and Socrata (New York County).
 
 Architecture:
     CountyAdapter (ABC) → DenverAdapter, AdamsCountyAdapter, ...
@@ -57,11 +59,16 @@ def _escape_sql_literal(s: str) -> str:
 
 
 def parse_date(value: str | None) -> date | None:
-    """Parse a date string from Socrata (ISO-8601 or date-only)."""
+    """Parse an ISO-8601 or date-only string — the shared cross-platform parser.
+
+    Used directly by the NYC sales path and as the fallback for the ArcGIS
+    epoch-millisecond and San Jose ``M/D/YYYY`` parsers, so it is not
+    Socrata-specific despite where it started.
+    """
     if not value:
         return None
     try:
-        # Socrata often returns "2020-01-15T00:00:00.000"
+        # Trailing time components are common: "2020-01-15T00:00:00.000"
         return date.fromisoformat(value[:10])
     except (ValueError, TypeError):
         return None

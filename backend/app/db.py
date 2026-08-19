@@ -1,8 +1,13 @@
-"""Database session management.
+"""Database and Redis connection management.
 
-Uses SQLAlchemy's synchronous session for Phase 1 simplicity.
-The engine and sessionmaker are created once at module import time
-using the DATABASE_URL from settings.
+SQLAlchemy sessions are synchronous throughout; async request handlers push
+DB work into the threadpool rather than the ORM being async. The engine and
+sessionmaker are created once at module import time from DATABASE_URL.
+
+Redis has two client families here rather than one: a shared synchronous
+client in binary mode, and a set of asyncio clients keyed by event loop —
+``redis.asyncio`` connections are loop-affine and the Celery worker runs
+each task in its own ``asyncio.run()`` loop.
 """
 
 from __future__ import annotations

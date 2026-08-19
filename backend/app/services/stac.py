@@ -1,7 +1,11 @@
-"""Microsoft Planetary Computer STAC API client.
+"""Planetary Computer imagery: search, signing, spatial filtering, selection.
 
-Handles searching imagery collections, signing asset URLs, and computing
-bounding boxes from geocoded points.
+More than a client. Alongside the STAC search and the two-tier SAS signing,
+this module owns the decisions the imagery pipeline makes about what to
+serve: which items actually cover the parcel (tested against the footprint,
+not the bbox envelope), which item represents each period for each source,
+which asset to read, and whether the chosen item is servable at all.
+``tasks/timeline.py`` orchestrates the sources; the rules live here.
 """
 
 from __future__ import annotations
