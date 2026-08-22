@@ -83,7 +83,7 @@ an explicit deferral, both recorded below — never an unfinished edit.
 | L7 `_fetch_source` coordinates | Resolved (ffb71b2) | Defaults removed; two test call sites were relying on them. |
 | L8 Autocomplete self-DoS | Open | `useAddressAutocomplete.ts:12` (150ms); `SearchInput.tsx:35,44,57,112` still clears the input before the geocode resolves. |
 | L9 Tile-proxy input | Resolved (ffb71b2) | `z` capped at 0–24; `x`/`y` given one generous static bound, since anything inside it but outside the COG extent already returns a transparent tile. |
-| L10 Raw error strings | Open | `schemas/imagery.py:25,38`; `timeline.py:198,402,650`. |
+| L10 Raw error strings | Open | `schemas/imagery.py:25,38`; `timeline.py:198,402,650`. *2026-08-22: the log half the security audit reopened (SEC-4/SEC-7) is resolved in `52b0223` — `app/redact.py` at the log pipeline and the task-row sinks; the client-facing accept stands.* |
 | L11 Prefork engine | Resolved (dd99cee) | `worker_process_init` → `engine.dispose(close=False)`. |
 | L12 Misc | Partially resolved (56d6647) | CORS `allow_credentials` dropped. Still open: JSON vs JSONB (`models/parcels.py:323`/`:398`), "declined 0%" (`demographics.py:203-211`), the URL-normalization chain (`config.py:83-89` **and** `alembic/env.py:36-42`), `Dockerfile.fly` running as root with gcc, and DC's hardcoded permit layers (`county_adapters.py:403-411`). |
 
@@ -308,9 +308,9 @@ cheap half first.
 |---|---|---|
 | N1 | **MEDIUM — Open** | **SAS signing retries only 429; a transient PC 5xx or connection error is terminal.** `_sas_get` branches on `resp.status_code != 429` and calls `raise_for_status()` on the spot (`stac.py:315-316`), and `httpx.RequestError` is never caught inside the loop at all — so a 503 from `/api/sas/v1/token/…`, or a reset connection, fails on the **first** attempt, with none of the 4 attempts, the semaphore, or the wait budget applying. The function's own docstring argues that a 429 means "slow down", not "this asset is broken" (`stac.py:297-299`); the same is true of a 503, and the code does not act on it. **The worker path is where it costs a year.** `_validate_asset` catches the raised error and returns `False` (`stac.py:1014-1021`); `_validate_selection` reads that as "item is broken" and answers by walking **every** same-period candidate (`stac.py:1111-1127`) — each of which signs against the same unhealthy endpoint — then drops the period with `WARNING "No valid %s item for %s; skipping"` (`stac.py:1130`) under a task that still ends `complete` (`timeline.py:435`). Note the asymmetry with the search path, which does retry `{429, 500, 502, 503, 504}` **and** `RequestError` (`timeline.py:94, 125-130`). Recorded against M4 above as a fourth silent-gap door, not a fourth occurrence. |
 | N2 | **MEDIUM — Open** | **The Census data API client has no retry at all.** `CensusFetcher._request` issues one `GET` and converts any `httpx.HTTPError` — timeout, connect error, read error — straight into `CensusApiError` (`census.py:249-253`). No attempt loop, no backoff, no distinction between a retryable and a permanent failure. The only pacing anywhere on the path is `await asyncio.sleep(0.5)` between years (`timeline.py:689, 715`), which is politeness, not retry. **This is the mechanism behind M4's instance (3):** four `httpx.ReadTimeout`s against `api.census.gov` cost a Maricopa parcel its acs5 2021 and decennial 2020 rows, and **not one of those four would have been retried**. M4 recorded the outcome; nothing on this ledger recorded that the client never tried again. Both the geocoder (`geocoder.py:30, 139-147`) and the STAC search (`timeline.py:97-135`) retry — among our three upstream clients this one is the outlier. |
-| N3 | **LOW (record drift) — corrected in this commit** | **The M9 row above stated the `/warmup` limit as 30/min; it has been 60/min since `69b94e1` (2026-08-04).** 56d6647 did ship 30 — `RateLimit(times=30, seconds=60)` at that commit — and `69b94e1` ("perf: warm a snapshot once per session, not once per scrub hop") raised it to 60 without the row following; `api/imagery.py:624` reads `RateLimit(times=60, seconds=60)` at HEAD. The `/{id}/stac` half (600/min) is still accurate (`api/imagery.py:721`). The M9 row is corrected in place in the same commit as this row. It is recorded rather than silently fixed because the drift, not the number, is the finding: the row was true when written and nothing made it false out loud. |
+| N3 | **LOW (record drift) — corrected in this commit** | **The M9 row above stated the `/warmup` limit as 30/min; it has been 60/min since `69b94e1` (2026-08-04).** 56d6647 did ship 30 — `RateLimit(times=30, seconds=60)` at that commit — and `69b94e1` ("perf: warm a snapshot once per session, not once per scrub hop") raised it to 60 without the row following; `api/imagery.py:624` reads `RateLimit(times=60, seconds=60)` at HEAD. The `/{id}/stac` half (600/min) is still accurate (`api/imagery.py:721`). The M9 row is corrected in place in the same commit as this row. It is recorded rather than silently fixed because the drift, not the number, is the finding: the row was true when written and nothing made it false out loud. *2026-08-22: `/warmup` is now 120/min (`api/imagery.py:658`, `52b0223`), and the bucket is per route template rather than per snapshot (SEC-3).* |
 | N4 | **LOW — Open** | **A Photon failure returns an empty suggestion list.** Both `httpx.RequestError` and `httpx.HTTPStatusError` are answered with `return []` (`api/geocode.py:77-82`), so a Photon outage, a 429, and "no US address matches this prefix" reach the caller — and the user — as the same empty dropdown. It is the complete-with-zero shape the second audit named as this system's characteristic reflex, on the one path where **nothing is persisted**: unlike census or property, no backfill, heal or query could ever notice. Contained, which is why it is LOW and not MEDIUM — a typed address still geocodes through the Census geocoder, and the 300 s cache does not store empty-on-failure any differently from empty-on-success. |
-| N5 | **LOW (second-order) — Open** | **The host allowlist guards one of the five paths that hand a stored URL to a fetcher.** `_ALLOWED_STAC_HOSTS` (`api/imagery.py:336-340`) constrains the API's own Landsat item fetch, and the comment above it gives the reason: without it "a `cog_url` written by a compromised upstream would make the API fetch an attacker-chosen URL from inside the network" (`api/imagery.py:330-335`). The same stored values also reach Titiler as the `url` query parameter on four other paths — `_proxy_cog_tile` (`api/imagery.py:484-486`), warmup (`api/imagery.py:646-648, 665-668`), the Landsat callback URL (`api/imagery.py:556-557`) and the preview renderer (`preview_renderer.py:113-116`) — with **no host check on any of them**, for NAIP, Sentinel-2 and USGS topo alike. Topo is the widest case: that URL comes straight out of TNM's `urls.GeoTIFF` and is never inspected (`usgs_topo.py:134-140`). The exposure is the same second-order shape the existing comment already reasons about — it needs a compromised or malicious upstream, and the value is written by our own worker — but the mitigation landed on one path and not the other four. `CPL_VSIL_CURL_ALLOWED_EXTENSIONS = '.tif,.tiff'` (`fly.titiler.toml:19`) narrows what GDAL will open; it does not constrain the host. |
+| N5 | **LOW (second-order) — Open** | **The host allowlist guards one of the five paths that hand a stored URL to a fetcher.** `_ALLOWED_STAC_HOSTS` (`api/imagery.py:336-340`) constrains the API's own Landsat item fetch, and the comment above it gives the reason: without it "a `cog_url` written by a compromised upstream would make the API fetch an attacker-chosen URL from inside the network" (`api/imagery.py:330-335`). The same stored values also reach Titiler as the `url` query parameter on four other paths — `_proxy_cog_tile` (`api/imagery.py:484-486`), warmup (`api/imagery.py:646-648, 665-668`), the Landsat callback URL (`api/imagery.py:556-557`) and the preview renderer (`preview_renderer.py:113-116`) — with **no host check on any of them**, for NAIP, Sentinel-2 and USGS topo alike. Topo is the widest case: that URL comes straight out of TNM's `urls.GeoTIFF` and is never inspected (`usgs_topo.py:134-140`). The exposure is the same second-order shape the existing comment already reasons about — it needs a compromised or malicious upstream, and the value is written by our own worker — but the mitigation landed on one path and not the other four. `CPL_VSIL_CURL_ALLOWED_EXTENSIONS = '.tif,.tiff'` (`fly.titiler.toml:19`) narrows what GDAL will open; it does not constrain the host. **2026-08-22: resolved by P5 in `52b0223` — one shared allowlist now guards all five paths; see the security-audit section below.** |
 
 ## Readback (2026-08-19)
 
@@ -363,6 +363,104 @@ because the documents holding them are frozen by policy:
   `../2026-08-source-inventory/INVENTORY.md`'s caching ledger is the annotated
   correction of record.
 
+## Security audit (2026-08)
+
+A read-only security assessment of the public surface, recorded in
+`../2026-08-security-audit/` (`SURFACE.md`, `FINDINGS.md`, `URGENT.md`, all
+frozen at `8c8907f`). Its findings are not second-audit findings; they are
+tracked here for the same reason the ops, geometry, topo and source-inventory
+sections are — one of them re-triages the M9 accept below, and this file is
+where the fix commits get cited. Remediation batch 1 is `52b0223` (Group A),
+`b606d18` (Group B), `6c34335` (Group C); the process record is
+`../2026-08-security-audit/REMEDIATION-1.md`. **All three commits are
+committed, not yet deployed as of 2026-08-22** — the findings carry working
+exploit sketches, so the report and the fixes ship in one push. Line numbers
+are HEAD's (`6c34335`).
+
+**Production size, 2026-08-22:** 180 parcels, 334 timeline requests (read-only
+count, FINDINGS probe #19 and REMEDIATION-1.md §4). `HEAL-SCORECARD.md`'s 57
+is the 2026-08-12 sweep-time count and is cited as a denominator in the
+geometry rows above; it was correct then and is stale now.
+
+| # | Status | Where it stands |
+|---|---|---|
+| SEC-1 Titiler open fetcher | **Code resolved (`52b0223`); operator steps pending** | Every Titiler call carries `?access_token=` from one setting when it is set — `services/titiler.py:10-18`, used at `api/imagery.py:512, 584, 681, 704` and `preview_renderer.py:119` — and is byte-identical to before when unset (`config.py:110`; test `test_titiler_params_unset_is_byte_identical`), which is what makes API-first deploy ordering safe. `fly.titiler.toml:16` disables `/mosaicjson`. The token itself is two Fly secrets Ryan sets in the order `../2026-08-security-audit/DEPLOY-SEC-1.md` gives; until step 3 of that file runs, Titiler is still the open fetcher URGENT.md describes. Flycast/private addressing (URGENT step 3) is deferred with the M9 re-open below. |
+| SEC-2 Unbounded creation via client coordinates | **Resolved (`b606d18`), prospective; undeployed** | Root defect was trusting `lat`/`lon`. Autocomplete now records every pair it serves (`geocoder.py:41-66`, Redis, 6 h) and the reverse fallback runs only for a served pair (`api/geocode.py:218-234`); anything else is the existing 422, and a Redis it cannot ask is treated as "not served" (`api/geocode.py:163-170`, fails closed). Global admission control on top: `services/admission.py:52-73` refuses a new parcel (`parcels.py:139`) or a new request row (`services/imagery.py:108`) when `ACCEPT_NEW_PARCELS=false` or queued+processing ≥ `MAX_INFLIGHT_TIMELINE_REQUESTS` (30, `config.py:87-92`), logging each refusal with its reason; routes answer 503 + `Retry-After: 120` (`api/geocode.py:267-269`, `api/imagery.py:85-91`). Dedup hits and complete requests are served before either gate, so existing parcels stay browsable; a refused backfill returns None quietly (`services/imagery.py:403-410`). Counter design (queue depth in Postgres, not a Redis window) and the rejected alternative are in `b606d18`'s message. Prediction block below. |
+| SEC-3 Per-id limiter keys | **Resolved (`52b0223`); undeployed** | Key is the route template (`rate_limit.py:44-51`), so `/warmup`, `/{id}/stac` and `/{id}/timeline` share one bucket per IP. `/warmup` 60 → 120/min (`api/imagery.py:658`) because one session warms ~80 snapshots into what is now one bucket. Grep-for-the-shape found no other Redis key or metric built from a concrete request path (REMEDIATION-1.md §3). |
+| SEC-4 Census key in `str(HTTPStatusError)` | **Resolved (`52b0223`); undeployed. Key rotation is Ryan's call** | Fixed at the sinks, not the call sites: `app/redact.py` masks `key=`, the SAS family (`sig/se/sp/st/sr/sv/sk*`), `access_token=`/`token=` and `scheme://user:pass@`; it runs as a structlog processor after `format_exc_info` (`logging_config.py:35-36`) so a rendered exception is scrubbed as text, and at the two task-row `error_message` sinks (`services/imagery.py:275, 290`) that `GET /timeline-requests/{id}` serves to clients — which also closes SEC-7's log half. The three geocoder messages carry a status code instead of `{exc}` (`geocoder.py:127-132, 199, 327, 429`). Written as if the log sink is external. The key has reached Fly logs on every Census 5xx until this deploys; rotate if any log was ever exported (FINDINGS §9). |
+| SEC-5 Parcel poisoning | **Resolved prospectively (`b606d18`); existing rows need evidence** | On the served-coordinate path `normalized_address` is now the Photon display name the backend served, never the submitted text (`api/geocode.py:234`). Not closed for rows that exist: production holds **71** parcels with the reverse-path signature `normalized_address = address` (read-only count, 2026-08-22), all inside CONUS (0 outside `_US_BBOX`) and all with a census tract — indistinguishable from legitimate autocomplete fallbacks without asking Photon. `scripts/remove_unverified_reverse_parcels.py` is the tool: dry-run default lists them, `--verify` asks Photon per row, `--execute` deletes only rows no suggestion lands within 250 m of, and refuses the whole run if any row is inconclusive. **Not run.** Residual: `parcels.address` is still the submitted text on every path, as it always was for the forward path too — a dedup hit shows the first submitter's spelling; the NAIP-gate lesson applies and is why the script exists. |
+| SEC-6 Limiter fails open | **Partially resolved (`52b0223`); rest accepted** | `RateLimit(fail_closed=True)` on the two routes that create parcels or dispatch worker runs (`api/geocode.py:190`, `api/imagery.py:65`) answers 503 + `Retry-After: 30` when Redis is unreachable (`rate_limit.py:88-97`); autocomplete, `/warmup` and `/{id}/stac` keep failing open. The classification is pinned by `test_dispatching_routes_fail_closed_and_read_routes_fail_open` over the live route table. Accepted: the tile proxy, listing and `/parcels/{id}` stay unlimited (read-only, cache-backed, and the tile path must survive a Redis blip); IPv6 `/128` keying stays (REMEDIATION-1.md G2). |
+| SEC-7 Task rows / Titiler bodies carry URLs | **Log half resolved via SEC-4; client half accepted (L10)** | `error_message` sinks scrub at `services/imagery.py:275, 290`; the `titiler_body` log lines pass through the same processor. Upstream *host* disclosure to clients is the L10 accept, unchanged. |
+| SEC-8 Geocoder endpoints as free proxies | **Deferred** | Needs a global Photon/Census budget — a second global counter with its own degrade-to-cache behaviour. Not a one-constant fix, and it interacts with the N4 empty-dropdown shape; next batch. |
+| SEC-9 Floating actions | **Resolved (`52b0223`)** | All four actions pinned to commit SHAs with the version in a trailing comment (`deploy.yml:25, 29, 60, 76, 92, 106`; flyctl `master` was `ed8efb3` = tag 1.6 on 2026-08-22). `test_every_action_is_pinned_to_a_commit_sha` fails on any unpinned `uses:`. Token scoping (`fly tokens create deploy`) and branch protection remain Ryan's (FINDINGS §7, §9). |
+| SEC-10 Dependency advisories | **Resolved for the reachable three (`6c34335`)** | pillow 12.2.0 → 12.3.0, starlette 1.0.1 → 1.6.0, react-router 7.14.0 → 7.18.2. pip-audit over the exported lock 26 → 1 (pydantic-settings 2.14.1, GHSA-4xgf-cpjx-pc3j, left alone); npm audit 11 → 9, all remaining build-time or unreachable transitive (listed in the commit). 465 backend tests, mypy, ruff, tsc, eslint and the Vite build all clean; no behaviour change observed. |
+| SEC-11 Security headers, public `/docs` | **Open, deferred** | Not in batch 1 by design (FINDINGS §6 item 10). |
+| SEC-12 Neon owner role; root + gcc | **Open, deferred** | Neon least privilege is awkward while Alembic runs at boot (M10); Dockerfile.fly (L12) unchanged. Named out of scope in the batch brief. |
+| SEC-13 Residential addresses in `docs/audits/` | **Open — Ryan's decision** | Not a code change. |
+| P5 Outbound host allowlist | **Resolved (`52b0223`); undeployed** | One shared constant, `stac.ALLOWED_UPSTREAM_HOSTS` (`stac.py:236-248`), derived from the distinct hosts in production `imagery_snapshots` on 2026-08-22 (query and output in REMEDIATION-1.md §4) plus the Landsat band container. Gates the tile proxy and warmup before a stored URL reaches Titiler's `url=` (`api/imagery.py:354-366, 486, 687`), the preview renderer (`preview_renderer.py:102`), the worker's validation `HEAD` (`stac.py:1042`) and STAC pagination next-links (`stac.py:156`). The Landsat item fetch keeps its narrower PC-only check (`api/imagery.py:347`). Absorbs N5. |
+
+**Prediction block — SEC-2/SEC-6 (B4), written 2026-08-22 before any deploy.**
+Specific enough to be falsified; the observation lands next to each line,
+never by editing the prediction.
+
+1. *Normal session.* One person creates at most 10 parcels/minute/IP (unchanged)
+   and, across the whole site, never sees the global cap unless ≥30 pipeline
+   runs are already queued or processing — at the measured drain (median 42 s,
+   concurrency 2 ≈ 170/hour, 248 runs over 30 days) that is ≥10 minutes of
+   backlog, which no legitimate day since 2026-08-12's sweep has produced
+   (1–9 requests/day, probe #19). Autocomplete → search keeps working: the
+   served-coordinate marker outlives the 300 s suggestion cache by 6 h. **Two
+   legitimate flows that do change:** (a) typing a house-number address and
+   picking a suggestion when Census cannot match the typed text now stores the
+   suggestion's display name as `normalized_address` instead of the typed
+   text — visible on the parcel header, which prefers `normalized_address`;
+   (b) the four example chips on the landing page carry hard-coded
+   coordinates the backend never served, so if the Census forward geocode of
+   one of those famous addresses fails, the chip returns the 422 "could not
+   match" message instead of falling back. Neither trips the cap.
+   *Observed:* —
+2. *Flood.* Per IP, the 11th `POST /geocode` in a minute is a 429 as before.
+   Across IPs, parcel rows and queued runs grow until queued+processing
+   reaches 30, then every *new* address — attacker's or visitor's — gets a 503
+   with "Plotline is busy right now and new address searches are paused.
+   Existing timelines are still available" and `Retry-After: 120`. Log lines:
+   `Admission refused` (`what=parcel`, `reason=queue_full`, `depth=30`,
+   `cap=30`) once per refused request, and for the coordinate variant
+   `Refusing coordinates this backend did not serve` with no parcel row and
+   no Census reverse call. Parcel row growth during a sustained flood is
+   bounded by the worker's drain rate (~170/hour) instead of by the attacker.
+   A visitor browsing an *existing* parcel during the flood sees nothing
+   different: its page loads, its tiles render, its deep-link `POST /timeline`
+   reuses the complete request. A visitor searching a *new* address sees the
+   503 text above in the search box. **This is the one prediction that would
+   look like a regression if it fired under a legitimate share** — a real
+   burst beyond ~30 concurrent first-time searches gets the same 503. That is
+   the intended trade (FINDINGS §6 item 7); if it fires on real traffic the
+   knob is `MAX_INFLIGHT_TIMELINE_REQUESTS`, not the gate.
+   *Observed:* —
+3. *Kill switch (`ACCEPT_NEW_PARCELS=false`) on a page load for an existing
+   parcel.* Identical to today: `GET /parcels/{id}`, `GET …/imagery`, tiles,
+   demographics and events have no gate; the explore page's `POST /timeline`
+   returns 202 with the existing complete request; a parcel whose backfill
+   would have been due logs `Backfill suppressed — admission refused` and
+   returns the existing request instead of a new one. Only a parcel with *no*
+   reusable request (never run, or last run failed — 3 such parcels today,
+   probe #19) shows "Could not start timeline: Plotline is busy right now…"
+   in the banner. A *new* address search returns the same 503. Setting the
+   secret restarts the API (one action), ~30 s of deploy.
+   *Observed:* —
+4. *Redis unreachable, per path class.* `POST /geocode` and `POST
+   /parcels/{id}/timeline`: 503 + `Retry-After: 30` before any upstream call
+   (`Rate limit check failed closed` in the log). `GET /geocode/autocomplete`,
+   `POST …/warmup`, `GET …/stac`: proceed (`Rate limit check failed open`).
+   A served-coordinate lookup that cannot reach Redis refuses the
+   coordinates (422) while the forward path is unaffected. The admission gate
+   itself does not touch Redis, so the cap keeps working through a Redis
+   outage; dispatch to a dead broker still marks the request failed as
+   before. Tiles keep serving (the tile proxy never consulted Redis for
+   limiting; its SAS cache already degrades to a fresh sign).
+   *Observed:* —
+
 ## Accepted, with reasons
 
 - **M2, client identification.** `Fly-Client-IP` takes precedence and Fly's
@@ -376,6 +474,20 @@ because the documents holding them are frozen by policy:
   API→Titiler. The doubled public request load is the price of that
   constraint, not an oversight. Recorded next to `API_INTERNAL_URL` in
   `fly.toml` as well as here, because the temptation to "fix" it recurs.
+  **Re-triaged 2026-08-22 (security audit SEC-1), accept not reversed.** The
+  accept weighed doubled public request load against IPv6-only private DNS.
+  Nobody had priced in the third term: with Titiler public *and* stock, the
+  public endpoint was an unauthenticated open fetcher — any `url=` fetched
+  from inside Plotline's Fly organisation, including `.internal` 6PN
+  addresses and the container's own filesystem (URGENT.md). What that
+  changes: the routing question is no longer "double load vs. IPv6" but "is
+  a shared secret enough". For now it is — `52b0223`'s access token closes
+  the open-fetcher half regardless of where the traffic goes, and
+  `TITILER_API_DISABLE_MOSAIC` closes the fan-out half — so the accept
+  stands with the token as its precondition. The structural fix (Flycast
+  IPv4 private addressing, which would not hit the c6213d5 problem) needs
+  its own investigation with a hypothesis for why `.internal` failed, and
+  is scheduled as the M9 re-open, not done here.
 - **M10, worker-ahead-of-schema.** Migrations to date are additive, the window
   is seconds, and closing it means serializing two deploy jobs to prevent a
   failure that has not occurred.
@@ -407,6 +519,12 @@ because the documents holding them are frozen by policy:
   Titiler from the public needs a shared secret or a signed callback. The
   routing half stays accepted regardless — this is about who may call the
   endpoint, not where the traffic goes.
+  *2026-08-22:* the security audit corrected the premise — it was one
+  bucket per snapshot *per IP*, not one shared bucket (SEC-3, fixed in
+  `52b0223` by keying on the route template) — and supplied the shared
+  secret in the other direction (API→Titiler). The Titiler→API `/stac`
+  callback is still unauthenticated; the 600/min limit is now a real
+  per-IP bound. Still deferred.
 - **H1's decennial half — the Housing chart still cannot show a decennial
   year.** 6def10c fixed the ACS side of the impossible-combination finding;
   the other side of the same sentence in FINDINGS.md is still true.
