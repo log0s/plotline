@@ -153,6 +153,12 @@ async def search_stac(
         )
         if not next_link:
             break
+        if not is_allowed_upstream_url(str(next_link.get("href", ""))):
+            logger.error(
+                "Refusing STAC next link to a non-allowlisted host",
+                extra={"collection": collection, "href": str(next_link.get("href", ""))[:200]},
+            )
+            break
         # POST-search pagination carries the continuation token in the link
         # body and must be re-POSTed — Planetary Computer returns
         # {"method": "POST", "body": {...original search + token...}}.
@@ -218,6 +224,30 @@ SIGN_WAIT_BATCH = 60.0
 SIGN_WAIT_REQUEST = 2.0
 
 _BLOB_HOST_SUFFIX = ".blob.core.windows.net"
+
+# Every host an outbound fetch may be pointed at by a value Plotline did not
+# write itself: a stored cog_url / additional_cog_urls row, a STAC asset href
+# out of a search response, a TNM product URL. Anything else is refused
+# before it reaches httpx or Titiler's ``url=``. Derived from production on
+# 2026-08-22 (distinct hosts over imagery_snapshots.cog_url,
+# additional_cog_urls and thumbnail_url — security audit REMEDIATION-1.md §4)
+# plus the Landsat band container, whose hrefs arrive inside STAC items rather
+# than rows. Adding a source means adding its host here, deliberately.
+ALLOWED_UPSTREAM_HOSTS = frozenset(
+    {
+        "planetarycomputer.microsoft.com",  # STAC API, item self-links, previews
+        "naipeuwest.blob.core.windows.net",  # NAIP COGs
+        "sentinel2l2a01.blob.core.windows.net",  # Sentinel-2 TCI COGs
+        "landsateuwest.blob.core.windows.net",  # Landsat C2 L2 band COGs
+        "prd-tnm.s3.amazonaws.com",  # USGS historical topo GeoTIFFs
+    }
+)
+
+
+def is_allowed_upstream_url(url: str) -> bool:
+    """True when ``url`` points at a host Plotline is willing to fetch from."""
+    return (urlsplit(url).hostname or "").lower() in ALLOWED_UPSTREAM_HOSTS
+
 
 # The one container every landsat-c2-l2 band asset lives in. The Landsat tile
 # path holds only the STAC item self-link, never a blob href, so the container
@@ -1009,6 +1039,14 @@ async def _validate_asset(item: dict[str, object], asset_key: str, source: str) 
         return False
 
     href = str(asset["href"])
+    if not is_allowed_upstream_url(href):
+        logger.error(
+            "%s %s asset on a non-allowlisted host; refusing",
+            source,
+            asset_key,
+            extra={"item_id": item.get("id"), "href": href[:200]},
+        )
+        return False
     try:
         signed = await sign_pc_url(href, wait_budget=SIGN_WAIT_BATCH)
     except (httpx.HTTPStatusError, httpx.RequestError) as exc:

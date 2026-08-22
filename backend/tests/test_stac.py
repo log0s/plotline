@@ -200,7 +200,7 @@ def test_extract_cog_url_landsat_returns_self_link() -> None:
         "assets": {
             "rendered_preview": {"href": "https://example.com/preview.png", "type": "image/png"},
             "red": {
-                "href": "https://example.com/red.tif",
+                "href": "https://landsateuwest.blob.core.windows.net/landsat-c2/red.tif",
                 "type": "image/tiff; application=geotiff",
             },
         },
@@ -218,7 +218,9 @@ def test_extract_cog_url_landsat_fallback_constructs_url() -> None:
     """When no self link exists, construct the URL from collection + item ID."""
     item = {
         "id": "LC09_TEST",
-        "assets": {"red": {"href": "https://example.com/red.tif"}},
+        "assets": {
+            "red": {"href": "https://landsateuwest.blob.core.windows.net/landsat-c2/red.tif"}
+        },
         "links": [],
         "properties": {},
     }
@@ -589,7 +591,9 @@ async def test_search_stac_follows_next_link() -> None:
 
     page1 = {
         "features": [{"id": "item-1"}],
-        "links": [{"rel": "next", "href": "https://stac.example.com/page2"}],
+        "links": [
+            {"rel": "next", "href": "https://planetarycomputer.microsoft.com/api/stac/v1/page2"}
+        ],
     }
     page2 = {
         "features": [{"id": "item-2"}],
@@ -635,7 +639,7 @@ async def test_search_stac_reposts_post_next_link() -> None:
             {
                 "rel": "next",
                 "method": "POST",
-                "href": "https://stac.example.com/search",
+                "href": "https://planetarycomputer.microsoft.com/api/stac/v1/search",
                 "body": {
                     "collections": ["naip"],
                     "limit": 10,
@@ -703,7 +707,9 @@ async def test_validate_landsat_item_success() -> None:
 
     item = {
         "id": "LC08_TEST",
-        "assets": {"red": {"href": "https://example.com/red.tif"}},
+        "assets": {
+            "red": {"href": "https://landsateuwest.blob.core.windows.net/landsat-c2/red.tif"}
+        },
     }
 
     mock_head_resp = MagicMock()
@@ -729,7 +735,12 @@ async def test_validate_landsat_item_success() -> None:
 async def test_validate_landsat_item_missing_red_band() -> None:
     from app.services.stac import validate_landsat_item
 
-    item = {"id": "LC08_TEST", "assets": {"green": {"href": "https://example.com/green.tif"}}}
+    item = {
+        "id": "LC08_TEST",
+        "assets": {
+            "green": {"href": "https://landsateuwest.blob.core.windows.net/landsat-c2/green.tif"}
+        },
+    }
     result = await validate_landsat_item(item)
     assert result is False
 
@@ -738,7 +749,12 @@ async def test_validate_landsat_item_missing_red_band() -> None:
 async def test_validate_landsat_item_sign_failure() -> None:
     from app.services.stac import validate_landsat_item
 
-    item = {"id": "LC08_TEST", "assets": {"red": {"href": "https://example.com/red.tif"}}}
+    item = {
+        "id": "LC08_TEST",
+        "assets": {
+            "red": {"href": "https://landsateuwest.blob.core.windows.net/landsat-c2/red.tif"}
+        },
+    }
 
     with patch(
         "app.services.stac.sign_pc_url",
@@ -754,7 +770,12 @@ async def test_validate_landsat_item_sign_failure() -> None:
 async def test_validate_landsat_item_head_returns_403() -> None:
     from app.services.stac import validate_landsat_item
 
-    item = {"id": "LC08_TEST", "assets": {"red": {"href": "https://example.com/red.tif"}}}
+    item = {
+        "id": "LC08_TEST",
+        "assets": {
+            "red": {"href": "https://landsateuwest.blob.core.windows.net/landsat-c2/red.tif"}
+        },
+    }
 
     mock_head_resp = MagicMock()
     mock_head_resp.status_code = 403
@@ -785,12 +806,16 @@ async def test_validate_landsat_selection_swaps_fallback() -> None:
     bad_item = {
         "id": "bad",
         "properties": {"datetime": "2020-06-01T00:00:00Z", "eo:cloud_cover": 5.0},
-        "assets": {"red": {"href": "https://example.com/bad.tif"}},
+        "assets": {
+            "red": {"href": "https://landsateuwest.blob.core.windows.net/landsat-c2/bad.tif"}
+        },
     }
     good_fallback = {
         "id": "good",
         "properties": {"datetime": "2020-07-01T00:00:00Z", "eo:cloud_cover": 10.0},
-        "assets": {"red": {"href": "https://example.com/good.tif"}},
+        "assets": {
+            "red": {"href": "https://landsateuwest.blob.core.windows.net/landsat-c2/good.tif"}
+        },
     }
 
     selected_groups = [[bad_item]]
@@ -816,7 +841,9 @@ async def test_validate_landsat_selection_drops_year_with_no_valid() -> None:
     bad_item = {
         "id": "bad",
         "properties": {"datetime": "2020-06-01T00:00:00Z", "eo:cloud_cover": 5.0},
-        "assets": {"red": {"href": "https://example.com/bad.tif"}},
+        "assets": {
+            "red": {"href": "https://landsateuwest.blob.core.windows.net/landsat-c2/bad.tif"}
+        },
     }
 
     selected_groups = [[bad_item]]
@@ -838,7 +865,11 @@ def _s2_item(item_id: str, dt: str, cloud: float) -> dict:
     return {
         "id": item_id,
         "properties": {"datetime": dt, "eo:cloud_cover": cloud},
-        "assets": {"visual": {"href": f"https://example.com/{item_id}.tif"}},
+        "assets": {
+            "visual": {
+                "href": f"https://sentinel2l2a01.blob.core.windows.net/sentinel2-l2/{item_id}.tif"
+            }
+        },
     }
 
 
@@ -925,7 +956,12 @@ async def test_validate_sentinel_item_checks_the_visual_asset() -> None:
     ):
         assert await validate_sentinel_item(_s2_item("ok", "2020-07-01T00:00:00Z", 1.0)) is True
 
-    no_visual = {"id": "x", "assets": {"B04": {"href": "https://example.com/B04.tif"}}}
+    no_visual = {
+        "id": "x",
+        "assets": {
+            "B04": {"href": "https://sentinel2l2a01.blob.core.windows.net/sentinel2-l2/B04.tif"}
+        },
+    }
     assert await validate_sentinel_item(no_visual) is False
 
 
@@ -1009,7 +1045,7 @@ async def test_validate_landsat_selection_tolerates_empty_group() -> None:
     good_item = {
         "id": "good",
         "properties": {"datetime": "2020-06-01T00:00:00Z", "eo:cloud_cover": 5.0},
-        "assets": {"red": {"href": "https://example.com/good.tif"}},
+        "assets": {"red": {"href": "https://planetarycomputer.microsoft.com/api/data/v1/good.tif"}},
     }
 
     selected_groups: list[list[dict[str, object]]] = [[], [good_item]]
@@ -1137,12 +1173,12 @@ async def test_landsat_item_validates_through_429_burst() -> None:
     selected = {
         "id": "selected",
         "properties": {"datetime": "1994-06-01T00:00:00Z", "eo:cloud_cover": 5},
-        "assets": {"red": {"href": "https://example.com/red.tif"}},
+        "assets": {"red": {"href": "https://planetarycomputer.microsoft.com/api/data/v1/red.tif"}},
     }
     fallback = {
         "id": "fallback",
         "properties": {"datetime": "1994-08-01T00:00:00Z", "eo:cloud_cover": 40},
-        "assets": {"red": {"href": "https://example.com/red2.tif"}},
+        "assets": {"red": {"href": "https://planetarycomputer.microsoft.com/api/data/v1/red2.tif"}},
     }
 
     with (
@@ -1709,3 +1745,81 @@ def test_naip_year_kept_when_one_mosaic_tile_covers_the_point() -> None:
 
     assert len(covering) == 1, "the second tile contains Hudson Yards — this is the mosaic working"
     assert missing == []
+
+
+# ── Outbound host allowlist (security audit P5) ─────────────────────────────
+
+
+def test_allowed_upstream_hosts_match_production_rows() -> None:
+    """Every host a stored or upstream-supplied URL may point at, and no other.
+
+    The set was read from production on 2026-08-22 (REMEDIATION-1.md §4); a
+    suffix match or a look-alike must not pass.
+    """
+    from app.services.stac import is_allowed_upstream_url
+
+    for url in (
+        "https://planetarycomputer.microsoft.com/api/stac/v1/collections/naip/items/x",
+        "https://naipeuwest.blob.core.windows.net/naip/v002/co/2021/x.tif?st=a&sig=b",
+        "https://sentinel2l2a01.blob.core.windows.net/sentinel2-l2/x/TCI.tif",
+        "https://landsateuwest.blob.core.windows.net/landsat-c2/level-2/x_SR_B4.TIF",
+        "https://prd-tnm.s3.amazonaws.com/StagedProducts/Maps/HistoricalTopo/GeoTIFF/x.tif",
+    ):
+        assert is_allowed_upstream_url(url), url
+
+    for url in (
+        "https://evil.example.com/x.tif",
+        "http://169.254.169.254/latest/meta-data/",
+        "https://naipeuwest.blob.core.windows.net.evil.test/x.tif",
+        "/etc/hostname",
+        "",
+    ):
+        assert not is_allowed_upstream_url(url), url
+
+
+@pytest.mark.asyncio
+async def test_validate_asset_refuses_non_allowlisted_href() -> None:
+    """An item whose band href names an unknown host is never signed or HEADed."""
+    from app.services.stac import validate_landsat_item
+
+    item = {"id": "LC08_TEST", "assets": {"red": {"href": "https://evil.example.com/red.tif"}}}
+    mock_client = AsyncMock()
+
+    with (
+        patch("app.services.stac.sign_pc_url", new_callable=AsyncMock) as sign,
+        patch("app.services.stac._get_search_client", return_value=mock_client),
+    ):
+        assert await validate_landsat_item(item) is False
+
+    sign.assert_not_awaited()
+    mock_client.head.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_search_stac_stops_at_non_allowlisted_next_link() -> None:
+    """A next link pointing off Planetary Computer ends pagination instead of being fetched."""
+    from unittest.mock import MagicMock as SyncMock
+
+    page1 = {
+        "features": [{"id": "item-1"}],
+        "links": [{"rel": "next", "href": "https://evil.example.com/page2"}],
+    }
+    mock_resp = SyncMock()
+    mock_resp.raise_for_status = SyncMock()
+    mock_resp.json = SyncMock(return_value=page1)
+
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=mock_resp)
+    mock_client.get = AsyncMock()
+
+    with patch("app.services.stac._get_search_client", return_value=mock_client):
+        items = await search_stac(
+            collection="naip",
+            bbox=(-105.0, 39.7, -104.9, 39.8),
+            datetime_range="2020-01-01/2021-12-31",
+            max_items=10,
+        )
+
+    assert [i["id"] for i in items] == ["item-1"]
+    mock_client.get.assert_not_awaited()
+    assert mock_client.post.await_count == 1

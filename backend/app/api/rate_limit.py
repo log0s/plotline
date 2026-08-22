@@ -2,8 +2,11 @@
 external APIs (Census, Planetary Computer, county portals) and to the
 Celery worker.
 
-Fails open: if Redis is unreachable the request proceeds. Rate limiting
-protects upstream quotas; it must not take the API down with it.
+Redis failure policy is per route, not global. Read-only routes fail open:
+the limiter protects upstream quotas and must not take the API down with
+it. Routes that create a parcel or dispatch a worker run fail closed: when
+the counter cannot be read, the cost the limiter bounds is exactly the cost
+that is running away, so the request is refused with a 503 instead.
 """
 
 from __future__ import annotations
@@ -38,15 +41,28 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _route_key(request: Request) -> str:
+    """The route *template* (``/api/v1/imagery/{snapshot_id}/warmup``), not the
+    concrete path. Keyed on the concrete path, every snapshot or parcel id got
+    its own bucket, so a limit of N/min was really N × (ids) per minute
+    (security audit SEC-3)."""
+    route = request.scope.get("route")
+    path = getattr(route, "path", None)
+    return path if isinstance(path, str) else request.url.path
+
+
 class RateLimit:
     """FastAPI dependency: at most ``times`` requests per ``seconds`` per IP.
 
-    Fixed-window counter (INCR + EXPIRE) keyed by route path and client IP.
+    Fixed-window counter (INCR + EXPIRE) keyed by route template and client
+    IP. ``fail_closed`` selects the Redis-failure policy described in the
+    module docstring.
     """
 
-    def __init__(self, times: int, seconds: int) -> None:
+    def __init__(self, times: int, seconds: int, *, fail_closed: bool = False) -> None:
         self.times = times
         self.seconds = seconds
+        self.fail_closed = fail_closed
 
     async def __call__(
         self,
@@ -56,7 +72,7 @@ class RateLimit:
         if not settings.rate_limit_enabled:
             return
 
-        key = f"ratelimit:{request.url.path}:{_client_ip(request)}"
+        key = f"ratelimit:{_route_key(request)}:{_client_ip(request)}"
         try:
             redis = get_async_redis()
             # INCR and EXPIRE go in one pipeline. Issued separately, a
@@ -69,6 +85,16 @@ class RateLimit:
                 pipe.expire(key, self.seconds, nx=True)
                 count, _ = await pipe.execute()
         except (RedisError, OSError) as exc:
+            if self.fail_closed:
+                logger.error(
+                    "Rate limit check failed closed",
+                    extra={"route": _route_key(request), "error": str(exc)},
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail="Searches are temporarily unavailable — please try again shortly.",
+                    headers={"Retry-After": "30"},
+                ) from exc
             logger.warning("Rate limit check failed open: %s", exc)
             return
 

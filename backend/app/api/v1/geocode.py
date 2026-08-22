@@ -169,7 +169,9 @@ async def autocomplete(
         429: {"description": "Rate limit exceeded"},
         502: {"description": "Upstream Census Geocoder API is unavailable"},
     },
-    dependencies=[Depends(RateLimit(times=10, seconds=60))],
+    # Fails closed: this route creates parcels and dispatches worker runs,
+    # the costs the limiter exists to bound.
+    dependencies=[Depends(RateLimit(times=10, seconds=60, fail_closed=True))],
 )
 async def geocode_address(
     body: GeocodeRequest,

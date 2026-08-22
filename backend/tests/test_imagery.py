@@ -1198,3 +1198,98 @@ def test_janitor_startup_hook_survives_a_database_outage() -> None:
         side_effect=OperationalError("x", {}, Exception()),
     ):
         hook()
+
+
+# ── Titiler access token (security audit SEC-1) ─────────────────────────────
+
+
+def _settings_with_token(token: str | None) -> MagicMock:
+    from app.config import Settings
+
+    return Settings(
+        database_url="postgresql://test:test@localhost/test",
+        titiler_url="http://titiler",
+        titiler_access_token=token,
+    )
+
+
+def test_titiler_params_unset_is_byte_identical() -> None:
+    """With no token configured the request Titiler sees is exactly today's.
+
+    This property is what makes the deploy ordering safe: the API can ship
+    first, and a Titiler that does not yet enforce a token sees no change.
+    """
+    from app.services.titiler import titiler_params
+
+    params = {"url": "https://x/y.tif", "bidx": [1, 2, 3]}
+    assert titiler_params(_settings_with_token(None), params) == params
+    assert titiler_params(_settings_with_token(""), params) == params
+    assert "access_token" not in titiler_params(_settings_with_token(None), params)
+
+
+def test_titiler_params_appends_token_when_set() -> None:
+    from app.services.titiler import titiler_params
+
+    out = titiler_params(_settings_with_token("s3cret"), {"url": "https://x/y.tif"})
+    assert out == {"url": "https://x/y.tif", "access_token": "s3cret"}
+
+
+def test_every_titiler_call_site_sends_the_token(client: TestClient, db: Session) -> None:
+    """Tile proxy (COG and STAC) and warmup (COG and STAC) all carry access_token."""
+    from app.config import get_settings
+
+    client.app.dependency_overrides[get_settings] = lambda: _settings_with_token("s3cret")  # type: ignore[attr-defined]  # TestClient.app is typed as the ASGI protocol, not FastAPI
+    landsat_id = _landsat_snapshot(db, "Token Way")
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id, "Token Ave")
+    naip_id = _insert_snapshot(db, parcel_id, "naip", _NAIP_BLOB_URL)
+
+    calls = [
+        (f"/api/v1/imagery/{landsat_id}/tiles/14/4757/6457", "get"),
+        (f"/api/v1/imagery/{naip_id}/tiles/14/4757/6457", "get"),
+        (f"/api/v1/imagery/{landsat_id}/warmup", "post"),
+        (f"/api/v1/imagery/{naip_id}/warmup", "post"),
+    ]
+    for path, method in calls:
+        with (
+            patch("app.api.v1.imagery._get_titiler_client") as mock_titiler,
+            patch(
+                "app.api.v1.imagery.stac_service.sign_pc_url",
+                new_callable=AsyncMock,
+                return_value=_NAIP_BLOB_URL + "?sig=x",
+            ),
+            patch(
+                "app.api.v1.imagery.stac_service.container_token_expiry",
+                new_callable=AsyncMock,
+                return_value="2026-08-12T05:00:40Z",
+            ),
+        ):
+            mock_titiler.return_value = _ok_titiler()
+            resp = getattr(client, method)(path)
+            params = mock_titiler.return_value.get.await_args.kwargs["params"]
+        assert resp.status_code in (200, 204), path
+        assert params.get("access_token") == "s3cret", path
+
+
+# ── Outbound host allowlist at the Titiler boundary (security audit P5) ─────
+
+_NAIP_BLOB_URL = "https://naipeuwest.blob.core.windows.net/naip/v002/co/2021/x.tif"
+
+
+def test_tile_proxy_refuses_non_allowlisted_cog_host(client: TestClient, db: Session) -> None:
+    """A stored cog_url on an unknown host never reaches Titiler's url= or the signer."""
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id, "Evil St")
+    snapshot_id = _insert_snapshot(db, parcel_id, "naip", "https://evil.example.com/x.tif")
+
+    with (
+        patch("app.api.v1.imagery._get_titiler_client") as mock_titiler,
+        patch("app.api.v1.imagery.stac_service.sign_pc_url", new_callable=AsyncMock) as sign,
+    ):
+        tile = client.get(f"/api/v1/imagery/{snapshot_id}/tiles/14/4757/6457")
+        warm = client.post(f"/api/v1/imagery/{snapshot_id}/warmup")
+
+    assert tile.status_code == 502
+    assert warm.status_code == 204
+    sign.assert_not_awaited()
+    mock_titiler.assert_not_called()

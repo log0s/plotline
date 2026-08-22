@@ -10,6 +10,10 @@ primary_region = 'lax'
   image = 'ghcr.io/developmentseed/titiler:1.2.1'
 
 [env]
+  # Nothing in Plotline uses /mosaicjson; left enabled it was a free mosaic
+  # renderer for anyone (security audit SEC-1). The access token itself is
+  # a Fly secret (TITILER_API_GLOBAL_ACCESS_TOKEN), never a value here.
+  TITILER_API_DISABLE_MOSAIC = 'TRUE'
   MAX_WORKERS = '2'
   WORKERS_PER_CORE = '1'
   GDAL_DISABLE_READDIR_ON_OPEN = 'EMPTY_DIR'

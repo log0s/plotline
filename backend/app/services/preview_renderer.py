@@ -25,6 +25,7 @@ from app.config import Settings
 from app.models.parcels import FeaturedLocation, Parcel
 from app.services import imagery as imagery_service
 from app.services import stac as stac_service
+from app.services.titiler import titiler_params
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,9 @@ async def render_preview(
     )
 
     async def _fetch_tile(client: httpx.AsyncClient, raw_url: str) -> Image.Image | None:
+        if not stac_service.is_allowed_upstream_url(raw_url):
+            logger.error("Non-allowlisted host for %s; skipping tile %s", loc.slug, raw_url[:200])
+            return None
         try:
             # Batch profile: this runs from seed_featured.py, offline, behind
             # no request deadline — waiting out a Retry-After is free here.
@@ -112,7 +116,7 @@ async def render_preview(
             return None
         resp = await client.get(
             titiler_png_url,
-            params={"url": signed, "bidx": [1, 2, 3], "rescale": "0,255"},
+            params=titiler_params(settings, {"url": signed, "bidx": [1, 2, 3], "rescale": "0,255"}),
         )
         if resp.status_code != 200:
             logger.warning(

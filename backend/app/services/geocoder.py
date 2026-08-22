@@ -16,6 +16,7 @@ from typing import Any
 import httpx
 
 from app.config import Settings
+from app.redact import redact
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,14 @@ def _shape_error(label: str, exc: Exception) -> GeocoderUnavailableError:
 _SHAPE_ERRORS = (KeyError, TypeError, IndexError, ValueError, AttributeError)
 
 
+def _describe(exc: httpx.HTTPError) -> str:
+    """Status code or error class only — never ``str(exc)``, which httpx
+    renders with the full request URL and therefore the ``key=`` parameter."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code}"
+    return f"{type(exc).__name__}: {redact(str(exc))}"
+
+
 @dataclass(frozen=True)
 class GeocodeResult:
     """Structured result from a successful geocoding request."""
@@ -151,7 +160,7 @@ async def geocode_address(address: str, settings: Settings) -> GeocodeResult:
                 ) from exc
             except httpx.RequestError as exc:
                 raise GeocoderUnavailableError(
-                    f"Network error contacting Census Geocoder: {exc}"
+                    f"Network error contacting Census Geocoder: {_describe(exc)}"
                 ) from exc
 
             # Success — parse and return
@@ -278,7 +287,9 @@ async def reverse_geocode(
                     await asyncio.sleep(1.0)
                 continue
             except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                raise GeocoderUnavailableError(f"Census reverse geocoder error: {exc}") from exc
+                raise GeocoderUnavailableError(
+                    f"Census reverse geocoder error: {_describe(exc)}"
+                ) from exc
 
             data = _parse_json(response, "Census reverse geocoder")
 
@@ -378,7 +389,9 @@ async def lookup_tract_at_vintage(
                     await asyncio.sleep(1.0)
                 continue
             except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                raise GeocoderUnavailableError(f"Vintage tract lookup error: {exc}") from exc
+                raise GeocoderUnavailableError(
+                    f"Vintage tract lookup error: {_describe(exc)}"
+                ) from exc
 
             data = _parse_json(response, "Census reverse geocoder")
 

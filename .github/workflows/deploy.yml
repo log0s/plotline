@@ -22,11 +22,11 @@ jobs:
       worker: ${{ steps.filter.outputs.worker }}
       titiler: ${{ steps.filter.outputs.titiler }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # Only meaningful for a push diff; on dispatch it is skipped and the
       # outputs come back empty, so the deploy jobs fall through to their
       # workflow_dispatch condition.
-      - uses: dorny/paths-filter@v4
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         if: github.event_name == 'push'
         with:
@@ -55,9 +55,9 @@ jobs:
     if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Set up uv
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.11.x"
           python-version: "3.12"
@@ -72,8 +72,8 @@ jobs:
     if: needs.changes.outputs.api == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_deploy)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6 (master on 2026-08-22)
       # --build-arg stamps the image with the commit it was built from, so
       # GET /api/v1/health reports what is actually deployed.
       - run: |
@@ -88,8 +88,8 @@ jobs:
     if: needs.changes.outputs.worker == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_deploy)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6 (master on 2026-08-22)
       - run: |
           flyctl deploy --remote-only --config fly.worker.toml \
             --build-arg GIT_SHA=${{ github.sha }} \
@@ -102,8 +102,8 @@ jobs:
     if: needs.changes.outputs.titiler == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6 (master on 2026-08-22)
       - run: flyctl deploy --remote-only --config fly.titiler.toml
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

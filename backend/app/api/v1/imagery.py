@@ -40,6 +40,7 @@ from app.schemas.imagery import (
 from app.services import imagery as imagery_service
 from app.services import stac as stac_service
 from app.services.imagery import ImagerySnapshotRow
+from app.services.titiler import titiler_params
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -58,7 +59,8 @@ router = APIRouter()
         404: {"description": "Parcel not found"},
         429: {"description": "Rate limit exceeded"},
     },
-    dependencies=[Depends(RateLimit(times=20, seconds=60))],
+    # Fails closed: dispatches worker runs (see rate_limit.py).
+    dependencies=[Depends(RateLimit(times=20, seconds=60, fail_closed=True))],
 )
 def trigger_timeline(
     parcel_id: uuid.UUID,
@@ -329,15 +331,30 @@ def _get_titiler_client() -> httpx.AsyncClient:
 
 # Only Landsat snapshots reach the STAC fetch, and for Landsat cog_url holds
 # the Planetary Computer item self-link — every row in the table is on this
-# host. (The blob hosts that serve NAIP and Sentinel-2 COGs are not included:
-# those sources never take this path.) Without the check, a cog_url written
-# by a compromised upstream would make the API fetch an attacker-chosen URL
-# from inside the network. Second-order, but the check is nearly free.
+# host, so this stays narrower than the shared fetch allowlist. Without the
+# check, a cog_url written by a compromised upstream would make the API fetch
+# an attacker-chosen URL from inside the network.
 _ALLOWED_STAC_HOSTS = frozenset({"planetarycomputer.microsoft.com"})
 
 
 def _is_allowed_stac_host(url: str) -> bool:
     return (urlparse(url).hostname or "").lower() in _ALLOWED_STAC_HOSTS
+
+
+def _refuse_unlisted_host(snap: ImagerySnapshotRow, url: str) -> None:
+    """502 before a stored URL on an unknown host reaches Titiler's ``url=``.
+
+    Titiler fetches whatever it is handed, from inside Plotline's network,
+    so a row written by a compromised upstream would otherwise turn the tile
+    proxy into a fetcher for that host (security audit P5 / N5).
+    """
+    if stac_service.is_allowed_upstream_url(url):
+        return
+    logger.error(
+        "Refusing to render a snapshot from a non-allowlisted host",
+        extra={"snapshot_id": str(snap.id), "source": snap.source, "url": url[:200]},
+    )
+    raise HTTPException(status_code=502, detail="Imagery source not allowed")
 
 
 def _get_stac_fetch_client() -> httpx.AsyncClient:
@@ -456,6 +473,7 @@ async def _proxy_cog_tile(
             raise HTTPException(status_code=404, detail="cog index out of range")
         source_url = extras[cog_index - 1]
 
+    _refuse_unlisted_host(snap, source_url)
     if sign:
         try:
             signed_url = await stac_service.sign_pc_url(
@@ -481,7 +499,7 @@ async def _proxy_cog_tile(
         signed_url = source_url
 
     band_params = _COG_PARAMS.get(snap.source, {"bidx": [1, 2, 3], "rescale": "0,255"})
-    params: dict[str, Any] = {"url": signed_url, **band_params}
+    params = titiler_params(settings, {"url": signed_url, **band_params})
     titiler_url = f"{settings.titiler_url}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}"
     return await _fetch_titiler(titiler_url, params, snap.id)
 
@@ -553,13 +571,16 @@ async def _proxy_landsat_tile(
     # Landsat C2 L2 surface reflectance: uint16, nodata=0,
     # scale=2.75e-05, offset=-0.2.  Typical land DNs are 7000–20000.
     # rescale 7000,14000 gives good contrast for most land surfaces.
-    params: dict[str, Any] = {
-        "url": stac_item_url,
-        "assets": ["red", "green", "blue"],
-        "asset_as_band": True,
-        "nodata": 0,
-        "rescale": ["7000,14000", "7000,14000", "7000,14000"],
-    }
+    params = titiler_params(
+        settings,
+        {
+            "url": stac_item_url,
+            "assets": ["red", "green", "blue"],
+            "asset_as_band": True,
+            "nodata": 0,
+            "rescale": ["7000,14000", "7000,14000", "7000,14000"],
+        },
+    )
     titiler_url = f"{settings.titiler_url}/stac/tiles/WebMercatorQuad/{z}/{x}/{y}.png"
     return await _fetch_titiler(titiler_url, params, snap.id)
 
@@ -620,8 +641,11 @@ async def proxy_imagery_tile(
     # Stingier than the tile proxy because the client warms a snapshot once
     # per session, where tiles are dozens per pan. Not stingier than that: a
     # carrier NAT or an office egress puts many visitors in one bucket, and
-    # refusing a warmup costs the real one a slow first tile.
-    dependencies=[Depends(RateLimit(times=60, seconds=60))],
+    # refusing a warmup costs the real one a slow first tile. 120, not 60:
+    # the bucket is now per route rather than per snapshot, and one session
+    # warms ~80 snapshots once (security audit SEC-3). Fails open — a warmup
+    # creates nothing and queues nothing.
+    dependencies=[Depends(RateLimit(times=120, seconds=60))],
 )
 async def warmup_cog(
     snapshot_id: uuid.UUID,
@@ -644,10 +668,13 @@ async def warmup_cog(
             stac_url = await _landsat_stac_url(snap.id, settings)
             await _get_titiler_client().get(
                 f"{settings.titiler_url}/stac/info",
-                params={"url": stac_url, "assets": ["red", "green", "blue"]},
+                params=titiler_params(
+                    settings, {"url": stac_url, "assets": ["red", "green", "blue"]}
+                ),
             )
         else:
             source_url = snap.cog_url
+            _refuse_unlisted_host(snap, source_url)
             if snap.source != "usgs_topo":
                 try:
                     source_url = await stac_service.sign_pc_url(
@@ -664,9 +691,12 @@ async def warmup_cog(
                     return Response(status_code=204)
             await _get_titiler_client().get(
                 f"{settings.titiler_url}/cog/info",
-                params={"url": source_url},
+                params=titiler_params(settings, {"url": source_url}),
             )
     except (httpx.RequestError, httpx.HTTPStatusError):
+        pass
+    except HTTPException:
+        # Non-allowlisted host: already logged; a warmup is best-effort.
         pass
 
     return Response(status_code=204)

@@ -87,6 +87,12 @@ class Settings(BaseSettings):
 
     # ── Imagery / Titiler ─────────────────────────────────────────────────────
     titiler_url: str = "http://titiler:80"
+    # Sent as ?access_token= on every Titiler request when set. Must equal
+    # TITILER_API_GLOBAL_ACCESS_TOKEN on the Titiler app; unset means the
+    # request is byte-identical to before the token existed, which is what
+    # lets the API deploy first and Titiler take the token afterwards
+    # (docs/audits/2026-08-security-audit/DEPLOY-SEC-1.md).
+    titiler_access_token: str | None = None
     # Internal URL Titiler uses to call back to the API (for signed STAC items).
     # In Docker Compose this resolves via service-name DNS.
     api_internal_url: str = "http://api:8000"

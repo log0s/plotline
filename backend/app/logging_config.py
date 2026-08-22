@@ -12,6 +12,7 @@ import sys
 import structlog
 
 from app.config import Settings
+from app.redact import redact_event_dict
 
 
 def configure_logging(settings: Settings) -> None:
@@ -28,6 +29,11 @@ def configure_logging(settings: Settings) -> None:
         structlog.stdlib.ExtraAdder(),
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
+        # Render exc_info to text *before* scrubbing, so an httpx error whose
+        # message embeds the request URL (and its key= / sig= parameters) is
+        # scrubbed as a string rather than slipping past as an object.
+        structlog.processors.format_exc_info,
+        redact_event_dict,
     ]
 
     if settings.app_env == "production":
@@ -61,6 +67,8 @@ def configure_logging(settings: Settings) -> None:
 
     # Quiet noisy third-party loggers. httpx logs full request URLs at INFO,
     # which puts CENSUS_API_KEY (passed as a query param) in plaintext in the
-    # log stream — our own service logs cover the same calls without it.
+    # log stream — our own service logs cover the same calls without it. The
+    # redact_event_dict processor above is the backstop for the same shape
+    # everywhere else (str(HTTPStatusError) carries the URL too).
     for noisy in ("uvicorn.access", "sqlalchemy.engine", "httpx"):
         logging.getLogger(noisy).setLevel(logging.WARNING)

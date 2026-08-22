@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models.parcels import Parcel, TimelineRequest, TimelineRequestTask
+from app.redact import redact
 
 logger = logging.getLogger(__name__)
 
@@ -263,7 +264,9 @@ def update_request_task(
     elif status in ("complete", "failed", "skipped"):
         task.completed_at = datetime.now(tz=UTC)
     if error_message:
-        task.error_message = error_message
+        # Task rows are served to clients by GET /timeline-requests/{id} and
+        # are usually str(exc) — scrub at the sink, not at each raise site.
+        task.error_message = redact(error_message)
     db.commit()
 
 
@@ -278,7 +281,7 @@ def update_timeline_request_status(
     if status in ("complete", "failed"):
         request.completed_at = datetime.now(tz=UTC)
     if error_message:
-        request.error_message = error_message
+        request.error_message = redact(error_message)
     db.commit()
 
 
