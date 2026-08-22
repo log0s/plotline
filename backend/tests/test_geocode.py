@@ -209,7 +209,9 @@ def test_geocode_with_coords_tries_forward_first(client: TestClient) -> None:
 
 
 def test_geocode_with_coords_falls_back_to_reverse(client: TestClient) -> None:
-    """When forward geocoding fails with coords present, falls back to reverse."""
+    """When forward geocoding fails with coords *this backend served*, falls
+    back to reverse — and the served display name, not the caller's text,
+    becomes the stored address (security audit SEC-5)."""
     mock_parcel, _ = make_mock_parcel(is_new=True)
     mock_req = _mock_timeline_request()
 
@@ -218,6 +220,10 @@ def test_geocode_with_coords_falls_back_to_reverse(client: TestClient) -> None:
             "app.api.v1.geocode.geocoder_service.geocode_address",
             new_callable=AsyncMock,
             side_effect=AddressNotFoundError("No match"),
+        ),
+        patch(
+            "app.api.v1.geocode._served_name_for",
+            return_value="South Lemay Avenue, Fort Collins, Colorado 80525",
         ),
         patch(
             "app.api.v1.geocode.geocoder_service.reverse_geocode",
@@ -246,6 +252,97 @@ def test_geocode_with_coords_falls_back_to_reverse(client: TestClient) -> None:
 
     assert response.status_code == 200
     mock_reverse.assert_called_once()
+    assert (
+        mock_reverse.call_args.kwargs["address"]
+        == "South Lemay Avenue, Fort Collins, Colorado 80525"
+    )
+
+
+def test_geocode_refuses_coordinates_the_backend_did_not_serve(client: TestClient) -> None:
+    """Arbitrary lat/lon with an unmatchable string used to create a parcel
+    anywhere on Earth and run the full pipeline (security audit SEC-2)."""
+    with (
+        patch(
+            "app.api.v1.geocode.geocoder_service.geocode_address",
+            new_callable=AsyncMock,
+            side_effect=AddressNotFoundError("No match"),
+        ),
+        patch("app.api.v1.geocode._served_name_for", return_value=None),
+        patch("app.api.v1.geocode.geocoder_service.reverse_geocode", new_callable=AsyncMock) as rev,
+        patch("app.api.v1.geocode.parcels_service.get_or_create_parcel") as create,
+    ):
+        response = client.post(
+            "/api/v1/geocode",
+            json={"address": "zzzz not an address", "lat": -33.86, "lon": 151.21},
+        )
+
+    assert response.status_code == 422
+    rev.assert_not_called()
+    create.assert_not_called()
+
+
+def test_geocode_refuses_coordinates_when_redis_is_down(client: TestClient) -> None:
+    """The served-coordinate check fails closed; the forward path is untouched."""
+    from redis.exceptions import RedisError
+
+    with (
+        patch(
+            "app.api.v1.geocode.geocoder_service.geocode_address",
+            new_callable=AsyncMock,
+            side_effect=AddressNotFoundError("No match"),
+        ),
+        patch("app.api.v1.geocode.get_redis", side_effect=RedisError("down")),
+        patch("app.api.v1.geocode.geocoder_service.reverse_geocode", new_callable=AsyncMock) as rev,
+    ):
+        response = client.post(
+            "/api/v1/geocode",
+            json={"address": "zzzz not an address", "lat": 40.55, "lon": -105.06},
+        )
+
+    assert response.status_code == 422
+    rev.assert_not_called()
+
+
+def test_served_coordinates_round_trip() -> None:
+    """What autocomplete records is exactly what POST /geocode looks up."""
+    from app.services.geocoder import remember_served_coordinates, served_display_name
+
+    store: dict[str, str] = {}
+    pipe = MagicMock()
+    pipe.set = MagicMock(side_effect=lambda k, v, ex: store.__setitem__(k, v))
+    redis = MagicMock()
+    redis.pipeline = MagicMock(return_value=pipe)
+    redis.get = MagicMock(side_effect=lambda k: store.get(k))
+
+    remember_served_coordinates(redis, [(40.55, -105.06, "South Lemay Avenue, Fort Collins")])
+
+    assert served_display_name(redis, 40.55, -105.06) == "South Lemay Avenue, Fort Collins"
+    assert served_display_name(redis, 40.56, -105.06) is None
+    assert pipe.set.call_args.kwargs["ex"] == 6 * 3600
+
+
+def test_geocode_503s_when_admission_is_refused(client: TestClient) -> None:
+    from app.services.admission import AdmissionRefused
+
+    with (
+        patch(
+            "app.api.v1.geocode.geocoder_service.geocode_address",
+            new_callable=AsyncMock,
+            return_value=SAMPLE_GEOCODE_RESULT,
+        ),
+        patch(
+            "app.api.v1.geocode.parcels_service.get_or_create_parcel",
+            side_effect=AdmissionRefused("kill_switch"),
+        ),
+    ):
+        response = client.post(
+            "/api/v1/geocode",
+            json={"address": "1600 Pennsylvania Ave NW, Washington DC"},
+        )
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "120"
+    assert "Existing timelines are still available" in response.json()["detail"]
 
 
 # ── Service unit tests ────────────────────────────────────────────────────────

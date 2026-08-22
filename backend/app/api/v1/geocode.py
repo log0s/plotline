@@ -24,6 +24,7 @@ from app.schemas.geocode import (
 from app.services import geocoder as geocoder_service
 from app.services import imagery as imagery_service
 from app.services import parcels as parcels_service
+from app.services.admission import REFUSED_DETAIL, AdmissionRefused
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -142,17 +143,31 @@ async def autocomplete(
         if len(results) >= 5:
             break
 
-    # Cache results
+    # Cache results, and record the coordinates as served so POST /geocode
+    # can accept them back (geocoder.remember_served_coordinates).
     try:
         get_redis().set(
             cache_key,
             json.dumps([s.model_dump() for s in results]),
             ex=_AUTOCOMPLETE_CACHE_TTL,
         )
+        geocoder_service.remember_served_coordinates(
+            get_redis(), [(s.lat, s.lon, s.display_name) for s in results]
+        )
     except (RedisError, OSError) as exc:
         logger.debug("Autocomplete cache write failed: %s", exc)
 
     return results
+
+
+def _served_name_for(lat: float, lon: float) -> str | None:
+    """Display name autocomplete served with this pair; None if it never did
+    or Redis cannot say (closed: unverifiable coordinates are not used)."""
+    try:
+        return geocoder_service.served_display_name(get_redis(), lat, lon)
+    except (RedisError, OSError) as exc:
+        logger.warning("Served-coordinate check failed closed", extra={"error": str(exc)})
+        return None
 
 
 @router.post(
@@ -168,6 +183,7 @@ async def autocomplete(
         422: {"description": "Address could not be geocoded or validation failed"},
         429: {"description": "Rate limit exceeded"},
         502: {"description": "Upstream Census Geocoder API is unavailable"},
+        503: {"description": "New searches paused (kill switch or queue at capacity)"},
     },
     # Fails closed: this route creates parcels and dispatches worker runs,
     # the costs the limiter exists to bound.
@@ -184,7 +200,10 @@ async def geocode_address(
     # 1. Geocode — always try forward geocoding first for accurate
     #    house-level coordinates.  When the frontend supplies coords from
     #    autocomplete (Photon), those are often street-level only, so we
-    #    use them as a fallback via reverse geocoding.
+    #    use them as a fallback via reverse geocoding — but only coordinates
+    #    this backend served from autocomplete. Anything else would let a
+    #    caller create a parcel, and run the full pipeline, anywhere on
+    #    Earth under any text (security audit SEC-2, SEC-5).
     try:
         if body.lat is not None and body.lon is not None:
             try:
@@ -196,6 +215,15 @@ async def geocode_address(
                 geocoder_service.AddressNotFoundError,
                 geocoder_service.GeocoderUnavailableError,
             ) as exc:
+                served_name = await run_in_threadpool(_served_name_for, body.lat, body.lon)
+                if served_name is None:
+                    logger.warning(
+                        "Refusing coordinates this backend did not serve",
+                        extra={"address": body.address, "lat": body.lat, "lon": body.lon},
+                    )
+                    raise geocoder_service.AddressNotFoundError(
+                        "coordinates were not produced by autocomplete"
+                    ) from exc
                 logger.info(
                     "Forward geocode failed, falling back to reverse",
                     extra={"address": body.address, "reason": str(exc)},
@@ -203,7 +231,7 @@ async def geocode_address(
                 geocode_result = await geocoder_service.reverse_geocode(
                     latitude=body.lat,
                     longitude=body.lon,
-                    address=body.address,
+                    address=served_name,
                     settings=settings,
                 )
         else:
@@ -228,13 +256,18 @@ async def geocode_address(
     # they don't block the event loop of this async handler.
 
     # 2. Deduplicate / upsert parcel
-    parcel, is_new = await run_in_threadpool(
-        parcels_service.get_or_create_parcel,
-        db=db,
-        address=body.address,
-        geocode_result=geocode_result,
-        settings=settings,
-    )
+    try:
+        parcel, is_new = await run_in_threadpool(
+            parcels_service.get_or_create_parcel,
+            db=db,
+            address=body.address,
+            geocode_result=geocode_result,
+            settings=settings,
+        )
+    except AdmissionRefused as exc:
+        raise HTTPException(
+            status_code=503, detail=REFUSED_DETAIL, headers={"Retry-After": "120"}
+        ) from exc
 
     logger.info(
         "Geocode complete",
@@ -269,6 +302,15 @@ async def geocode_address(
                 imagery_service.dispatch_timeline_task(db, timeline_req)
 
             return timeline_req.id
+        except AdmissionRefused as exc:
+            # The parcel was admitted a moment ago; the queue filled in
+            # between. The page still renders from the parcel row and the
+            # explore page's own trigger retries the dispatch.
+            logger.warning(
+                "Timeline dispatch refused after parcel creation",
+                extra={"parcel_id": str(parcel.id), "reason": exc.reason},
+            )
+            return None
         except SQLAlchemyError as exc:
             logger.error(
                 "Failed to create timeline request",

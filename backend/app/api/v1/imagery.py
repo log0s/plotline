@@ -39,6 +39,7 @@ from app.schemas.imagery import (
 )
 from app.services import imagery as imagery_service
 from app.services import stac as stac_service
+from app.services.admission import REFUSED_DETAIL, AdmissionRefused
 from app.services.imagery import ImagerySnapshotRow
 from app.services.titiler import titiler_params
 
@@ -58,6 +59,7 @@ router = APIRouter()
     responses={
         404: {"description": "Parcel not found"},
         429: {"description": "Rate limit exceeded"},
+        503: {"description": "New pipeline runs paused (kill switch or queue at capacity)"},
     },
     # Fails closed: dispatches worker runs (see rate_limit.py).
     dependencies=[Depends(RateLimit(times=20, seconds=60, fail_closed=True))],
@@ -78,7 +80,15 @@ def trigger_timeline(
     if not row:
         raise HTTPException(status_code=404, detail=f"Parcel {parcel_id} not found")
 
-    request, is_new = imagery_service.get_or_create_timeline_request(db, parcel_id)
+    try:
+        request, is_new = imagery_service.get_or_create_timeline_request(db, parcel_id)
+    except AdmissionRefused as exc:
+        # Only reached when the parcel has no reusable request at all (never
+        # run, or its last run failed); a complete parcel is reused above
+        # this point and never sees the gate.
+        raise HTTPException(
+            status_code=503, detail=REFUSED_DETAIL, headers={"Retry-After": "120"}
+        ) from exc
 
     if not is_new:
         parcel = db.get(Parcel, parcel_id)

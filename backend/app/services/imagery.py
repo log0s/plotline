@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models.parcels import Parcel, TimelineRequest, TimelineRequestTask
 from app.redact import redact
+from app.services.admission import AdmissionRefused, ensure_admission
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +100,12 @@ def _create_queued_request(
     parcel_id: uuid.UUID,
 ) -> tuple[TimelineRequest, bool]:
     """Insert a queued request; on losing the one-in-flight-per-parcel race,
-    return the winning request instead. Returns (request, created)."""
+    return the winning request instead. Returns (request, created).
+
+    Raises ``AdmissionRefused`` when the kill switch is on or the in-flight
+    queue is at its cap — every new pipeline run passes through here.
+    """
+    ensure_admission(db, get_settings(), what="timeline_request")
     request = TimelineRequest(parcel_id=parcel_id, status="queued")
     db.add(request)
     try:
@@ -392,7 +398,16 @@ def maybe_refetch_for_backfill(
             )
             return None
 
-    new_req, created = _create_queued_request(db, parcel.id)
+    try:
+        new_req, created = _create_queued_request(db, parcel.id)
+    except AdmissionRefused as exc:
+        # A backfill is optional work on a parcel that already renders;
+        # refusing it must not surface as an error on that parcel's page.
+        logger.info(
+            "Backfill suppressed — admission refused",
+            extra={"parcel_id": str(parcel.id), "reason": exc.reason},
+        )
+        return None
     if not created:
         # Another request is already in flight — it will do the backfill.
         return None

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.models.parcels import Parcel
+from app.services.admission import ensure_admission
 from app.services.geocoder import GeocodeResult
 
 logger = logging.getLogger(__name__)
@@ -132,6 +133,10 @@ def get_or_create_parcel(
             extra={"parcel_id": str(existing.id), "radius_m": settings.parcel_dedup_radius_meters},
         )
         return existing, False
+
+    # Only a *new* parcel is gated: the dedup hit above is served under a
+    # full queue and under the kill switch alike.
+    ensure_admission(db, settings, what="parcel")
 
     # Build WKT point for GeoAlchemy2
     wkt_point = f"SRID=4326;POINT({geocode_result.longitude} {geocode_result.latitude})"

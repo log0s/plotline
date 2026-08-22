@@ -76,6 +76,21 @@ class Settings(BaseSettings):
     # Celery worker. Disabled in tests.
     rate_limit_enabled: bool = True
 
+    # ── Admission control (security audit SEC-2) ──────────────────────────────
+    # Per-IP limits are the only limits otherwise, and 10/min/IP across a
+    # handful of IPs outruns the single worker (median run 42 s, concurrency
+    # 2 ≈ 170 runs/hour). These bound new work globally; existing parcels
+    # stay fully browsable either way — see services/admission.py.
+    #
+    # ACCEPT_NEW_PARCELS=false is the kill switch: refuses new parcel
+    # creation and new pipeline dispatch without a code change.
+    accept_new_parcels: bool = True
+    # Cap on queued + processing timeline requests before new work is
+    # refused with a 503. 30 ≈ a 10-minute wait for the last one in line at
+    # today's drain rate — past that, queueing is a worse answer than a
+    # polite refusal.
+    max_inflight_timeline_requests: int = 30
+
     # ── Planetary Computer SAS signing ────────────────────────────────────────
     # The signing endpoint limits request *rate*, not volume. Unbounded
     # asyncio.gather over a parcel's Landsat years produced ~1 request per

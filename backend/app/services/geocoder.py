@@ -30,6 +30,42 @@ _VINTAGE = "Current_Current"
 # Maximum number of attempts before giving up.
 _MAX_ATTEMPTS = 3
 
+# Coordinates the autocomplete endpoint has handed out, keyed by the pair
+# itself. POST /geocode may only fall back to client-supplied lat/lon when
+# the pair is here: it is then a point *this backend* produced from a
+# Photon result, not an arbitrary location (security audit SEC-2/SEC-5).
+# The value is the suggestion's display name, which becomes the parcel's
+# normalized_address on that path so attacker text never does. Longer than
+# the 300 s autocomplete cache: a user can sit on a suggestion for a while
+# before searching.
+_SERVED_COORDS_TTL = 6 * 3600
+
+
+def _served_coords_key(latitude: float, longitude: float) -> str:
+    return f"served-coords:{latitude:.5f},{longitude:.5f}"
+
+
+def remember_served_coordinates(redis: Any, suggestions: list[tuple[float, float, str]]) -> None:
+    """Record (lat, lon, display_name) triples autocomplete is about to return."""
+    if not suggestions:
+        return
+    pipe = redis.pipeline()
+    for lat, lon, name in suggestions:
+        pipe.set(_served_coords_key(lat, lon), name, ex=_SERVED_COORDS_TTL)
+    pipe.execute()
+
+
+def served_display_name(redis: Any, latitude: float, longitude: float) -> str | None:
+    """The display name autocomplete served with this pair, or None if it never did.
+
+    Raises on a Redis error: the caller treats that as "not served" (fails
+    closed — the forward geocode path is unaffected).
+    """
+    value = redis.get(_served_coords_key(latitude, longitude))
+    if value is None:
+        return None
+    return value.decode() if isinstance(value, bytes) else str(value)
+
 
 class GeocoderError(Exception):
     """Base exception for geocoder errors."""
