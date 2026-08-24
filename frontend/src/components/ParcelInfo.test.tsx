@@ -5,8 +5,8 @@ import { renderWithProviders } from "../test/utils";
 import { geocodeStapleton } from "../test/fixtures/geocode-stapleton";
 import { timelinePropertyFailed } from "../test/fixtures/timeline-property-failed";
 import { timelinePropertyCompleteZero } from "../test/fixtures/timeline-property-complete-zero";
-import { demographicsEmpty } from "../test/fixtures/demographics-empty";
-import { eventsEmpty } from "../test/fixtures/events-empty";
+import { demographicsAdams } from "../test/fixtures/demographics-adams";
+import { eventsAdamsZero } from "../test/fixtures/events-adams-zero";
 import { getDemographics } from "../api/demographics";
 import { getPropertyEvents } from "../api/events";
 import type { GeocodeResponse, TimelineRequest } from "../types";
@@ -15,8 +15,8 @@ vi.mock("../api/demographics", () => ({ getDemographics: vi.fn() }));
 vi.mock("../api/events", () => ({ getPropertyEvents: vi.fn() }));
 
 beforeEach(() => {
-  vi.mocked(getDemographics).mockResolvedValue(demographicsEmpty as never);
-  vi.mocked(getPropertyEvents).mockResolvedValue(eventsEmpty as never);
+  vi.mocked(getDemographics).mockResolvedValue(demographicsAdams as never);
+  vi.mocked(getPropertyEvents).mockResolvedValue(eventsAdamsZero as never);
 });
 
 const parcel = geocodeStapleton as unknown as GeocodeResponse;

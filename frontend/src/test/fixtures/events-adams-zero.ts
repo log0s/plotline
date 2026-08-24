@@ -2,16 +2,17 @@
  * REAL captured API payload — do not hand-edit.
  *
  * Source endpoint: GET /api/v1/parcels/{id}/events
- * Parcel:          45a84ee8-342d-4fe0-b029-f0b2b93db4d8 (1600 Glenarm Pl, Denver CO 80202)
+ * Parcel:          e032a469-d6c9-49d6-927e-e26779cea3a6 (Adams County, CO)
  * Captured:        2026-08-24 from the local dev stack (docker compose)
  * Backend git SHA: 31677c7f60dc25016e44ac2ebd3df786e407deab
  *
- * Zero events, supported=true — so the panel's empty branch is reached
- * rather than the unsupported-county banner.
+ * Zero events with supported=true — the authoritative 'no records here'
+ * answer, not an outage. The parcel's property task completed at 0 items;
+ * see timeline-property-complete-zero.ts for that same run's task rows.
  */
-export const eventsEmpty = {
-  parcel_id: "45a84ee8-342d-4fe0-b029-f0b2b93db4d8",
-  county: "Denver",
+export const eventsAdamsZero = {
+  parcel_id: "e032a469-d6c9-49d6-927e-e26779cea3a6",
+  county: "Adams",
   supported: true,
   supported_counties: [
     "Denver County, CO",

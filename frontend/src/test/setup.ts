@@ -6,6 +6,10 @@ afterEach(() => {
   cleanup();
 });
 
+// Recharts also parks a hidden text-measurement span on document.body that
+// cleanup() does not remove, so a bare screen.getByText() in a chart test can
+// match it as a phantom duplicate — scope chart queries to `container`.
+
 // Recharts' ResponsiveContainer measures its parent via ResizeObserver, which
 // jsdom does not implement.
 class ResizeObserverStub {

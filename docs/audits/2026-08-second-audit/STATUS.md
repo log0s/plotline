@@ -614,6 +614,26 @@ never by editing the prediction.
 - **Incidental, from the same finding:** the 2026-08-11 incident parcel
   recorded `property complete:0` during the burst window while its five Denver
   peers hold 10–33 events each. Suggestive, not conclusive.
+- **A task row carries an error message its own timestamps predate — and no
+  code path can produce that.** Local dev DB, task
+  `39e83483-9e9b-40ed-abbb-28e20eb95b80` (request
+  `377e9f11-efb0-416b-94f3-7ce1ea11e125`, parcel `70a496c7`): `error_message`
+  is `All Denver County property queries failed`, a string that enters the
+  tree only at 256ed32 (2026-08-03, `timeline.py:840`), while its
+  `started_at`/`completed_at` read 2026-03-26 and the parent request's
+  `updated_at` reads 2026-05-23. The second failed property row
+  (`71448f76`, 2026-08-03 20:57) is entirely self-consistent, so this is a
+  one-off, not a pattern. **The code read is done** (see the Notes entry
+  below): every writer of `timeline_request_tasks.status`/`error_message`
+  also sets `completed_at` in the same statement, so no path leaves the
+  timestamp stale while rewriting the message. If a path *did* exist it
+  would mean task timestamps cannot be trusted to describe the outcome they
+  sit next to — which is why this is written down rather than dismissed.
+  What is left is not a code question but a provenance one: whether this row
+  was hand-edited in psql during development, which is the likeliest
+  explanation and would make it dev-only noise. **Do not build a fix on this
+  row.** Anyone tempted to should first confirm the anomaly reproduces
+  somewhere other than one developer's long-lived volume.
 
 ## Notes for future readers
 
@@ -658,3 +678,60 @@ never by editing the prediction.
   existing row is mislabeled — see that commit message for why the pre-fix code
   paths cannot have produced one, and why no query can prove it directly.
   Unrelated to M4: no new occurrence data came out of the triage.
+- **A frontend test harness exists as of 1a8bb3c (2026-08-24).** Vitest +
+  @testing-library/react + jsdom, run with `npm test` in `frontend/`; the
+  suite is 9 tests across `HousingChart`, `DemographicsPanel`, `ParcelInfo`
+  and `useAddressAutocomplete`. CI runs it as the `test-frontend` job behind a
+  `frontend/**` path filter, deliberately **non-blocking**: `continue-on-error`
+  is set *and* no deploy job lists it in `needs`, so it cannot gate a release
+  from either direction. **Make it blocking once the L8 clear-before-resolve
+  test lands, or on 2026-09-30, whichever comes first** — remove
+  `continue-on-error` and add `test-frontend` to the deploy jobs' `needs`.
+  Note the frontend deploys through Cloudflare Pages, outside
+  `deploy.yml` entirely, so blocking this job constrains nothing until that
+  changes. Fixtures under `frontend/src/test/fixtures/` are real captured API
+  payloads with provenance headers (endpoint, parcel, capture date, backend
+  SHA), never objects built from the TypeScript types — DEVELOPMENT.md records
+  what hand-built input cost the backend suite.
+- **Fixture provenance is a correctness property, not bookkeeping — the first
+  version of these tests got it wrong.** 7a273fd shipped a
+  `demographics`/`events` pair captured from a fresh geocode *before its census
+  task ran*, and paired it with a hand-typed `censusStatus="complete"`. The
+  payloads were real; the combination was not. That parcel's census task in
+  fact completed with **7** items and property with **9**, so the state under
+  test — "completed, and there is genuinely nothing here" — was never the state
+  captured. Corrected in the commit carrying this note: the complete-with-zero
+  case now uses the Adams County parcel `e032a469` (9 census snapshots, zero
+  property events, property task `complete` at 0 items — payloads and task rows
+  from the same run), and a separate coherent in-flight triple
+  (`*-inflight.ts`, all three captured in one instant, request `processing`,
+  every task `queued`) covers the not-yet-fetched state. Tests now read task
+  status *out of* a captured timeline-request fixture via a `statusOf` helper
+  rather than typing the literal, so a status can no longer drift from the
+  payload it describes. **Never hand-edit a field inside a captured fixture** —
+  a fixture with one edited value is a hand-built fixture wearing a provenance
+  header, which is worse than an obviously synthetic one.
+- **One frontend test is expected to fail, on purpose.**
+  `HousingChart.test.tsx` asserts via `it.fails` that a decennial year with a
+  housing-unit total appears in the chart. It does not — that is H1's open
+  decennial half. The captured Stapleton fixture shows the real shape: 2010 and
+  2020 carry `total_housing_units` (1,773 and 2,642) with a null tenure split,
+  because that is what the decennial tables return. When H1 is fixed the
+  assertion starts passing and `it.fails` reports it as a **failure** — that is
+  the signal to delete `.fails`, not to weaken the assertion.
+- **`TimelineRequestTask` (frontend) omits `started_at` and `completed_at`,**
+  which `backend/app/schemas/imagery.py:23-24` declares and the API returns on
+  every task. Found by assigning the raw captured payloads to their declared
+  types under `tsc`, which rejects them. Unfixed as of the commit carrying this
+  note, and deliberately not fixed in isolation: the same check should be run
+  across *every* fixture against *every* type first, since one drift found by
+  accident implies others nobody has looked for.
+- **Recharts leaves a text-measurement span on `document.body`, and it
+  survives `cleanup()`.** It holds the last string Recharts measured, so a
+  bare `getByText("2023")` on a chart test matches twice — once in the real
+  `<tspan>`, once in that orphan — and fails with "found multiple elements"
+  rather than anything that names the cause. Cost a debugging cycle on the
+  first chart test. **Scope chart queries to the render's `container`**, e.g.
+  `container.querySelectorAll(".recharts-xAxis .recharts-cartesian-axis-tick-value")`,
+  never to `screen`. Noted at both sites: `HousingChart.test.tsx` and
+  `src/test/setup.ts`.
