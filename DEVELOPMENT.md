@@ -2,82 +2,75 @@
 
 I built this entire application using Claude Code as a way of testing its capabilities when creating full-stack solutions from scratch. The idea was to write as little code myself as possible, relying on the agent to do most or all of the work, and see what the quality of the final product is like. For this particular project I also allowed Claude (specifically Opus 4.6) to design and architect a lot of it with some tweaks of my own, as a way to understand its capabilities.
 
-If you only read one part of this, read the next section: what 110 commits of history say about why bugs survive in agent-written code. The build log below it is the raw material that section is drawn from.
+If you only have time for one section, the next one is probably the most useful; it's what I pulled out of the first 110 commits of history about why bugs stuck around in agent-written code. The build log further down is the raw material I drew that from, written phase by phase as I went.
 
 ## What I Set Out to Measure, and What I Ended Up Measuring
 
-I started Plotline with a specific question: how far can an AI coding agent get from a human-authored outline? I wrote the architecture, the phase plans, and the constraints. The agent wrote nearly all the code. The interesting part was supposed to be finding the ceiling — where it would stop being able to keep up.
+I started Plotline with a pretty specific question in mind: how far can an AI coding agent get from a human-authored outline? I wrote the architecture, the phase plans, and the constraints, and the agent wrote nearly all of the code. I figured the interesting part would be finding the ceiling, i.e. the point where it stopped being able to keep up.
 
-Four and a half months and 110 commits later, I don't think that's the question the project answered. The failures I found at the end weren't the ones I expected, and they weren't about capability. The audit prompts and findings are in [docs/audits/](docs/audits/), and the git analysis behind every number below is in [docs/provenance/](docs/provenance/) — with the caveat that the findings documents are reconstructions with their damaged passages marked, because the originals were never preserved.
+Four and a half months and 110 commits later, I don't really think that's the question the project ended up answering. (The numbers throughout this section are as of the August 3 audit, when this was written; the repo has kept moving since then and I'm not planning on keeping them current.) The failures I found at the end weren't the ones I expected, and honestly they weren't really about capability at all. The audit prompts and findings are in [docs/audits/](docs/audits/), and the git analysis behind every number below is in [docs/provenance/](docs/provenance/). One caveat there: the findings documents are reconstructions with the damaged passages marked, since the originals were never preserved.
 
 ### What actually kept bugs alive
 
-Two architecture reviews, months apart, found real problems. The obvious explanation is that the second found more because the tooling improved. The commit history says otherwise.
+Two architecture reviews, months apart, both found real problems. The obvious explanation for the second one finding more is that the tooling got better, but the commit history doesn't really support that.
 
-Every High-severity finding in the second review had the same thing in common: **nothing had read those lines since they were written.**
+Every High-severity finding in the second review had one thing in common: **none of those lines had been read by anything since the day they were written.**
 
-- `logging_config.py` was written in the Phase 1 foundation commit and not touched again for 140 days. Four models worked on this codebase in that window and none of them opened it. Every `extra={...}` field I attached to log calls was silently dropped before reaching the output — the instrumentation existed and produced nothing.
-- The Census variable dict that broke the Housing chart sat unmodified for 131 days while seven commits touched the same file.
-- The frontend filter that depended on it got relocated into a new component byte-identically — moved without being read.
+- `logging_config.py` was written in the Phase 1 foundation commit and then not touched again for 140 days. Five different models worked on this codebase in that window and none of them opened it. Every `extra={...}` field I attached to log calls was being silently dropped before it ever reached the output, so the instrumentation existed but produced nothing.
+- The Census variable dict that broke the Housing chart sat unmodified for 131 days while seven other commits touched the same file.
+- The frontend filter that depended on it got relocated into a new component byte-identically; moved without ever being read.
 
-The clearest example is a pair of twin bugs. One commit introduced the same `Cache-Control: max-age` mistake into two endpoints, the imagery list and the demographics list. Eight weeks later I noticed users weren't seeing late-arriving imagery and fixed it — in one file. The identical bug three files away survived another 72 days, because I fixed the symptom I saw instead of searching for the pattern.
+The clearest example is probably a pair of twin bugs. One commit introduced the same `Cache-Control: max-age` mistake into two endpoints, the imagery list and the demographics list. Eight weeks later I noticed users weren't seeing late-arriving imagery and fixed it, but only in the one file. The identical bug three files away survived for another 72 days because I fixed the symptom I happened to see instead of searching for the pattern.
 
-Error handling shows the same thing. One commit narrowed bare `except Exception` handlers across five files and skipped `county_adapters.py`, which has seven of them — the same commit narrowed `health.py`'s specifically, and still left in place the per-call Redis client that a later audit flagged. Another commit edited `county_adapters.py` in the same period for an unrelated reason and changed no except line. A later cleanup sweep narrowed one more of the same catches in `db.py`, edited `county_adapters.py` in the same commit — and changed no except line there either.
+Error handling shows pretty much the same thing. One commit narrowed bare `except Exception` handlers across five files and skipped `county_adapters.py`, which has seven of them. That same commit narrowed `health.py`'s specifically and still left in place the per-call Redis client that a later audit flagged. Another commit edited `county_adapters.py` in the same period for an unrelated reason and didn't change a single except line. A later cleanup sweep narrowed one more of the same catches in `db.py` and edited `county_adapters.py` in the same commit, and again changed no except lines there.
 
-None of these are capability failures. They're scope failures. Agent-assisted development produces a lot of code that gets reviewed carefully at the moment of writing and then never again, because the review boundary is the diff. The audits worked because they were the first time anything looked at the whole system instead of a change to it.
+I don't think any of these are capability failures; they're scope failures. Agent-assisted development produces a ton of code that gets reviewed carefully at the moment of writing and then never again, because the review boundary is the diff. I feel like the audits worked mainly because they were the first time anything had looked at the whole system instead of at a change to it.
 
 ### The thing that didn't improve
 
-Documentation failed the same way for the whole project, under every model that worked on it — and the history splits cleanly enough to show why.
+Documentation failed the same way for the entire project, under every model that worked on it, and the history splits cleanly enough to show why (I think).
 
-`SUPPORTED_COUNTIES.md` documented five county integrations. The two sections that shipped in the same commit as their adapter code — Denver and Adams — were accurate. The other three were written three days after their adapters landed, in a separate commit, describing code that already existed on disk. In two of those three sections — DC and San Jose — not one field name was correct at the time of writing; New York's listed fields were right, though incomplete. DC's section listed `PREMISEADD`, `SALEPRICE`, `SALEDATE`; the adapter had been reading `PROPERTY_ADDRESS`, `LAST_SALE_PRICE`, and `LAST_SALE_DATE` since the day it landed. Those docs didn't drift out of date. They were wrong from the first commit.
+`SUPPORTED_COUNTIES.md` documented five county integrations. The two sections that shipped in the same commit as their adapter code (Denver and Adams) were accurate. The other three were written three days after their adapters landed, in a separate commit, describing code that already existed on disk. In two of those three sections (DC and San Jose) not one field name was correct at the time of writing; New York's listed fields were right, although incomplete. DC's section listed `PREMISEADD`, `SALEPRICE`, and `SALEDATE`, while the adapter had been reading `PROPERTY_ADDRESS`, `LAST_SALE_PRICE`, and `LAST_SALE_DATE` since the day it landed. So those docs didn't drift out of date over time, they were just wrong from the very first commit.
 
-Tests had the same failure. The census suite asserted a vacancy-rate calculation using hand-built input the real pipeline could not produce — it validated the formula while the system feeding it was broken. Between the two audits the backend grew by roughly 2,800 lines, 72% of it test code. More tests, aimed at the wrong things.
+Tests had basically the same failure. The census suite asserted a vacancy-rate calculation using hand-built input that the real pipeline couldn't actually produce, so it validated the formula while the system feeding it was broken. Between the two audits the backend grew by roughly 2,800 lines, 72% of it test code, and a good chunk of that was more tests aimed at the wrong things.
 
-The common thread: documentation and tests generated from the same description as the code inherit that description's assumptions instead of checking them. Prose written alongside code was right. Prose written about code was wrong. That held regardless of which model wrote it.
+The common thread as far as I can tell is that documentation and tests generated from the same description as the code inherit that description's assumptions instead of checking them. Prose that was written alongside the code was generally right, prose written after the fact about the code was generally wrong, and that held regardless of which model wrote it.
 
 ### What I can't claim
 
-The obvious version of this section is a capability-improvement story, and the evidence doesn't support one.
+The obvious version of this section would be a capability-improvement story, and the evidence honestly doesn't support one.
 
-The two reviews were run by different model generations, and the second found a class of problem the first missed entirely. But four things changed between them. The second review's prompt was much more aggressive — it asked for adversarial reading, told the model to skip anything done well, and explicitly said not to re-report the first audit's findings. The codebase was larger. The first audit's fixes had already hardened the paths that fail loudly, which is part of why the quiet ones became visible. And my model usage wasn't even chronological — I used a newer model for two days in April, then went back to the previous one for two months.
+The two reviews were run by different model generations, and the second one found a class of problem the first missed entirely. But four things changed between them. The second review's prompt was much more aggressive; it asked for adversarial reading, told the model to skip anything done well, and explicitly said not to re-report the first audit's findings. The codebase was larger. The first audit's fixes had already hardened the paths that fail loudly, which is probably part of why the quiet ones became visible. And my model usage wasn't even chronological, since I used a newer model for two days in April and then went back to the previous one for two months.
 
-Four variables, one outcome, n=1. I can't isolate anything from that.
+Four variables, one outcome, and n=1. I can't really isolate anything from that.
 
-What I can point to is more specific. In June, one model wrote a bare `except Exception` into a county adapter — locally reasonable, since the goal was keeping one county's outage from killing the whole pipeline. In August, the same model ran the review that flagged that exact pattern in that exact file as a high-severity finding, because it converts an API outage into a result indistinguishable from "this parcel has no records."
+What I can point to is a bit more specific. In June, one model wrote a bare `except Exception` into a county adapter, which was locally reasonable since the goal was keeping one county's outage from killing the whole pipeline. In August, that same model ran the review that flagged that exact pattern in that exact file as a high-severity finding, because it converts an API outage into a result that's indistinguishable from "this parcel has no records."
 
-Same model, same file, two months apart. What changed was what I asked it to do.
+Same model, same file, two months apart, and the only thing that changed was what I asked it to do. If there's one thing I'd generalize from this project it's that **the review stance seems to matter a lot more than the model version.** Writing code to make a feature work and reading code to find where a system is lying to you are pretty different tasks, and the second one just doesn't happen unless someone actually schedules it.
 
-That's the finding I'd generalize: **the review stance matters more than the model version.** Writing code to make a feature work and reading code to find where a system lies are different tasks, and the second one doesn't happen unless someone schedules it.
-
-*(Attribution note: this project's commits are inconsistently stamped — about a third carry no model trailer, including some of the remediation work. I know what ran what; the repo doesn't fully record it. That's a process gap I'd close at the start of the next project rather than reconstruct at the end of this one.)*
+*(Attribution note: this project's commits are inconsistently stamped; as of the audit about a third carried no model trailer. Going back through them later, most of those are pretty clearly my own hand edits (phase prompts, dev log tweaks, cleaning up CLAUDE.md, that kind of thing), but a handful are agent work where the trailer just got dropped, including two of the remediation fixes from the audit itself. Stamping only got consistent from around mid-August on. I know what ran what, but the repo doesn't fully record it. That's a process gap I'd rather close at the start of the next project than try to reconstruct at the end of this one.)*
 
 ### What my job turned into
 
-The clearest trend in this project isn't in the code. It's in what I was doing.
+Honestly the biggest change over the course of the project was probably in what I was actually doing day to day rather than anything in the code. Early on I was writing the architecture, schema, and phase plans (basically the outline everything else grew from). By the middle phases I'd shifted to mostly reading output, catching drift, and deciding what to keep. By the end a good chunk of my time was spent commissioning hostile reviews, arbitrating between them, and figuring out which findings were actually real.
 
-In Phase 1, I was the author: architecture, schema, phase plans, the outline everything else grew from. By the middle phases I was the editor — reading output, catching drift, deciding what to keep. By the end I was mostly the adversary: commissioning hostile reviews, arbitrating between them, deciding which findings were real.
+That last role turned out to be the one that mattered most, and a decent amount of it was just arguing with the tooling. I was advised to disable the tile server in production to save a few dollars a month and pushed back, since the entire product is zoomable historical imagery. I was advised to switch Redis providers to escape a rate limit, checked, and found that the suggested alternative was the same provider underneath. I was handed a CLI command for checking hosting costs that doesn't exist.
 
-That last role turned out to be the one that mattered, and part of it was arguing with the tooling. I was advised to disable the tile server in production to save a few dollars a month, and pushed back — the entire product is zoomable historical imagery. I was advised to switch Redis providers to escape a rate limit, checked, and found the suggested alternative was the same provider underneath. I was handed a CLI command for checking hosting costs that doesn't exist.
-
-None of that required writing code. All of it required knowing the system well enough to notice when a confident answer was wrong.
+I didn't write any code for any of that, but I did need to know the system well enough to notice when a confident-sounding answer was wrong.
 
 ### What I'd do differently
 
-**Grep for the shape before closing a bug.** A fix isn't done until I've searched the codebase for the same pattern elsewhere. The cache-header twin would have cost thirty seconds to find. It got ten extra weeks instead.
-
-**Derive documentation and tests from the system, not the spec.** Fixtures built from captured real payloads, not idealized ones. Field-name tables generated from — or at least verified against — the parsers that read them.
-
-**Put whole-system reads on the calendar.** Not triggered by a bug. Periodic, adversarial, and aimed at the files nothing has touched in months, because nothing else routes attention there.
-
-**Instrument the silences.** The deepest problem here wasn't any single bug. It was a consistent reflex to turn upstream failure into a smaller success: a county API outage recorded as "complete, 0 records," an unmatched address silently dropped, a partially-failed census marked complete with permanent gaps. Each is defensible alone. Together they meant the system couldn't distinguish "this parcel has no permits" from "the integration has been broken for a month" — and neither could I, because the logging that would have told me was itself silently dropping every field. (The property path was closed after this was written — `256ed32` — which is worth noting mainly because a document arguing for its own correction, and getting it, is the process working.)
+* Grep for the shape of a bug before closing it. I don't consider a fix done anymore until I've searched the codebase for the same pattern elsewhere. The cache-header twin would have taken about thirty seconds to find and instead it got an extra ten weeks.
+* Derive documentation and tests from the actual system rather than the spec. Fixtures built from captured real payloads instead of idealized ones, and field-name tables generated from (or at the very least verified against) the parsers that actually read them.
+* Put whole-system reads on the calendar rather than waiting for a bug to trigger them. Periodic, adversarial, and specifically aimed at the files nothing has touched in months, because as far as I can tell nothing else routes attention there.
+* Instrument the silences. The deepest problem here wasn't really any single bug so much as a consistent reflex to turn upstream failure into a smaller success: a county API outage recorded as "complete, 0 records," an unmatched address silently dropped, a partially-failed census marked complete with permanent gaps. Each of those is defensible on its own. Together they meant the system couldn't tell the difference between "this parcel has no permits" and "the integration has been broken for a month," and honestly neither could I, because the logging that would have told me was itself silently dropping every field. (The property path was closed after this was written, in `256ed32`, which I mostly note because a document arguing for its own correction and then actually getting it feels like the process working.)
 
 ## Build Log
 
 > Written phase by phase as the work happened, between March and August 2026.
-> Left unrevised. Where a contemporaneous assessment here was later contradicted
-> by review — and several were — I've left the original wording and noted the
-> correction inline rather than editing the entry.
+> Left unrevised. Where something I wrote at the time was later contradicted by
+> a review (and several were), I've left the original wording alone and added a
+> note inline rather than editing the entry.
 
 ### Phase 1
 
@@ -100,7 +93,7 @@ Took ~20 minutes to build this phase out completely. Got everything technically 
 * Really had a hard time with correctly pointing to the endpoints it made itself.
 * Seemed to add a lot of unnecessary code in this step, especially some weird and gratuitous logging in the back end.
 
-  > **Later:** That logging wasn't gratuitous, it was inert — `logging_config.py` shipped in the Phase 1 commit without a `structlog` processor to merge `extra={...}`, so every context field on every log call was dropped before output, for 140 days. Found in the August audit ([H2](docs/audits/2026-08-second-audit/FINDINGS.md)).
+  > **Later:** That logging turned out to be inert rather than gratuitous. `logging_config.py` shipped in the Phase 1 commit without a `structlog` processor to merge `extra={...}`, so every context field on every log call was being dropped before output, and that went on for 140 days. Found in the August audit ([H2](docs/audits/2026-08-second-audit/FINDINGS.md)).
 * Still very good at certain types of debugging (likely of the well-known issue variety) --- think things like version mismatches, breaking changes in new packages, etc.
 * Misses a lot of basic UX stuff (loading indicators, transitions, etc) but I suspect that's more from my lack of direction than anything else. Makes sense to add/address it later anyway.
 * Surprisingly good at debugging somewhat complex issues (e.g. found that `extract_cog_url` was pulling in rendered preview PNGs instead of an actual COG, debugged signing expiration issues when hitting external APIs)
@@ -112,13 +105,13 @@ Took ~20 minutes to build this phase out completely. Got everything technically 
 
 Took about 20 minutes again to build everything out. Debug took about eight minutes for basic functionality (i.e. things not being completely broken) and another six or so fixing bugs that were introduced, some regressions, etc. Had lots of issues with older data getting saved and not cleaned up after code changes. It did ask once, when addressing a known issue with Landsat 7 imagery having missing sections, but only that one time.
 
-> **Later:** The census work didn't come out of this phase working — the ACS variable dict landed here never requested total housing units, so the Housing chart had nothing to divide by and never rendered, for 131 days across seven commits to the same file. Found in the August audit ([H1](docs/audits/2026-08-second-audit/FINDINGS.md)).
+> **Later:** The census work didn't actually come out of this phase working. The ACS variable dict that landed here never requested total housing units, so the Housing chart had nothing to divide by and never rendered, and it stayed that way for 131 days across seven commits to the same file. Found in the August audit ([H1](docs/audits/2026-08-second-audit/FINDINGS.md)).
 
 * Started getting some more front-end errors in this one (missing packages, paths off, etc).
 * Seems to fairly consistently forget to do things like rebuilding Docker images, but this is probably more an error on my part; planning to make a lot of additions to the global Claude config after this with lessons learned.
 * One very common recurring issue is logic around caching; it seems to struggle with knowing what is and is not appropriate to cache, and when to ignore caching even if it is appropriate for some cases/uses. This could also be a configuration thing, but I'm leaning towards it being a general limitation of the tool's capabilities in general, as there's a lot of nuance around this.
 
-  > **Later:** The analysis section reaches the opposite conclusion about this class of problem — the cache bugs that survived weren't capability failures, they were scope failures. This entry is the misdiagnosis it describes.
+  > **Later:** The analysis section up top ends up at pretty much the opposite conclusion about this class of problem; the cache bugs that survived weren't capability failures, they were scope failures. This entry is basically the misdiagnosis that section describes.
 
 * Also consistently forgets to clean up after itself (clear out DB, update old implementations stored, etc) with major data changes. Probably worth noting and saving as a global Claude config.
 * Related to the above, it frequently misconstrues the actual issue, and tries to patch in fixes for old/missing/misconfigured data instead of just cleaning up.
@@ -148,7 +141,7 @@ Right around the same time to build as usual at ~22 minutes. Less than ten minut
 * Very useful that it can also do more "research" projects; in this case choosing a new featured spot with better data
 * Shockingly smart when given specific directions. Came up with a fairly good caching strategy to speed up tiling that required only minor tweaks.
 
-  > **Later:** The tweaks weren't minor and weren't finished. The same phase's build commit put an identical `Cache-Control: public, max-age=3600` on both the imagery list and the demographics list, which hid late-arriving data behind the browser cache. I fixed the imagery one 58 days later and didn't grep for the twin; the demographics copy survived another 72 days. Found in the August audit ([H3](docs/audits/2026-08-second-audit/FINDINGS.md)).
+  > **Later:** The tweaks weren't minor, and they weren't finished either. The same phase's build commit put an identical `Cache-Control: public, max-age=3600` on both the imagery list and the demographics list, which hid late-arriving data behind the browser cache. I fixed the imagery one 58 days later and didn't grep for the twin, so the demographics copy survived another 72 days. Found in the August audit ([H3](docs/audits/2026-08-second-audit/FINDINGS.md)).
 * Seeing a similar pattern to earlier, where it will often think it has properly fixed the issue (especially if given vague guidance) and have to revisit it several times.
 * One outlier - took a *very* long time (and kept getting stuck) trying to do a seemingly simple fix where timeline items were only showing up for featured items. I was getting close to my session limit, so maybe a throttling thing? No obvious reasons for the slowness that I could see in the commands it was running. It did figure it out in the end, but it took almost eighteen minutes and spent a lot of that time seemingly stuck (not consuming tokens, no visible processing going on).
 * Random nice bit of UX - it's smart enough to tell which work it did in any specific session and only commit that (within reason, gets confused sometimes if multiple agents running simultaneously are touching similar files).
@@ -158,8 +151,8 @@ Right around the same time to build as usual at ~22 minutes. Less than ten minut
 
 *2026-08-03 · Claude Opus 5, two concurrent sessions*
 
-Two sessions were working the repo at once on the last day: one wiring the audit documents into this file and the README, the other finishing the H6 imagery-reconciliation fix that landed as 96a7962 at 15:48. The wiring session was told to leave `docs/` uncommitted — whether to commit the audit trail was mine to decide, and the staging notes it was working from said the same.
+Two sessions were working the repo at the same time on the last day: one wiring the audit documents into this file and the README, the other finishing the H6 imagery-reconciliation fix that landed as 96a7962 at 15:48. The wiring session was told to leave `docs/` uncommitted, since whether or not to commit the audit trail was my call to make, and the staging notes it was working from said the same thing.
 
-`docs/` was committed anyway, as 436cf85 at 15:52, four minutes after the other session's commit. It carries a `Co-Authored-By: Claude Opus 5` trailer, which is what the wiring session's own commits carry too, so the trailer marks it as agent work without distinguishing which agent; the wiring session reported `docs/` left untracked, so it came from the other one. The content was correct — nine files, all additions, exactly the audit trail and none of the wiring still in progress. What went out is what I would have committed. The boundary that got crossed was procedural, not substantive.
+`docs/` got committed anyway, as 436cf85 at 15:52, four minutes after the other session's commit. It carries a `Co-Authored-By: Claude Opus 5` trailer, which is the same trailer the wiring session's own commits carry, so the trailer marks it as agent work without saying which agent. The wiring session reported `docs/` left untracked, though, so it pretty clearly came from the other one. The content itself was correct (nine files, all additions, exactly the audit trail and none of the wiring that was still in progress), and what went out is what I would have committed anyway. So the boundary that got crossed was procedural rather than substantive.
 
-The lesson is narrow and worth writing down anyway. Per-session instructions don't compose across concurrent sessions: telling one session "don't commit this, it's the owner's call" doesn't bind a second session with its own context and its own view of the working tree. Every boundary that actually matters has to be restated in each session that could cross it, or enforced structurally — a branch per session — rather than verbally. This is a different failure mode from everything else in this document. The analysis section is about code nobody read; this is about an instruction that didn't transfer. I noted back in Phase 5 that the agent is good at committing only its own session's work, with the caveat that it gets confused when several are touching the same files at once. This entry is that caveat.
+The lesson is a pretty narrow one but I think it's worth writing down regardless. Per-session instructions don't compose across concurrent sessions; telling one session "don't commit this, it's the owner's call" doesn't do anything to bind a second session with its own context and its own view of the working tree. Every boundary that actually matters has to either be restated in every session that could cross it or enforced structurally (a branch per session, for example) rather than verbally. This is a different failure mode from everything else in this document, since the analysis section is about code nobody read and this is about an instruction that just didn't transfer. I noted back in Phase 5 that the agent is good at committing only its own session's work, with the caveat that it gets confused when several are touching the same files at once. Turns out this entry is that caveat playing out.
