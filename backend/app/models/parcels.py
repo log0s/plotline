@@ -218,6 +218,68 @@ class TimelineRequestTask(Base):
         return f"<TimelineRequestTask source={self.source!r} status={self.status!r}>"
 
 
+class TimelineTaskYear(Base):
+    """One attempted period of one fetch task, and how it turned out.
+
+    The M4 ledger. A task row says the *source* finished; this says what
+    happened to each year/decade the source tried, so "never attempted" and
+    "attempted and came back empty" stop being the same absence.
+
+    It deliberately holds no reference to the row that got served (no
+    ``snapshot_id``, no FK to ``imagery_snapshots``). The served row for a
+    group is looked up by ``(parcel_id, source, group_key)`` at read time —
+    rule 1 of docs/adr/0001-imagery-normalization.md, which is what lets the
+    normalization pass replace the snapshot storage without touching this
+    table.
+
+    Constraint names are spelled out here and match
+    ``alembic/versions/0011_timeline_task_years.py`` exactly. The parent table
+    carries ORM/database name drift (M7 item 5); this one starts without it.
+    """
+
+    __tablename__ = "timeline_task_years"
+
+    VALID_OUTCOMES = ("ok", "failed", "absent", "indeterminate", "suppressed")
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("timeline_request_tasks.id", ondelete="CASCADE", name="fk_tty_task_id"),
+        nullable=False,
+    )
+    # Denormalized from the task. Census is why it is not merely a copy: one
+    # 'census' task row covers both datasets, and its ledger rows carry
+    # 'census_decennial' / 'census_acs5' so a query can tell them apart.
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    group_key: Mapped[str] = mapped_column(Text, nullable=False)
+    outcome: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "outcome IN ('ok', 'failed', 'absent', 'indeterminate', 'suppressed')",
+            name="ck_tty_outcome",
+        ),
+        UniqueConstraint("task_id", "group_key", name="uq_tty_task_group"),
+        Index("idx_tty_source_group_outcome", "source", "group_key", "outcome"),
+        Index("idx_tty_task", "task_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<TimelineTaskYear {self.source} {self.group_key} {self.outcome}>"
+
+
 class ImagerySnapshot(Base):
     """A single aerial/satellite imagery scene found for a parcel."""
 

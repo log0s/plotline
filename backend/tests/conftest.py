@@ -110,6 +110,36 @@ def _create_test_tables() -> None:
         )
         conn.execute(
             text("""
+                CREATE TABLE IF NOT EXISTS timeline_task_years (
+                    id          TEXT PRIMARY KEY,
+                    task_id     TEXT NOT NULL
+                        REFERENCES timeline_request_tasks(id) ON DELETE CASCADE,
+                    source      TEXT NOT NULL,
+                    group_key   TEXT NOT NULL,
+                    outcome     TEXT NOT NULL
+                        CHECK (outcome IN ('ok', 'failed', 'absent',
+                                           'indeterminate', 'suppressed')),
+                    reason      TEXT,
+                    detail      TEXT,
+                    created_at  TEXT DEFAULT (datetime('now')),
+                    UNIQUE (task_id, group_key)
+                )
+            """)
+        )
+        conn.execute(
+            text("""
+                CREATE INDEX IF NOT EXISTS idx_tty_source_group_outcome
+                ON timeline_task_years (source, group_key, outcome)
+            """)
+        )
+        conn.execute(
+            text("""
+                CREATE INDEX IF NOT EXISTS idx_tty_task
+                ON timeline_task_years (task_id)
+            """)
+        )
+        conn.execute(
+            text("""
                 CREATE TABLE IF NOT EXISTS imagery_snapshots (
                     id                    TEXT PRIMARY KEY,
                     parcel_id             TEXT NOT NULL REFERENCES parcels(id),
