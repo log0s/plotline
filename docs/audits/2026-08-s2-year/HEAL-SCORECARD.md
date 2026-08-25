@@ -410,6 +410,12 @@ Flagged, not investigated.
    than ~30 parcels in one run. The docstring's claim that "the batch
    continues" holds only for the in-flight skip, not for the cap. **154
    parcels are unswept and the S2-year change is unrealised for them.**
+
+   **Resolved:** `d6b21b3`, 2026-08-25 — all three scripts wait out a full
+   queue, bound the wait with `--max-wait-minutes`, name the parcels they
+   did not reach and exit non-zero. Committed, not deployed, and the
+   completion sweep has not run as of that date. See `ADMISSION-FIX.md`
+   and STATUS.md G9.
 2. **Two `STAC year chunk failed after retries; skipping` — landsat 2016 and
    2017, `403 Forbidden` from Planetary Computer**, both at 19:12:59Z, on one
    of the two requests started at 19:12:43/19:12:44 (`ef73d7dd`,

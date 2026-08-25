@@ -184,3 +184,137 @@ number to be scored against.
 
 Falsified if the post-sweep month distribution is *not* at least as
 Q4-weighted as the pre-sweep one.
+
+---
+
+# ADDENDUM 2026-08-25 — the completion sweep, calibrated from the 30
+
+Written after `HEAL-SCORECARD.md` and after `d6b21b3`, and **before the
+completion sweep runs**. The original prediction above is untouched; this
+is a second, separately scorable prediction for the 154 parcels the
+2026-08-25 sweep never reached. Nothing here may be edited after that
+sweep runs.
+
+The 30 that ran are not a re-test — P1 was confirmed exactly on them. What
+follows is calibrated *from* those 30, against the measured pre-sweep state
+of the remaining 154, read from the after-state snapshot at
+**2026-08-25T19:17:30Z**.
+
+## Inputs, all DB-measured
+
+| input | value |
+|---|---|
+| Parcels not reached | **154** |
+| S2 rows they currently hold | **3,605** (mean 23.4; min 5, median 23, max 39) |
+| Parcels among them holding a duplicate calendar year | **154 of 154** |
+| Landsat rows they hold | 6,613 — **153 at exactly 43**, one (`bd70afa6`) at 34 |
+| Parcels among them holding **zero** `usgs_topo` rows | **23** |
+| Parcels among them holding **zero** `naip` rows | 1 |
+| Measured on the 30 | 423 S2 deletions, 6 additions, 100 % landing at 12 |
+
+## A1 — Every parcel lands at 12, and the fleet ends at 2,208
+
+`current_year − 2014` = 12, one row per calendar year 2015–2026, zero
+duplicate years, on all 154. Fleet-wide afterwards: **184 × 12 = 2,208**
+S2 rows.
+
+Falsified by any parcel above 12, or any parcel holding two rows in one
+calendar year. A parcel **below** 12 is the P6 measurement, not a
+falsification — see A5.
+
+## A2 — S2 churn: ~1,788 deleted, ~31 added
+
+| quantity | point estimate | confirmed if within |
+|---|---|---|
+| S2 rows deleted | **~1,788** | 1,700 – 1,900 |
+| S2 rows added | **~31** | 10 – 80 |
+| S2 rows after, these 154 | **1,848** (exact, if A1 holds) | 1,848 |
+
+Arithmetic, and it is an identity rather than a rate: `deletions =
+3,605 − 1,848 + additions`. Additions are taken at the measured rate from
+the 30 — 6/30 = 0.2 per parcel — giving `154 × 0.2 ≈ 31` and deletions
+`1,757 + 31 = 1,788`.
+
+**Deviation from the brief, stated because it changes the number.** The
+prompt calibrated deletions as `154 × (423/30) ≈ 2,170`. That applies the
+swept 30's deletion *rate* to a population with a different starting
+count: those 30 averaged **25.9** S2 rows each, the remaining 154 average
+**23.4**. The rate is not transferable; the identity is. ~2,170 was P3's
+estimate for all **184** parcels, and 423 of it has already been spent —
+`2,174 − 423 ≈ 1,751` reaches the same place from the other direction.
+
+The additions band is wide for the same reason P3's was: additions depend
+on how long ago each parcel was last swept, and the 154 were last touched
+across a range of dates.
+
+## A3 — Landsat conserved at 43, open-year swaps only
+
+153 of the 154 hold exactly 43 Landsat rows and are predicted to hold
+exactly 43 afterwards. Any deletion in a **closed** year (≤ 2025) falsifies
+this and means the change leaked outside S2 — the serious outcome P4 was
+written to catch. One-for-one replacements inside 2026 are expected and do
+not falsify it: two occurred on the 30, both trading down on cloud cover.
+
+**`bd70afa6` is the exception and the one to watch.** It holds 34 Landsat
+rows and 5 S2 rows — the fleet minimum on both. It is predicted **not to
+lose** rows. Whether it *gains* is genuinely unknown and either outcome is
+informative: if its missing years were transient search failures they will
+fill, and if they are real absences they will not. No prediction is made
+either way, deliberately.
+
+## A4 — NAIP zero, topo backfill confined to the 23
+
+**NAIP: exactly 0 rows created and 0 deleted.** This was confirmed exactly
+on the 30 and is the cleanest zero available.
+
+**Topo: additions only, and only onto parcels that hold none.** Exactly
+**23** of the 154 currently hold zero `usgs_topo` rows; the sweep is
+predicted to add rows to some subset of those 23 and to **no parcel
+outside them**, and to delete zero topo rows fleet-wide. On the 30, all 31
+topo additions landed on the 4 parcels that held zero.
+
+Falsified by a topo row appearing on any parcel that already had one, or
+by any topo deletion. If fewer than 23 gain rows that is not a
+falsification — a parcel with no covering quad gains nothing.
+
+## A5 — What the deficit measurement will find
+
+P6 is answerable per parcel as `12 − actual`. On the 30 the deficit was
+**zero everywhere**. The prediction for the 154, deliberately soft: **most
+land at 12, and the below-12 population — if any — is `bd70afa6` and the
+coastal / boundary-adjacent parcels P6 named.** Recorded so the eventual
+measurement can contradict it.
+
+## A6 — Carried over unchanged, now scorable
+
+These are the original P5 and the featured-page expectations, restated
+without amendment because the completion sweep is the first run that
+reaches the parcels they name:
+
+- **G2 / Rodanthe (`cf46ed63`).** Exactly one 2015 S2 row afterwards,
+  dated **2015-10-21** (1.01 % cloud); the 25.04 % `S2A…20150726…` granule
+  deleted. Its 34 rows collapse to 12; 2017's four rows collapse to one.
+  Falsified if any other 2015 row survives or the card still shows July
+  2015.
+- **G3 / Green Valley Ranch (`2a4ca7b9`).** Exactly one 2026 row, P5's
+  pick being **2026-08-20** at 0.00 % — an insert. Its four 2026 rows
+  (03-08, 03-26, 06-29, 07-11) all go. Falsified by more than one 2026 row
+  afterwards.
+- **All six featured parcels** end at exactly 12 S2 cards, from 16, 16,
+  22, 23, 34 and 23 today, with no duplicate calendar year on any of them.
+  This is the user-visible half of the change and none of it has shipped.
+
+## A7 — The sweep completes, and says so
+
+New, because it is what `d6b21b3` exists to make true: **the run reaches
+all 154 parcels and exits 0.** `AdmissionRefused` is expected — the cap is
+30, the worker drains ~2 parcels per 27 s, so the sweep should spend most
+of its wall time waiting — and the log should carry repeated `Waiting for
+an admission slot` at `depth=30, cap=30`. At the 2026-08-25 drain rate,
+154 parcels is roughly 35 minutes, inside the 60-minute default.
+
+Falsified by a non-zero exit, by any `unreached:` line, or by a
+traceback. If the wait budget is exhausted, the run is expected to name
+every parcel it did not reach and exit 1 — which is a *pass* for the
+script and a deferral for the sweep, and the two should not be scored as
+one thing.
