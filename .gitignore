@@ -73,3 +73,7 @@ backend/static_data/*
 !backend/static_data/featured/
 backend/static_data/featured/*
 !backend/static_data/featured/*.jpg
+
+# WSL writes an NTFS alternate-data-stream sidecar next to any file downloaded
+# through Windows ("[ZoneTransfer] ZoneId=3"). Pure artifact, no content.
+*:Zone.Identifier
