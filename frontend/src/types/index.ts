@@ -65,6 +65,8 @@ export interface TimelineRequestTask {
   source: string;
   status: "queued" | "processing" | "complete" | "failed" | "skipped";
   items_found: number;
+  started_at: string | null;
+  completed_at: string | null;
   error_message: string | null;
 }
 
@@ -152,7 +154,7 @@ export interface PropertyEventsResponse {
   parcel_id: string;
   county: string | null;
   supported: boolean;
-  supported_counties?: string[];
+  supported_counties: string[];
   events: PropertyEvent[];
   summary: EventsSummary;
 }

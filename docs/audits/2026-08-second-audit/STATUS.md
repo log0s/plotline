@@ -719,13 +719,84 @@ never by editing the prediction.
   because that is what the decennial tables return. When H1 is fixed the
   assertion starts passing and `it.fails` reports it as a **failure** — that is
   the signal to delete `.fails`, not to weaken the assertion.
-- **`TimelineRequestTask` (frontend) omits `started_at` and `completed_at`,**
-  which `backend/app/schemas/imagery.py:23-24` declares and the API returns on
-  every task. Found by assigning the raw captured payloads to their declared
-  types under `tsc`, which rejects them. Unfixed as of the commit carrying this
-  note, and deliberately not fixed in isolation: the same check should be run
-  across *every* fixture against *every* type first, since one drift found by
-  accident implies others nobody has looked for.
+- **Frontend/backend schema drift was measured across the whole surface, and
+  it is two fields.** The `TimelineRequestTask` omission found earlier was not
+  the tip of a pattern; it was very nearly all of it. The sweep diffed all 19
+  backend `BaseModel` classes against all 16 frontend interfaces, field by
+  field, and assigned every captured fixture to its declared type under `tsc`.
+  Result across ~102 declared fields and 16 type pairs: **two** backend-declared
+  fields missing from the frontend (`started_at`, `completed_at` on
+  `TimelineRequestTask`, from `schemas/imagery.py:23-24`), **one** optionality
+  mismatch (`supported_counties`), and **zero** frontend-only fields, zero
+  renamed-in-transit fields, zero type mismatches. Both are fixed in the commit
+  carrying this note: the timestamps land as `string | null` rather than `?`
+  because no route sets `exclude_none`/`exclude_unset`/`exclude_defaults`
+  (grepped: zero hits in `app/api/` and `app/main.py`) so the keys are always
+  present and may be null; `supported_counties` becomes required because
+  `api/v1/events.py` always populates it from
+  `get_supported_county_display_names()`.
+- **No backend finding: the API returns exactly its own contract.** Every
+  captured fixture's key set equals its Pydantic schema's key set exactly, top
+  level and nested, in both directions, across all 12 fixtures. Nothing escapes
+  the response model.
+- **What the contract test locks, and what it does not.**
+  `src/test/types.contract.test.ts` gates on `npm run typecheck`, not `npm
+  test` — Vitest strips types without checking them, so the suite passing
+  proves nothing; `tsc --noEmit` is the gate, and `npm run build` already runs
+  it. It **locks** 6 endpoints: `POST /geocode`, `GET
+  /parcels/{id}/demographics`, `GET /parcels/{id}/events`, `GET
+  /timeline-requests/{id}`, `GET /parcels/{id}/imagery`, and `GET /featured` —
+  and through the last two, the `ImagerySnapshot` and `FeaturedLocation`
+  element types. It does **not** cover
+  `GET /parcels/{id}` (`ParcelResponse`), `GET /geocode/autocomplete`
+  (`AutocompleteSuggestion`), `POST /parcels/{id}/timeline`, or `GET /health`
+  (`HealthResponse`, `VersionInfo` — the frontend never calls it). Those four
+  are held only by the hand diff above, which is the same process that produced
+  the drift in the first place.
+- **The contract test is structurally blind to optional-vs-required, and
+  `supported_counties` is the proof.** All three events fixtures carried the
+  field; the frontend declared it `supported_counties?: string[]`; an optional
+  property accepts a present value, so `tsc` said nothing. The evidence was
+  sitting in the fixtures the whole time and no amount of running the check
+  would have surfaced it. Only the hand diff against the Pydantic schema found
+  it. **A green contract test means no missing, extra, or mistyped field — it
+  does not mean the optionality is right.** Anything that becomes optional on
+  the frontend has to be justified against the backend schema by hand.
+- **The check needs two mechanisms, because plain assignment is half-blind.**
+  TypeScript's excess-property check fires only on object *literals*; the
+  fixtures are imported consts, so `const x: T = fixture` silently accepts a
+  payload carrying fields `T` never declared — which is exactly how the
+  original drift survived. The test therefore pairs an assignability check
+  (via a homomorphic `Mutable<T>` that strips `as const` while keeping
+  `bbox`'s 4-tuple from decaying to `number[]`) with a recursive `ExtraKeys`
+  walker. Both directions were confirmed by deliberate breakage and restored.
+- **`PropertyEventType` declares two members no backend path can produce.**
+  `zoning_change` and `assessment` have no producer: `classify_permit`
+  (`services/county_adapters.py:861-890`) emits six `permit_*` values and the
+  adapters emit `"sale"` directly — seven in total against the union's nine.
+  Both are *read* (`constants.ts:70,75`; `Timeline.tsx:87-88` groups them under
+  the "Other" filter), so they are unreachable branches rather than dead code.
+  Left in place deliberately: pruning them is a product decision about future
+  event types, not a drift fix. Recorded here so nobody re-derives it. No union
+  is too *narrow* — every value the backend can emit is representable, checked
+  for `ImagerySnapshot.source`, both `status` unions, and `dataset`.
+- **`imagery-stapleton.ts` carries the one sanctioned fixture edit, and it is
+  mechanical.** This contradicts the "never hand-edit a captured fixture" rule
+  three bullets up, so it is written down rather than left for someone to
+  discover. 20 of its 70 snapshots (`naip`, `sentinel2`) had `cog_url` values
+  signed at response time with Azure SAS tokens; everything through the `?` is
+  verbatim and the query string is replaced with the literal `<SAS-REDACTED>`.
+  The tokens were read-only delegated SAS for Planetary Computer's *public*
+  containers with a ~25h expiry — anyone can mint one anonymously — so nothing
+  of value was removed, but a signature parameter does not belong in git
+  history and would be stale within a day regardless. `cog_url` is `string` on
+  both sides, so the redaction cannot affect what the fixture measures. The
+  rule it bends is still the right rule: the edit is uniform, applied by
+  pattern rather than by hand to individual values, and stated in the fixture's
+  own header. **A per-value edit would not be acceptable on the same reasoning.**
+  Note also that `additional_cog_urls` is null on all 70 rows, so the NAIP
+  mosaic branch is declared but unexercised, and every nullable field on
+  `FeaturedLocation` is non-null across all 6 rows in `featured-list.ts`.
 - **Recharts leaves a text-measurement span on `document.body`, and it
   survives `cleanup()`.** It holds the last string Recharts measured, so a
   bare `getByText("2023")` on a chart test matches twice — once in the real
