@@ -81,7 +81,7 @@ an explicit deferral, both recorded below — never an unfinished edit.
 | L5 Geocoder county fallback | Resolved (3269bbf) | Fallback removed on both paths; `scripts/heal_county_fallback.py` clears rows already carrying one. Dev had zero. |
 | L6 TNM caps and ids | Partially resolved (ffb71b2, c82ed51) | Products with no `sourceId` are skipped instead of colliding on `stac_item_id=""`. Pagination is still accepted — see below — but the cap is no longer silent: c82ed51 warns when a TNM query returns exactly its cap (T3 below). |
 | L7 `_fetch_source` coordinates | Resolved (ffb71b2) | Defaults removed; two test call sites were relying on them. |
-| L8 Autocomplete self-DoS | Open | `useAddressAutocomplete.ts:12` (150ms); `SearchInput.tsx:35,44,57,112` still clears the input before the geocode resolves. |
+| L8 Autocomplete self-DoS | Open | `useAddressAutocomplete.ts:12` (150ms); `SearchInput.tsx:35,44,57,112` still clears the input before the geocode resolves. Regression tests in place, `SearchInput.test.tsx`, expected to fail until fixed — three `it.fails` tests plus two guards; see the harness note below for what a gating CI does to the fix commit. Detail: `docs/audits/2026-08-frontend-tests/05-l8-clear-before-resolve-report.md`. |
 | L9 Tile-proxy input | Resolved (ffb71b2) | `z` capped at 0–24; `x`/`y` given one generous static bound, since anything inside it but outside the COG extent already returns a transparent tile. |
 | L10 Raw error strings | Open | `schemas/imagery.py:25,38`; `timeline.py:198,402,650`. *2026-08-22: the log half the security audit reopened (SEC-4/SEC-7) is resolved in `52b0223` — `app/redact.py` at the log pipeline and the task-row sinks; the client-facing accept stands.* |
 | L11 Prefork engine | Resolved (dd99cee) | `worker_process_init` → `engine.dispose(close=False)`. |
@@ -712,16 +712,33 @@ never by editing the prediction.
   Unrelated to M4: no new occurrence data came out of the triage.
 - **A frontend test harness exists as of 1a8bb3c (2026-08-24).** Vitest +
   @testing-library/react + jsdom, run with `npm test` in `frontend/`; the
-  suite is 9 tests across `HousingChart`, `DemographicsPanel`, `ParcelInfo`
-  and `useAddressAutocomplete`. CI runs it as the `test-frontend` job behind a
-  `frontend/**` path filter, deliberately **non-blocking**: `continue-on-error`
-  is set *and* no deploy job lists it in `needs`, so it cannot gate a release
-  from either direction. **Make it blocking once the L8 clear-before-resolve
-  test lands, or on 2026-09-30, whichever comes first** — remove
-  `continue-on-error` and add `test-frontend` to the deploy jobs' `needs`.
-  Note the frontend deploys through Cloudflare Pages, outside
-  `deploy.yml` entirely, so blocking this job constrains nothing until that
-  changes. Fixtures under `frontend/src/test/fixtures/` are real captured API
+  suite is 15 tests across `HousingChart`, `DemographicsPanel`, `ParcelInfo`,
+  `useAddressAutocomplete`, `SearchInput` and the types contract test. CI runs
+  it as the `test-frontend` job behind a `frontend/**` path filter,
+  deliberately **non-blocking**: `continue-on-error` is set *and* no deploy job
+  lists it in `needs`, so it cannot gate a release from either direction.
+  **The L8 clear-before-resolve test has now landed** (the commit carrying this
+  note), so the first of the two triggers is met; the 2026-09-30 backstop
+  stands. Making it blocking means removing `continue-on-error` and adding
+  `test-frontend` to the deploy jobs' `needs` — but note the frontend deploys
+  through Cloudflare Pages, outside `deploy.yml` entirely, so **that change
+  alone still constrains nothing.** Two options actually close it: run
+  `npm ci && npm test` inside the Pages build command (cheap, but the gate
+  lives in dashboard config, invisible to review), or move the Pages deploy
+  into a `deploy-frontend` job behind `needs: [changes, test-frontend]` and
+  disconnect the Pages GitHub integration (the gate lives in the repo, at the
+  cost of re-creating preview deploys and adding a Pages API token).
+  Option 2 is the recommendation; report `05-…` in
+  `docs/audits/2026-08-frontend-tests/` has the full trade-off.
+- **A gating CI will block L8's own fix, and that is intended.** Vitest counts
+  an `it.fails` test whose body throws as a *pass* — the suite is green and
+  exits 0 today with four such tests in it (H1's decennial half, and L8's
+  three). When the underlying bug is fixed, those tests report "Expect test to
+  fail" and the run exits non-zero. So once `test-frontend` is blocking, the
+  commit that fixes L8 fails CI until the same commit removes the `.fails`
+  markers and converts the tests into ordinary regression guards. Written down
+  because a fixer who does not know this reads a red CI on a correct fix as a
+  broken test. Fixtures under `frontend/src/test/fixtures/` are real captured API
   payloads with provenance headers (endpoint, parcel, capture date, backend
   SHA), never objects built from the TypeScript types — DEVELOPMENT.md records
   what hand-built input cost the backend suite.
@@ -743,7 +760,8 @@ never by editing the prediction.
   payload it describes. **Never hand-edit a field inside a captured fixture** —
   a fixture with one edited value is a hand-built fixture wearing a provenance
   header, which is worse than an obviously synthetic one.
-- **One frontend test is expected to fail, on purpose.**
+- **Four frontend tests are expected to fail, on purpose** (one for H1, three
+  for L8 — see the L8 row and the gating note above).
   `HousingChart.test.tsx` asserts via `it.fails` that a decennial year with a
   housing-unit total appears in the chart. It does not — that is H1's open
   decennial half. The captured Stapleton fixture shows the real shape: 2010 and

@@ -1,8 +1,9 @@
 # Frontend test harness and schema-drift pass — 2026-08-24
 
-Four reports, produced in order over one day. They are **frozen records**:
-copied verbatim from the working reports, never edited. Annotate with dated
-additions if they need correction; do not rewrite them.
+Five reports. The first four were produced in order over one day; the fifth
+(L8) followed. They are **frozen records**: copied verbatim from the working
+reports, never edited. Annotate with dated additions if they need correction;
+do not rewrite them.
 
 The living ledger for everything here is
 [`../2026-08-second-audit/STATUS.md`](../2026-08-second-audit/STATUS.md). These
@@ -17,11 +18,12 @@ first for what is true now, and come here for how it was established.
 | `7a273fd` | `test(frontend): cover H1, M11 and the autocomplete debounce` |
 | `b4c3a2b` | `fix(test): correct a fixture pairing that never existed, record the harness` |
 | `6629db1` | `fix(frontend): close the measured schema drift, lock it with a test` |
-| *(this commit)* | creates this directory; adds the `/featured` placeholder entry to STATUS.md |
+| `3c60133` | `docs: archive the frontend-test pass, record the /featured fallback` — created this directory; added the `/featured` placeholder entry to STATUS.md |
+| *(this commit)* | `test(frontend): pin the L8 clear-before-resolve race` — adds report `05-…`, `SearchInput.test.tsx`, two captured error fixtures |
 
-All four verified as ancestors of HEAD at the time this was written. This
-commit cannot cite its own hash; find it with
-`git log --diff-filter=A -- docs/audits/2026-08-frontend-tests/README.md`.
+All five earlier commits verified as ancestors of HEAD at the time each line
+was written. A commit cannot cite its own hash; find this one with
+`git log --diff-filter=A -- docs/audits/2026-08-frontend-tests/05-l8-clear-before-resolve-report.md`.
 
 `256ed32` (2026-08-03, "treat a county-portal outage as a failed property
 task") is referenced throughout as the M11 fix the tests were written against.
@@ -35,8 +37,9 @@ It predates this pass.
 | [`02-fixture-ledger-timestamp-report.md`](02-fixture-ledger-timestamp-report.md) | Three items: a captured fixture that turned out to describe a state that never existed and its correction; the STATUS.md ledger entries; and a code read of every writer of `timeline_request_tasks.status`/`error_message` against an anomalous row. Commit `b4c3a2b`. |
 | [`03-schema-drift-phase1-report.md`](03-schema-drift-phase1-report.md) | Measure-only pass: every fixture assigned to its frontend type under `tsc`, every Pydantic response schema diffed against its TypeScript counterpart, the reconciliation of the two, and a fix-policy recommendation. No code changed. |
 | [`04-schema-drift-phase2-report.md`](04-schema-drift-phase2-report.md) | The fix, the contract test and its delete-and-confirm outcomes, two new captured fixtures, measured coverage, and an assessment of whether the codebase would survive a switch to `openapi-typescript`. Commit `6629db1`. |
+| [`05-l8-clear-before-resolve-report.md`](05-l8-clear-before-resolve-report.md) | L8's second half: the traced submit→settle sequence, why the clear fires no empty-string autocomplete, the three user-visible outcomes, two captured error bodies (422 and a genuine 502), five tests of which three are `it.fails`, the discarded fix sketch, and the two options for making the frontend suite actually gate a Cloudflare Pages deploy. L8 remains Open. |
 
-Reports 01 and 02 are plain ASCII; 03 and 04 are UTF-8. All four were checked
+Reports 01 and 02 are plain ASCII; 03, 04 and 05 are UTF-8. All were checked
 for CP437 artefacts when copied here — zero found.
 
 ## What landed in STATUS.md
@@ -65,3 +68,11 @@ Under **To investigate**:
   (from `02-…`)
 - `/featured` failure rendering as a healthy landing page (added by this
   commit; M11's shape on the flagship page, unfixed by instruction)
+
+From `05-…` (this commit), under the **L8** row and the harness note:
+
+- L8 stays Open, with regression tests in place and expected to fail until fixed
+- that a gating CI will block L8's *own* fix until the `.fails` markers are
+  removed, and that this is intended
+- the two options for making the frontend suite gate a Pages deploy, and why
+  blocking `test-frontend` in `deploy.yml` alone constrains nothing
