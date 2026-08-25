@@ -590,6 +590,10 @@ def _capture_date(value: object) -> date | None:
 # same way the selector did — see reconcile_source_snapshots.
 SELECTION_SCOPES: dict[str, Callable[[date], tuple[int, ...]]] = {
     "year": lambda d: (d.year,),
+    # Unused since 2026-08-25: Sentinel-2 was the only caller and now
+    # groups by year. Kept because the shape is right for any future
+    # sub-annual source, and because deleting it would make the reason
+    # S2 moved harder to find, not easier.
     "quarter": lambda d: (d.year, (d.month - 1) // 3 + 1),
     "decade": lambda d: ((d.year // 10) * 10,),
 }
@@ -614,8 +618,8 @@ def reconcile_source_snapshots(
     ``scope`` must name the unit the source's selector groups by, because
     deletion is confined to the groups this run actually selected:
 
-        year     select_naip_items, select_landsat_items
-        quarter  select_sentinel_items
+        year     select_naip_items, select_landsat_items,
+                 select_sentinel_items
         decade   select_topo_items
 
     Get this wrong in one direction and superseded rows survive (a topo

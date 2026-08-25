@@ -674,9 +674,42 @@ def test_reconcile_year_scope_would_miss_a_cross_year_topo_replacement(db: Sessi
     assert len(_item_ids(db, parcel_id, "usgs_topo")) == 2
 
 
-def test_reconcile_quarter_scope_keeps_other_quarters_of_the_year(db: Session) -> None:
-    """Sentinel-2 selects per quarter, so a Q3 replacement must not delete
-    the Q1 row that this run also selected — or the ones it didn't."""
+def test_reconcile_sentinel_year_scope_collapses_the_whole_year(db: Session) -> None:
+    """Sentinel-2 selects per year, so one pick supersedes every row of it.
+
+    Delete-the-fix guard for the reconciliation half: under the old
+    ``scope="quarter"`` the February row sat in a group this run never
+    selected and survived — which is how Green Valley Ranch came to hold
+    two rows for one quarter and four for one year (G3).
+    """
+    from app.services.imagery import reconcile_source_snapshots
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    _persist(db, parcel_id, "sentinel2", "S2_2020Q1", "2020-02-10")
+    _persist(db, parcel_id, "sentinel2", "S2_2020Q3_old", "2020-08-10")
+    _persist(db, parcel_id, "sentinel2", "S2_2020Q3_new", "2020-09-02")
+    _persist(db, parcel_id, "sentinel2", "S2_2021", "2021-09-02")
+
+    deleted = reconcile_source_snapshots(
+        db,
+        parcel_id,
+        "sentinel2",
+        [("S2_2020Q3_new", date(2020, 9, 2))],
+        scope="year",
+    )
+
+    assert deleted == 2
+    assert _item_ids(db, parcel_id, "sentinel2") == {"S2_2020Q3_new", "S2_2021"}
+
+
+def test_reconcile_quarter_scope_still_buckets_by_quarter(db: Session) -> None:
+    """``SELECTION_SCOPES["quarter"]`` has no caller since S2 moved to year.
+
+    Kept as a pin on the lambda itself so a future sub-annual source
+    inherits a bucket rule that is known to work, not one that rotted
+    unobserved.
+    """
     from app.services.imagery import reconcile_source_snapshots
 
     parcel_id = uuid.uuid4()

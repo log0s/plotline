@@ -81,7 +81,11 @@ _SOURCES: list[dict[str, Any]] = [
         "max_items_per_year": 20,
         "query": {"eo:cloud_cover": {"lt": 40}},
         "selector": stac_service.select_sentinel_items,
-        "selection_scope": "quarter",
+        # Year, not quarter, since 2026-08-25: the 20-item cap below plus
+        # PC's newest-first ordering makes Q1/Q2 unreachable on any year
+        # that saturates it, so an absent quarter never meant anything.
+        # See select_sentinel_items for the measurement.
+        "selection_scope": "year",
         "resolution_m": 10.0,
         "chunk_by_year": True,
         "use_viewport_filter": False,
@@ -338,9 +342,9 @@ async def _search_and_persist_source(
         selected_groups = source_cfg["selector"](raw_items)
 
     # Validate asset accessibility — older Landsat scenes (1984–1990s) can
-    # have broken assets that cause tile-serving 502s, and an S2 quarter can
+    # have broken assets that cause tile-serving 502s, and an S2 year can
     # land on an unservable granule the same way.  Drop bad items and swap in
-    # the next-best candidate from the same year (Landsat) or quarter (S2).
+    # the next-best candidate from the same year.
     if collection == "landsat-c2-l2":
         selected_groups = await stac_service.validate_landsat_selection(
             selected_groups,

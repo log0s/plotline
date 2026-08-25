@@ -134,18 +134,46 @@ def test_select_landsat_picks_lowest_cloud_cover() -> None:
 # ── Sentinel-2 item selection ─────────────────────────────────────────────────
 
 
-def test_select_sentinel_one_per_quarter() -> None:
-    """select_sentinel_items returns one group per calendar quarter."""
+def test_select_sentinel_one_per_year() -> None:
+    """select_sentinel_items returns one group per calendar year.
+
+    Delete-the-fix guard: all four items sit in 2020, in three different
+    quarters. Under the old quarter key this returned 3 groups.
+    """
     items = [
         _make_item("2020-01-10T00:00:00Z", cloud_cover=10.0),
-        _make_item("2020-02-20T00:00:00Z", cloud_cover=5.0),  # Q1 — should win
-        _make_item("2020-04-05T00:00:00Z", cloud_cover=8.0),  # Q2
-        _make_item("2020-07-15T00:00:00Z", cloud_cover=15.0),  # Q3
+        _make_item("2020-02-20T00:00:00Z", cloud_cover=5.0),  # lowest cloud — wins
+        _make_item("2020-04-05T00:00:00Z", cloud_cover=8.0),
+        _make_item("2020-07-15T00:00:00Z", cloud_cover=15.0),
     ]
     groups = select_sentinel_items(items)
-    assert len(groups) == 3
-    for g in groups:
-        assert len(g) == 1
+    assert len(groups) == 1
+    assert len(groups[0]) == 1
+    assert groups[0][0]["properties"]["eo:cloud_cover"] == 5.0
+
+
+def test_select_sentinel_picks_best_cloud_across_quarters() -> None:
+    """Two scenes, same year, different quarters — only one survives.
+
+    The tightest form of the guard: reverting to the quarter key returns
+    two groups here, not one.
+    """
+    items = [
+        _make_item("2021-08-14T00:00:00Z", cloud_cover=22.0),  # Q3
+        _make_item("2021-11-02T00:00:00Z", cloud_cover=1.5),  # Q4 — wins
+    ]
+    groups = select_sentinel_items(items)
+    assert [g[0]["properties"]["datetime"] for g in groups] == ["2021-11-02T00:00:00Z"]
+
+
+def test_select_sentinel_separates_years() -> None:
+    """Year grouping still keeps distinct years apart."""
+    items = [
+        _make_item("2020-11-02T00:00:00Z", cloud_cover=9.0),
+        _make_item("2021-11-02T00:00:00Z", cloud_cover=3.0),
+    ]
+    groups = select_sentinel_items(items)
+    assert len(groups) == 2
 
 
 # ── _is_cog_asset guard ────────────────────────────────────────────────────────
@@ -874,7 +902,7 @@ def _s2_item(item_id: str, dt: str, cloud: float) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_validate_sentinel_selection_swaps_same_quarter_fallback() -> None:
+async def test_validate_sentinel_selection_swaps_same_year_fallback() -> None:
     from app.services.stac import validate_sentinel_selection
 
     bad = _s2_item("bad", "2020-07-01T00:00:00Z", 5.0)
@@ -890,8 +918,14 @@ async def test_validate_sentinel_selection_swaps_same_quarter_fallback() -> None
 
 
 @pytest.mark.asyncio
-async def test_validate_sentinel_selection_ignores_other_quarters() -> None:
-    """The fallback walk is scoped to the quarter S2 selects on, not the year."""
+async def test_validate_sentinel_selection_reaches_across_quarters() -> None:
+    """The fallback walk is scoped to the year S2 selects on.
+
+    Delete-the-fix guard for the validator half: under the old quarter key
+    this Q4 candidate was invisible to a failed Q3 pick and the group was
+    dropped. That is the shape of G2 — Rodanthe kept a non-covering July
+    granule while its servable October sibling sat in the next quarter.
+    """
     from app.services.stac import validate_sentinel_selection
 
     bad = _s2_item("bad", "2020-07-01T00:00:00Z", 5.0)
@@ -903,11 +937,28 @@ async def test_validate_sentinel_selection_ignores_other_quarters() -> None:
     with patch("app.services.stac.validate_sentinel_item", side_effect=mock_validate):
         result = await validate_sentinel_selection([[bad]], [bad, other_quarter])
 
+    assert [g[0]["id"] for g in result] == ["q4"]
+
+
+@pytest.mark.asyncio
+async def test_validate_sentinel_selection_ignores_other_years() -> None:
+    """The walk stops at the year boundary — a 2021 scene cannot rescue 2020."""
+    from app.services.stac import validate_sentinel_selection
+
+    bad = _s2_item("bad", "2020-07-01T00:00:00Z", 5.0)
+    other_year = _s2_item("y2021", "2021-11-01T00:00:00Z", 1.0)
+
+    async def mock_validate(item):
+        return item["id"] != "bad"
+
+    with patch("app.services.stac.validate_sentinel_item", side_effect=mock_validate):
+        result = await validate_sentinel_selection([[bad]], [bad, other_year])
+
     assert result == []
 
 
 @pytest.mark.asyncio
-async def test_validate_sentinel_selection_drops_quarter_with_no_valid() -> None:
+async def test_validate_sentinel_selection_drops_year_with_no_valid() -> None:
     from app.services.stac import validate_sentinel_selection
 
     bad = _s2_item("bad", "2020-07-01T00:00:00Z", 5.0)

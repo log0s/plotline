@@ -928,20 +928,30 @@ def select_landsat_items(items: list[dict[str, object]]) -> list[list[dict[str, 
 
 
 def select_sentinel_items(items: list[dict[str, object]]) -> list[list[dict[str, object]]]:
-    """One Sentinel-2 item per calendar quarter — lowest cloud cover.
+    """One Sentinel-2 item per calendar year — lowest cloud cover.
+
+    Keyed by year, not quarter, since 2026-08-25. The quarter key made an
+    absent group carry no information: the year-chunked search caps at 20
+    items (timeline.py) and Planetary Computer returns them newest-first,
+    so on any parcel-year that saturates the cap the pool starts at late
+    December and stops in Q3 or Q4 — Q1 and Q2 are unreachable whatever
+    the sky did. Measured over 5 parcels x 12 years: of 118 empty quarter
+    groups, 0 were cloud-filtered, 10 were pre-launch (2015 H1), and 108
+    had qualifying scenes the pipeline could never see. A year, by
+    contrast, is dense everywhere — every parcel-year 2016-2026 in that
+    sample offered 13-297 scenes under the 40% threshold — so an absent
+    year is a real failure signal.
 
     Returns single-item groups for shape consistency with NAIP multi-tile
     groups.
     """
-    by_quarter: dict[tuple[int, int], list[dict[str, object]]] = defaultdict(list)
+    by_year: dict[int, list[dict[str, object]]] = defaultdict(list)
     for item in items:
         if not _has_capture_date(item):
             continue
-        d = _capture_date(item)
-        quarter = (d.year, (d.month - 1) // 3 + 1)
-        by_quarter[quarter].append(item)
+        by_year[_capture_date(item).year].append(item)
 
-    selected = [min(q_items, key=_cloud_cover) for q_items in by_quarter.values()]
+    selected = [min(year_items, key=_cloud_cover) for year_items in by_year.values()]
     selected.sort(key=_capture_date)
     return [[i] for i in selected]
 
@@ -1110,8 +1120,8 @@ async def _validate_selection(
     by cloud cover) until a valid one is found.  Periods with no valid
     candidate are dropped entirely — better a gap than a 502.
 
-    ``period`` is whatever grouping the source selects on: the year for
-    Landsat, the calendar quarter for Sentinel-2, matching their selectors.
+    ``period`` is whatever grouping the source selects on: the calendar
+    year for both Landsat and Sentinel-2, matching their selectors.
     """
     by_period: dict[object, list[dict[str, object]]] = defaultdict(list)
     for item in raw_items:
@@ -1188,18 +1198,21 @@ async def validate_sentinel_selection(
     selected_groups: list[list[dict[str, object]]],
     raw_items: list[dict[str, object]],
 ) -> list[list[dict[str, object]]]:
-    """Validate selected Sentinel-2 items and swap in same-quarter fallbacks.
+    """Validate selected Sentinel-2 items and swap in same-year fallbacks.
 
-    The twin of ``validate_landsat_selection``. S2 had no validation pass at
-    all, so a quarter whose lowest-cloud granule is unservable was persisted
-    anyway and became a broken tile, where the same failure on Landsat costs
-    at worst a gap. Same walk, same cloud ranking, grouped by the quarter S2
-    selects on rather than the year.
+    The twin of ``validate_landsat_selection``, and now literally so: S2 had
+    no validation pass at all, so a group whose lowest-cloud granule was
+    unservable was persisted anyway and became a broken tile, where the same
+    failure on Landsat costs at worst a gap. The period must be the one
+    ``select_sentinel_items`` groups on, which is the calendar year since
+    2026-08-25 — under the old quarter key the fallback walk could not reach
+    a servable granule three weeks away in the next quarter, which is how
+    Rodanthe 2015 kept a non-covering scene (G2).
     """
     return await _validate_selection(
         selected_groups,
         raw_items,
-        period=lambda d: (d.year, (d.month - 1) // 3 + 1),
+        period=lambda d: d.year,
         validate=validate_sentinel_item,
         source="Sentinel-2",
     )

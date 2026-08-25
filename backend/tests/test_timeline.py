@@ -1282,3 +1282,55 @@ async def test_fetch_usgs_topo_skips_products_with_unparseable_date(
     assert mock_upsert.call_args.kwargs["stac_item_id"] == "SRC-GOOD"
     assert mock_upsert.call_args.kwargs["capture_date"] == date(1965, 1, 1)
     assert "Skipping topo product with unparseable publicationDate" in caplog.text
+
+
+# ── Selection scope agrees with the selector ─────────────────────────────────
+
+
+def test_every_stac_source_scope_matches_its_selector() -> None:
+    """``selection_scope`` must name the unit the source's selector groups by.
+
+    Delete-the-fix guard for the config half of the S2 year move: a scope
+    that disagrees with its selector is the one way reconciliation can
+    delete rows the selector never reconsidered, or spare rows it did.
+    The check is behavioural — it runs each selector over two scenes one
+    quarter apart in the same year and asserts the scope's bucket agrees
+    about whether they belong together.
+    """
+    from datetime import date as _date
+
+    from app.services.imagery import SELECTION_SCOPES
+    from app.tasks.timeline import _SOURCES
+
+    early, late = _date(2021, 8, 14), _date(2021, 11, 2)
+
+    def _item(d: _date, cloud: float) -> dict[str, object]:
+        return {
+            "id": f"item-{d}",
+            "properties": {"datetime": f"{d}T00:00:00Z", "eo:cloud_cover": cloud},
+            "geometry": None,
+        }
+
+    for cfg in _SOURCES:
+        scope = cfg["selection_scope"]
+        assert scope in SELECTION_SCOPES, cfg["source"]
+        bucket = SELECTION_SCOPES[scope]
+        same_bucket = bucket(early) == bucket(late)
+
+        if cfg.get("use_viewport_filter"):
+            continue  # NAIP's selector takes a viewport; year is pinned elsewhere
+
+        groups = cfg["selector"]([_item(early, 22.0), _item(late, 1.5)])
+        assert (len(groups) == 1) is same_bucket, (
+            f"{cfg['source']}: selector produced {len(groups)} group(s) for two "
+            f"scenes one quarter apart, but scope {scope!r} says same_bucket="
+            f"{same_bucket}"
+        )
+
+
+def test_sentinel2_selection_scope_is_year() -> None:
+    """Pinned by name as well as by behaviour — the value reconciliation reads."""
+    from app.tasks.timeline import _SOURCES
+
+    s2 = next(c for c in _SOURCES if c["source"] == "sentinel2")
+    assert s2["selection_scope"] == "year"
