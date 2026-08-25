@@ -163,6 +163,14 @@ clean at `--max-warnings 0`, prettier clean.
   security audit's REMEDIATION-1 recorded the same phantom path as a deviation
   on 2026-08-22. The claim is carried unsourced rather than linked to a path
   that does not resolve.)
+
+  **Later (2026-08-24, the commit adding this annotation):** the report landed
+  in `a7a09f0` as `docs/research/SOURCELANDSCAPE202608.md` and the citation now
+  resolves — [§5.5](../../research/SOURCELANDSCAPE202608.md#5-retrieval-pattern-findings-q7--the-rate-limit-gap), item 5 of "Retrieval-pattern findings", which quotes
+  komoot's README (*"Extensive usage will be throttled or completely banned"*)
+  and names L8's debounce as multiplying exactly that traffic. The §5.5 form is
+  the document's own numbering for items inside §5, not a heading; the link
+  anchors on §5's heading, which is the finest-grained anchor the file has.
 - **The 429, 503 and client-timeout paths remain undistinguished from 422/502
   in the UI**, as §10 of the 05 report noted. Still an observation, still not
   filed.

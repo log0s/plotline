@@ -10,6 +10,13 @@ Deviations from the brief, up front:
 - `claude/SOURCE-LANDSCAPE-2026-08.md` (named for the topo host) does not exist
   in this checkout; the allowlist is derived from the live query alone (§4),
   which the brief asked for anyway.
+
+  > **Later (2026-08-24, `a7a09f0`):** the report was committed to
+  > [`docs/research/SOURCELANDSCAPE202608.md`](../../research/SOURCELANDSCAPE202608.md)
+  > and the citation now resolves. §0.1 names the topo host this deviation was
+  > about. The deviation stands as written — the file genuinely was absent on
+  > 2026-08-22, and §4's allowlist still rests on the live query, not on this
+  > document.
 - B3 produced a script but **no dry-run match count beyond the candidate set**:
   the evidence predicate needs Photon, and the brief forbids running it. What
   a dry run prints is the 71 candidates (§2 SEC-5).
