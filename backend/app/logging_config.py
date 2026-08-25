@@ -17,10 +17,18 @@ from app.redact import redact_event_dict
 
 
 def configure_logging(
-    settings: Settings, *, renderer: structlog.types.Processor | None = None
+    settings: Settings,
+    *,
+    renderer: structlog.types.Processor | None = None,
+    level: int | None = None,
 ) -> None:
-    """Set up structlog + stdlib logging integration."""
-    log_level = getattr(logging, settings.log_level, logging.INFO)
+    """Set up structlog + stdlib logging integration.
+
+    ``level`` overrides ``settings.log_level`` when given — used by
+    ``configure_script_logging()`` so a script's verbosity does not depend
+    on ``LOG_LEVEL``.
+    """
+    log_level = level if level is not None else getattr(logging, settings.log_level, logging.INFO)
 
     shared_processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
@@ -96,8 +104,15 @@ def configure_script_logging(settings: Settings | None = None) -> None:
     a production script run would otherwise render JSON at a human.
     Colours only when that stdout is a terminal, so a redirected run does
     not fill a file with escape codes.
+
+    Level is forced to INFO regardless of ``LOG_LEVEL``: an operator running
+    a heal script wants admission waits and progress visible even when the
+    deployed environment's aggregator is tuned to WARNING. Root handler is
+    rebuilt on every call, so a script that calls this more than once still
+    ends up bound to the current ``sys.stdout``.
     """
     configure_logging(
         settings or get_settings(),
         renderer=structlog.dev.ConsoleRenderer(colors=sys.stdout.isatty()),
+        level=logging.INFO,
     )

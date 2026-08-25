@@ -108,6 +108,30 @@ def test_admission_wait_reaches_stdout_with_depth_and_cap(
     assert "cap" in out
 
 
+def test_script_logging_is_info_regardless_of_log_level(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    restore_logging: None,
+) -> None:
+    """A production-tuned LOG_LEVEL must not silence a script's INFO lines."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("LOG_LEVEL", "WARNING")
+
+    from app.logging_config import configure_script_logging
+
+    settings = Settings(  # type: ignore[call-arg]  # the rest come from the test env
+        database_url="postgresql://t:t@localhost/t",
+        app_env="production",
+        log_level="WARNING",
+    )
+    configure_script_logging(settings)
+
+    logger = logging.getLogger("test_script_logging")
+    logger.info("heal_script_started")
+
+    assert "heal_script_started" in capsys.readouterr().out
+
+
 class _NullSession:
     def __enter__(self) -> _NullSession:
         return self

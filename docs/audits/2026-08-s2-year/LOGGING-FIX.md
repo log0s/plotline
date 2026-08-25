@@ -227,3 +227,42 @@ query would have been needed to tell absence from loss.
   same key `validate_sentinel_selection` groups on since `6489018`. A row
   whose `capture_date` disagrees with its STAC item's datetime would be
   miscounted; no such disagreement was checked for.
+
+## 6. Addendum, 2026-08-25 — the instrument was inert under CI
+
+`b05458b`'s fix passed locally and **failed in CI**:
+`test_admission_wait_reaches_stdout_with_depth_and_cap` — captured stdout
+had the script's `print()` output but none of the `logger.info` lines.
+Reproduced with `env -i` alone (no ordering dependence, `-p no:randomly`
+both ways): the failure is present in *any* environment lacking a
+pre-existing `LOG_LEVEL`, including a fresh shell — the "passed locally"
+state depended on whatever `LOG_LEVEL` happened to already be exported.
+
+**Candidate ruled in: Level.** `tests/conftest.py:29` does
+`os.environ.setdefault("LOG_LEVEL", "WARNING")` so CI (and any clean
+environment) runs the suite with `LOG_LEVEL=WARNING`. `configure_logging()`
+(`app/logging_config.py:19-30`) derives its root level from
+`settings.log_level`, and `configure_script_logging()` passed that straight
+through — so the root logger sat at WARNING and every `logger.info` call in
+`wait_for_admission_slot` was dropped before formatting, identical in
+mechanism to the defect `b05458b` itself fixed, just one layer up.
+Candidates (b) stale stream and (c) stderr fallback were both ruled out:
+`configure_logging()` rebuilds `root_logger.handlers` fresh on every call
+(no idempotency guard to go stale), and the handler is bound to
+`sys.stdout` unconditionally regardless of tty state.
+
+**Fix:** `configure_logging()` gained an optional `level: int | None`
+override (`app/logging_config.py:19-30`); `configure_script_logging()`
+now passes `level=logging.INFO` explicitly
+(`app/logging_config.py:100-116`), so a script's verbosity no longer reads
+`LOG_LEVEL` at all. `configure_logging()`'s own default behaviour, and
+therefore the API/worker's, is unchanged — the parameter is `None` unless
+a caller opts in.
+
+**Tests:** `test_script_logging_is_info_regardless_of_log_level` added —
+sets `APP_ENV=production`, `LOG_LEVEL=WARNING`, calls
+`configure_script_logging()`, asserts an INFO line reaches captured
+stdout. Delete-the-fix: reverting the `level=logging.INFO` argument fails
+both this test and the original admission-wait test. Full suite (488
+tests, 2 new) run three ways — normal shell, `env -i`, and `env -i` with
+`-p no:randomly` — all green.
