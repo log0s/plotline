@@ -11,6 +11,7 @@ test databases.
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -25,7 +26,12 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models.parcels import Parcel, TimelineRequest, TimelineRequestTask
 from app.redact import redact
-from app.services.admission import AdmissionRefused, ensure_admission
+from app.services.admission import (
+    WAIT_POLL_SECONDS,
+    AdmissionRefused,
+    ensure_admission,
+    wait_for_admission_slot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +132,45 @@ def _create_queued_request(
         extra={"parcel_id": str(parcel_id), "request_id": str(request.id)},
     )
     return request, True
+
+
+def create_queued_request_waiting(
+    db: Session,
+    parcel_id: uuid.UUID,
+    *,
+    deadline: float,
+    poll_seconds: float = WAIT_POLL_SECONDS,
+    sleeper: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> tuple[TimelineRequest, bool]:
+    """``_create_queued_request`` for batch callers: wait out a full queue.
+
+    Same return contract, same ``IntegrityError`` behaviour. The difference
+    is that ``queue_full`` becomes a wait rather than a raise, until
+    ``deadline`` (a ``clock()`` value) passes — at which point the original
+    ``AdmissionRefused`` is raised so the caller can report the parcel as
+    unreached. ``kill_switch`` is never waited out and raises immediately.
+
+    A sweep that raises here abandons every parcel behind the refusal, which
+    is how the 2026-08-25 S2-year sweep reached 30 of 184 parcels
+    (``docs/audits/2026-08-s2-year/HEAL-SCORECARD.md`` §2).
+    """
+    while True:
+        try:
+            return _create_queued_request(db, parcel_id)
+        except AdmissionRefused as exc:
+            if exc.reason != "queue_full":
+                raise
+            opened = wait_for_admission_slot(
+                db,
+                get_settings(),
+                deadline=deadline,
+                poll_seconds=poll_seconds,
+                sleeper=sleeper,
+                clock=clock,
+            )
+            if not opened:
+                raise
 
 
 def get_or_create_timeline_request(

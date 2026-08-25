@@ -10,6 +10,17 @@ again, while an outage victim picks up its records.
 Only parcels in counties with an adapter are considered, and only the
 parcel's most recent timeline request is inspected.
 
+Admission
+---------
+A full in-flight queue (``max_inflight_timeline_requests``, 30) is a wait,
+not a failure: the script polls the same count ``ensure_admission`` gates
+on until a slot opens, and gives up only when ``--max-wait-minutes``
+(default 60) is spent — then it names the parcels it never reached and
+exits non-zero. Catching only ``IntegrityError`` here is what made the
+2026-08-25 S2-year sweep abandon 154 of 184 parcels
+(``docs/audits/2026-08-s2-year/ADMISSION-FIX.md``). The kill switch is
+never waited out.
+
 Usage (worker must be running):
     docker compose exec api python scripts/requeue_empty_property.py --dry-run
     docker compose exec api python scripts/requeue_empty_property.py
@@ -19,6 +30,8 @@ Usage (worker must be running):
 from __future__ import annotations
 
 import argparse
+import sys
+import time
 import uuid
 
 from sqlalchemy import func, select
@@ -27,6 +40,7 @@ from sqlalchemy.exc import IntegrityError
 from app.db import SessionLocal
 from app.models.parcels import Parcel, TimelineRequest, TimelineRequestTask
 from app.services import imagery as imagery_service
+from app.services.admission import AdmissionRefused
 from app.services.county_adapters import get_adapter_for_county
 
 
@@ -92,7 +106,17 @@ def main() -> None:
         type=int,
         help="Stop after queuing this many requests",
     )
+    parser.add_argument(
+        "--max-wait-minutes",
+        type=float,
+        default=60.0,
+        help="Total time to spend waiting for admission slots before giving "
+        "up and reporting the parcels not reached (default: 60)",
+    )
     args = parser.parse_args()
+
+    if args.max_wait_minutes < 0:
+        parser.error("--max-wait-minutes cannot be negative")
 
     candidates = find_candidates(args.county)
     if not candidates:
@@ -106,15 +130,23 @@ def main() -> None:
             print(f"  would re-queue: {parcel_id} ({county})")
         return
 
+    deadline = time.monotonic() + args.max_wait_minutes * 60
     queued = 0
     skipped = 0
-    for parcel_id, county in candidates:
+    unreached: list[uuid.UUID] = []
+    for index, (parcel_id, county) in enumerate(candidates):
         if args.limit is not None and queued >= args.limit:
             break
 
         with SessionLocal() as db:
             try:
-                request, created = imagery_service._create_queued_request(db, parcel_id)
+                request, created = imagery_service.create_queued_request_waiting(
+                    db, parcel_id, deadline=deadline
+                )
+            except AdmissionRefused as exc:
+                unreached = [pid for pid, _ in candidates[index:]]
+                print(f"  stopping at {parcel_id} — admission refused ({exc.reason})")
+                break
             except IntegrityError:
                 skipped += 1
                 print(f"  skipped {parcel_id} ({county}) — could not create request")
@@ -134,6 +166,16 @@ def main() -> None:
         print(f"  queued {request.id} for parcel {parcel_id} ({county})")
 
     print(f"\nDone — queued {queued} timeline request(s), skipped {skipped}.")
+
+    if unreached:
+        print(
+            f"\n{len(unreached)} parcel(s) NOT reached — the wait budget "
+            f"({args.max_wait_minutes} min) ran out:",
+            file=sys.stderr,
+        )
+        for pid in unreached:
+            print(f"  unreached: {pid}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

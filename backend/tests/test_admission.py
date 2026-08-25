@@ -240,3 +240,148 @@ def test_autocomplete_fails_open_when_redis_is_down(client: TestClient) -> None:
         resp = _limited_client(client).get("/api/v1/geocode/autocomplete?q=1600+Penn")
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+# ── Batch callers wait out a full queue ───────────────────────────────────────
+#
+# Delete-the-fix: remove the ``except AdmissionRefused`` branch in
+# ``create_queued_request_waiting`` (or point the scripts back at
+# ``_create_queued_request``) and
+# ``test_waiting_create_retries_after_a_refusal`` fails with the refusal that
+# stopped the 2026-08-25 sweep at 30 of 184 parcels.
+
+
+def _drain(db: Session) -> None:
+    from sqlalchemy import text
+
+    db.execute(text("UPDATE timeline_requests SET status = 'complete'"))
+    db.commit()
+
+
+def test_wait_returns_once_a_slot_opens(db: Session) -> None:
+    from app.services.admission import wait_for_admission_slot
+
+    settings = _settings(max_inflight_timeline_requests=1)
+    _fill_queue(db, 1)
+    naps: list[float] = []
+
+    def sleeper(seconds: float) -> None:
+        naps.append(seconds)
+        _drain(db)
+
+    opened = wait_for_admission_slot(
+        db, settings, deadline=100.0, poll_seconds=5.0, sleeper=sleeper, clock=lambda: 0.0
+    )
+
+    assert opened is True
+    assert naps == [5.0]
+
+
+def test_wait_gives_up_when_the_budget_runs_out(db: Session) -> None:
+    from app.services.admission import wait_for_admission_slot
+
+    settings = _settings(max_inflight_timeline_requests=1)
+    _fill_queue(db, 1)
+    ticks = iter([0.0, 10.0, 20.0])
+    naps: list[float] = []
+
+    opened = wait_for_admission_slot(
+        db,
+        settings,
+        deadline=15.0,
+        poll_seconds=5.0,
+        sleeper=naps.append,
+        clock=lambda: next(ticks),
+    )
+
+    assert opened is False
+    # Two naps inside the budget (clock 0 and 10 against a deadline of 15),
+    # then the third check finds the budget spent and refuses.
+    assert naps == [5.0, 5.0]
+
+
+def test_wait_does_not_ride_out_the_kill_switch(db: Session) -> None:
+    from app.services.admission import wait_for_admission_slot
+
+    settings = _settings(max_inflight_timeline_requests=1, accept_new_parcels=False)
+    _fill_queue(db, 1)
+    naps: list[float] = []
+
+    opened = wait_for_admission_slot(
+        db, settings, deadline=1e9, poll_seconds=5.0, sleeper=naps.append, clock=lambda: 0.0
+    )
+
+    assert opened is False
+    assert naps == []
+
+
+def test_waiting_create_retries_after_a_refusal(db: Session) -> None:
+    """The fix, end to end: a full queue costs a wait, not the rest of the batch."""
+    from app.services import imagery as imagery_service
+
+    settings = _settings(max_inflight_timeline_requests=1)
+    _fill_queue(db, 1)
+    target = uuid.uuid4()
+    _insert_parcel(db, target)
+    naps: list[float] = []
+
+    def sleeper(seconds: float) -> None:
+        naps.append(seconds)
+        _drain(db)
+
+    with patch("app.services.imagery.get_settings", return_value=settings):
+        request, created = imagery_service.create_queued_request_waiting(
+            db,
+            target,
+            deadline=100.0,
+            poll_seconds=1.0,
+            sleeper=sleeper,
+            clock=lambda: 0.0,
+        )
+
+    assert created is True
+    assert request.parcel_id == target
+    assert naps == [1.0], "the refusal must cost exactly one wait, not an abort"
+
+
+def test_waiting_create_raises_once_the_budget_is_spent(db: Session) -> None:
+    from app.services import imagery as imagery_service
+
+    settings = _settings(max_inflight_timeline_requests=1)
+    _fill_queue(db, 1)
+    target = uuid.uuid4()
+    _insert_parcel(db, target)
+
+    with (
+        patch("app.services.imagery.get_settings", return_value=settings),
+        pytest.raises(AdmissionRefused) as exc_info,
+    ):
+        imagery_service.create_queued_request_waiting(
+            db,
+            target,
+            deadline=-1.0,
+            sleeper=lambda _: None,
+            clock=lambda: 0.0,
+        )
+
+    assert exc_info.value.reason == "queue_full"
+
+
+def test_waiting_create_does_not_wait_out_the_kill_switch(db: Session) -> None:
+    from app.services import imagery as imagery_service
+
+    settings = _settings(accept_new_parcels=False)
+    target = uuid.uuid4()
+    _insert_parcel(db, target)
+    naps: list[float] = []
+
+    with (
+        patch("app.services.imagery.get_settings", return_value=settings),
+        pytest.raises(AdmissionRefused) as exc_info,
+    ):
+        imagery_service.create_queued_request_waiting(
+            db, target, deadline=1e9, sleeper=naps.append, clock=lambda: 0.0
+        )
+
+    assert exc_info.value.reason == "kill_switch"
+    assert naps == []

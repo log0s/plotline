@@ -18,6 +18,8 @@ complete request before creating one.
 from __future__ import annotations
 
 import logging
+import time
+from collections.abc import Callable
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -71,6 +73,74 @@ def ensure_admission(db: Session, settings: Settings, *, what: str) -> None:
             },
         )
         raise AdmissionRefused("queue_full", depth=depth)
+
+
+WAIT_POLL_SECONDS = 5.0
+
+
+def wait_for_admission_slot(
+    db: Session,
+    settings: Settings,
+    *,
+    deadline: float,
+    poll_seconds: float = WAIT_POLL_SECONDS,
+    sleeper: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> bool:
+    """Block until the in-flight queue has room. ``True`` if a slot opened.
+
+    For batch callers only. A refusal on the request path is an answer to a
+    user and must stay immediate; a refusal inside a sweep is a rate limit
+    the sweep should ride out, because the alternative — what
+    ``revalidate_landsat.py`` did on 2026-08-25 — is a batch that abandons
+    every parcel it has not reached yet.
+
+    Depth comes from ``inflight_depth``, the same query ``ensure_admission``
+    gates on, so the wait and the gate cannot disagree about what "full"
+    means.
+
+    ``deadline`` is a ``clock()`` value, not a duration. The kill switch is
+    not waited out — it is off by operator intent, and no amount of waiting
+    changes it.
+    """
+    while True:
+        if not settings.accept_new_parcels:
+            logger.warning(
+                "Admission wait abandoned — kill switch is on",
+                extra={"reason": "kill_switch"},
+            )
+            return False
+
+        # Re-read, not re-use: the slot this waits for opens when the
+        # *worker* commits, in another process. Seeing that from inside an
+        # already-open transaction is a READ COMMITTED property, which is
+        # Postgres's default and what production runs. Under REPEATABLE
+        # READ this loop would never see the drain and would spend its
+        # whole budget — start a fresh session per poll if that ever
+        # changes.
+        depth = inflight_depth(db)
+        cap = settings.max_inflight_timeline_requests
+        if depth < cap:
+            return True
+
+        remaining = deadline - clock()
+        if remaining <= 0:
+            logger.warning(
+                "Admission wait budget exhausted",
+                extra={"reason": "queue_full", "depth": depth, "cap": cap},
+            )
+            return False
+
+        logger.info(
+            "Waiting for an admission slot",
+            extra={
+                "depth": depth,
+                "cap": cap,
+                "poll_seconds": poll_seconds,
+                "wait_remaining_s": round(remaining, 1),
+            },
+        )
+        sleeper(min(poll_seconds, remaining))
 
 
 REFUSED_DETAIL = (

@@ -3,6 +3,10 @@
 The script lives outside the backend package, so it is loaded by path.
 Every test exercises ``_check_deploy_gate`` directly: the gate runs before
 any database access, so nothing here needs a session.
+
+The health fetch moved to ``app.services.deploy``; these patch ``httpx.get``
+on the module itself, which both that module and this script resolve
+through, so the gate's behaviour is still what is under test.
 """
 
 from __future__ import annotations
@@ -59,17 +63,17 @@ def no_http(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         calls.append(url)
         raise AssertionError(f"unexpected health request to {url}")
 
-    monkeypatch.setattr(script.httpx, "get", _get)
+    monkeypatch.setattr(httpx, "get", _get)
     return calls
 
 
 def test_matching_sha_passes(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(script.httpx, "get", lambda *a, **k: _health("abc123def456"))
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _health("abc123def456"))
     script._check_deploy_gate("http://api:8000", "abc123", skip=False)
 
 
 def test_mismatched_sha_refuses(monkeypatch: pytest.MonkeyPatch, capsys: Any) -> None:
-    monkeypatch.setattr(script.httpx, "get", lambda *a, **k: _health("abc123def456"))
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _health("abc123def456"))
     with pytest.raises(SystemExit) as exc:
         script._check_deploy_gate("http://api:8000", "999999", skip=False)
     assert exc.value.code == 1
@@ -82,7 +86,7 @@ def test_unreachable_health_refuses(monkeypatch: pytest.MonkeyPatch, capsys: Any
     def _boom(*a: Any, **k: Any) -> _Response:
         raise httpx.ConnectError("connection refused")
 
-    monkeypatch.setattr(script.httpx, "get", _boom)
+    monkeypatch.setattr(httpx, "get", _boom)
     with pytest.raises(SystemExit) as exc:
         script._check_deploy_gate("http://api:8000", "abc123", skip=False)
     assert exc.value.code == 1
@@ -90,7 +94,7 @@ def test_unreachable_health_refuses(monkeypatch: pytest.MonkeyPatch, capsys: Any
 
 
 def test_unknown_sha_refuses(monkeypatch: pytest.MonkeyPatch, capsys: Any) -> None:
-    monkeypatch.setattr(script.httpx, "get", lambda *a, **k: _health("unknown"))
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _health("unknown"))
     with pytest.raises(SystemExit) as exc:
         script._check_deploy_gate("http://api:8000", "abc123", skip=False)
     assert exc.value.code == 1
@@ -104,7 +108,7 @@ def test_skip_deploy_check_proceeds_without_calling_health(no_http: list[str]) -
 
 def test_gate_runs_for_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
     """--dry-run still reports whether the real run would be allowed."""
-    monkeypatch.setattr(script.httpx, "get", lambda *a, **k: _health("abc123def456"))
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _health("abc123def456"))
     monkeypatch.setattr(
         sys, "argv", ["requeue_parcels.py", "--dry-run", "--require-sha", "999999", "not-a-uuid"]
     )

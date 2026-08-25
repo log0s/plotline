@@ -12,6 +12,17 @@ need a new heuristic each time.
 Parcels with a request already in flight are skipped and logged; the batch
 continues, so re-running is safe.
 
+Admission
+---------
+A full in-flight queue (``max_inflight_timeline_requests``, 30) is a wait,
+not a failure: the script polls the same count ``ensure_admission`` gates
+on until a slot opens, and gives up only when ``--max-wait-minutes``
+(default 60) is spent — then it names the parcels it never reached and
+exits non-zero. Catching only ``IntegrityError`` here is what made the
+2026-08-25 S2-year sweep abandon 154 of 184 parcels
+(``docs/audits/2026-08-s2-year/ADMISSION-FIX.md``). The kill switch is
+never waited out.
+
 Deployment gate
 ---------------
 Re-queuing re-runs scene selection against whatever code the worker is
@@ -74,10 +85,10 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 import uuid
 from typing import NoReturn
 
-import httpx
 import structlog
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -86,6 +97,8 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.models.parcels import Parcel
 from app.services import imagery as imagery_service
+from app.services.admission import AdmissionRefused
+from app.services.deploy import fetch_deployed_version
 
 logger = structlog.get_logger(__name__)
 
@@ -99,26 +112,11 @@ def _fetch_deployed_sha(api_url: str) -> str:
     """Return ``version.sha`` from the running API's health endpoint.
 
     Raises ``RuntimeError`` with an operator-readable message on anything
-    that leaves the SHA unknown.
+    that leaves the SHA unknown. The fetch itself lives in
+    ``app.services.deploy`` so this gate and ``revalidate_landsat.py``'s
+    ``--skip-swept-since`` read the same endpoint the same way.
     """
-    url = f"{api_url.rstrip('/')}/api/v1/health"
-    try:
-        response = httpx.get(url, timeout=10.0)
-    except httpx.RequestError as exc:
-        raise RuntimeError(f"could not reach {url}: {exc}") from exc
-
-    # 503 means a dependency is degraded; the body still carries the version.
-    if response.status_code not in (200, 503):
-        raise RuntimeError(f"{url} returned HTTP {response.status_code}")
-
-    try:
-        sha = response.json()["version"]["sha"]
-    except (ValueError, KeyError, TypeError) as exc:
-        raise RuntimeError(f"{url} returned no version.sha field: {exc}") from exc
-
-    if not isinstance(sha, str) or not sha or sha == "unknown":
-        raise RuntimeError(f"{url} reports version.sha as {sha!r}")
-    return sha
+    return fetch_deployed_version(api_url).sha
 
 
 def _refuse(deployed: str, required: str) -> NoReturn:
@@ -211,7 +209,17 @@ def main() -> None:
         help="Re-queue without verifying the deployed SHA (logs a warning); "
         "mutually exclusive with --require-sha",
     )
+    parser.add_argument(
+        "--max-wait-minutes",
+        type=float,
+        default=60.0,
+        help="Total time to spend waiting for admission slots before giving "
+        "up and reporting the parcels not reached (default: 60)",
+    )
     args = parser.parse_args()
+
+    if args.max_wait_minutes < 0:
+        parser.error("--max-wait-minutes cannot be negative")
 
     _check_deploy_gate(args.api_url, args.require_sha, args.skip_deploy_check)
 
@@ -237,12 +245,23 @@ def main() -> None:
             print(f"  would re-queue: {pid}")
         return
 
+    deadline = time.monotonic() + args.max_wait_minutes * 60
     queued = 0
     skipped = len(unknown)
-    for parcel_id in targets:
+    unreached: list[uuid.UUID] = []
+    for index, parcel_id in enumerate(targets):
         with SessionLocal() as db:
             try:
-                request, created = imagery_service._create_queued_request(db, parcel_id)
+                request, created = imagery_service.create_queued_request_waiting(
+                    db, parcel_id, deadline=deadline
+                )
+            except AdmissionRefused as exc:
+                # Even a hand-written list of ids is worth waiting out: the
+                # operator picked these parcels, and dropping the tail on a
+                # transient full queue is how a heal silently half-runs.
+                unreached = list(targets[index:])
+                print(f"  stopping at {parcel_id} — admission refused ({exc.reason})")
+                break
             except IntegrityError:
                 skipped += 1
                 print(f"  skipped {parcel_id} — could not create request")
@@ -262,6 +281,16 @@ def main() -> None:
         print(f"  queued {request.id} for parcel {parcel_id}")
 
     print(f"\nDone — queued {queued} timeline request(s), skipped {skipped}.")
+
+    if unreached:
+        print(
+            f"\n{len(unreached)} parcel(s) NOT reached — the wait budget "
+            f"({args.max_wait_minutes} min) ran out:",
+            file=sys.stderr,
+        )
+        for pid in unreached:
+            print(f"  unreached: {pid}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
