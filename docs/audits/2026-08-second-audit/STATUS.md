@@ -714,31 +714,36 @@ never by editing the prediction.
   @testing-library/react + jsdom, run with `npm test` in `frontend/`; the
   suite is 15 tests across `HousingChart`, `DemographicsPanel`, `ParcelInfo`,
   `useAddressAutocomplete`, `SearchInput` and the types contract test. CI runs
-  it as the `test-frontend` job behind a `frontend/**` path filter,
-  deliberately **non-blocking**: `continue-on-error` is set *and* no deploy job
-  lists it in `needs`, so it cannot gate a release from either direction.
-  **The L8 clear-before-resolve test has now landed** (the commit carrying this
-  note), so the first of the two triggers is met; the 2026-09-30 backstop
-  stands. Making it blocking means removing `continue-on-error` and adding
-  `test-frontend` to the deploy jobs' `needs` — but note the frontend deploys
-  through Cloudflare Pages, outside `deploy.yml` entirely, so **that change
-  alone still constrains nothing.** Two options actually close it: run
-  `npm ci && npm test` inside the Pages build command (cheap, but the gate
-  lives in dashboard config, invisible to review), or move the Pages deploy
-  into a `deploy-frontend` job behind `needs: [changes, test-frontend]` and
-  disconnect the Pages GitHub integration (the gate lives in the repo, at the
-  cost of re-creating preview deploys and adding a Pages API token).
-  Option 2 is the recommendation; report `05-…` in
-  `docs/audits/2026-08-frontend-tests/` has the full trade-off.
+  it as the `test-frontend` job behind a `frontend/**` path filter.
+  **Blocking as a signal from the commit carrying this note**
+  (`continue-on-error` removed): a red run is visible on the PR and has to be
+  dealt with. The L8 clear-before-resolve tests landing in `07b55e0` met the
+  first of the two old triggers, so **the 2026-09-30 backstop is retired** — it
+  has been acted on.
+  **This gates no deploy, by design.** The job is deliberately absent from
+  every deploy job's `needs`, because the frontend ships through the Cloudflare
+  Pages GitHub integration, which watches the repo directly and never reads an
+  Actions result — adding it to `needs` would change what a red run looks like
+  without stopping a byte from reaching production. A real gate is **deferred
+  to its own pass**: move the Pages deploy into a `deploy-frontend` job behind
+  `needs: [changes, test-frontend]` driven by `wrangler pages deploy`, and
+  disconnect the Pages GitHub integration. That pass has to re-create preview
+  deploys and add a Pages API token, which is why it is not this one. The
+  rejected cheaper alternative — `npm ci && npm test` inside the Pages build
+  command — puts the gate in dashboard config where no review sees it. Full
+  trade-off in report `05-…` under `docs/audits/2026-08-frontend-tests/`.
 - **A gating CI will block L8's own fix, and that is intended.** Vitest counts
   an `it.fails` test whose body throws as a *pass* — the suite is green and
   exits 0 today with four such tests in it (H1's decennial half, and L8's
   three). When the underlying bug is fixed, those tests report "Expect test to
-  fail" and the run exits non-zero. So once `test-frontend` is blocking, the
-  commit that fixes L8 fails CI until the same commit removes the `.fails`
-  markers and converts the tests into ordinary regression guards. Written down
+  fail" and the run exits non-zero. `test-frontend` is blocking as of the
+  commit carrying this note, so the commit that fixes L8 — or H1's decennial
+  half — turns CI red until the same commit removes the corresponding `.fails`
+  marker and converts the test into an ordinary regression guard. Written down
   because a fixer who does not know this reads a red CI on a correct fix as a
-  broken test. Fixtures under `frontend/src/test/fixtures/` are real captured API
+  broken test. Measured, not assumed: `npm test` exits **0** with all four
+  `it.fails` tests present (15 passed), and **1** when an ordinary assertion is
+  broken. Fixtures under `frontend/src/test/fixtures/` are real captured API
   payloads with provenance headers (endpoint, parcel, capture date, backend
   SHA), never objects built from the TypeScript types — DEVELOPMENT.md records
   what hand-built input cost the backend suite.

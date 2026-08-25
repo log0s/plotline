@@ -70,17 +70,27 @@ jobs:
           uv sync --locked --extra dev
           uv run --no-sync pytest -v
 
-  # Non-blocking by design for now. The suite is brand new and deliberately
-  # contains one test expected to fail (H1's decennial half, via it.fails), and
-  # the frontend deploys through Cloudflare Pages outside this workflow anyway.
-  # continue-on-error keeps the run green while the harness earns trust; drop it
-  # — and add this job to the deploy jobs' needs — once coverage is broad enough
-  # to be worth gating on.
+  # Blocking as a signal: a red run is visible on the PR and must be dealt
+  # with. It still gates no deploy — the frontend ships through the Cloudflare
+  # Pages GitHub integration, which watches the repo directly and never reads
+  # an Actions result — so this job is deliberately absent from every deploy
+  # job's needs. A real gate (a wrangler-driven Pages deploy behind this job)
+  # is deferred to its own pass.
+  #
+  # The suite deliberately contains four tests expected to fail, via it.fails:
+  # H1's decennial half in HousingChart.test.tsx, and three for L8's
+  # clear-before-resolve race in SearchInput.test.tsx. Vitest counts an
+  # it.fails test whose body throws as a pass, so the suite exits 0 with all
+  # four present. When one of those bugs is fixed the assertion starts
+  # passing, it.fails reports it as a failure, and this job goes red — the
+  # fixing commit must remove the corresponding .fails marker and turn the
+  # test into an ordinary regression guard. That is intended, not a broken
+  # test. See the frontend-harness note in
+  # docs/audits/2026-08-second-audit/STATUS.md.
   test-frontend:
     needs: changes
     if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0

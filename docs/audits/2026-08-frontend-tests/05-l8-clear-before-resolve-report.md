@@ -278,3 +278,11 @@ on a correct fix as a broken test. It is now in the STATUS.md L8 row.
   report-only on CI, so the workflow file was not touched. The STATUS.md note
   was corrected instead; the comment should be fixed by whoever next edits
   `deploy.yml`.
+
+  **Later (2026-08-24, the commit adding this annotation):** done. The comment
+  was replaced and `continue-on-error` removed, making `test-frontend` blocking
+  as a visible PR signal. It still gates no deploy and was deliberately not
+  added to any deploy job's `needs` — the Pages gate described in §9 as
+  Option 2 remains deferred to its own pass. Measured in that commit:
+  `npm test` exits 0 with the four `it.fails` tests present, 1 with an ordinary
+  assertion broken.
