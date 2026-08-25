@@ -27,7 +27,7 @@ geocoder-guard work — and none had.
 |---|---|---|---|
 | High (6) | 6 | 0 | 0 |
 | Medium (12) | 4 | 4 | 4 |
-| Low (12) | 6 | 2 | 4 |
+| Low (12) | 6 | 3 | 3 |
 
 "Partially resolved" here always means the remainder is an explicit accept or
 an explicit deferral, both recorded below — never an unfinished edit.
@@ -81,7 +81,7 @@ an explicit deferral, both recorded below — never an unfinished edit.
 | L5 Geocoder county fallback | Resolved (3269bbf) | Fallback removed on both paths; `scripts/heal_county_fallback.py` clears rows already carrying one. Dev had zero. |
 | L6 TNM caps and ids | Partially resolved (ffb71b2, c82ed51) | Products with no `sourceId` are skipped instead of colliding on `stac_item_id=""`. Pagination is still accepted — see below — but the cap is no longer silent: c82ed51 warns when a TNM query returns exactly its cap (T3 below). |
 | L7 `_fetch_source` coordinates | Resolved (ffb71b2) | Defaults removed; two test call sites were relying on them. |
-| L8 Autocomplete self-DoS | Open | `useAddressAutocomplete.ts:12` (150ms); `SearchInput.tsx:35,44,57,112` still clears the input before the geocode resolves. Regression tests in place, `SearchInput.test.tsx`, expected to fail until fixed — three `it.fails` tests plus two guards; see the harness note below for what a gating CI does to the fix commit. Detail: `docs/audits/2026-08-frontend-tests/05-l8-clear-before-resolve-report.md`. |
+| L8 Autocomplete self-DoS | Partially resolved (the commit carrying this note) | **Clear-before-resolve half: resolved.** `SearchInput.tsx` now defers the clear behind the promise `ParcelInfo` returns from `mutateAsync` (`clearOnSettle`, all four former `setValue("")` sites), so a 422 or 502 leaves the typed address in the box — re-enabled, error underneath — and only success clears it. The three `it.fails` markers in `SearchInput.test.tsx` are gone; those tests are ordinary guards now (5 tests, all green). `SearchBar.tsx` was checked for the same shape and is **not affected, guarded by test**: it sets `value` to the selected address or leaves it alone and never calls `setValue("")`, and `SearchBar.test.tsx` now pins that through the real `useGeocodeMutation` on both captured error fixtures. **Autocomplete half: still open** — `useAddressAutocomplete.ts:12` is still a 150ms debounce against the 60/min/IP limit, and 429s are still swallowed to `[]`. That remainder is a policy-risk item, not only a robustness one: komoot's published posture for Photon is throttle-then-ban for heavy users, and per [N4](../2026-08-source-inventory/INVENTORY.md#n4-photon-failure-returns-an-empty-suggestion-list) a throttled or banned Photon is indistinguishable in our UI from an address with no matches, so we would not see it happen. *(The brief also cited `docs/claude_SOURCE-LANDSCAPE-2026-08.md` §5.5 for the komoot posture; that file does not exist in this checkout and never has — same phantom reference REMEDIATION-1 recorded as a deviation on 2026-08-22. The claim is carried here unsourced rather than linked to a path that does not resolve.)* Detail: `docs/audits/2026-08-frontend-tests/05-l8-clear-before-resolve-report.md` (trace) and `06-l8-fix-report.md` (fix). |
 | L9 Tile-proxy input | Resolved (ffb71b2) | `z` capped at 0–24; `x`/`y` given one generous static bound, since anything inside it but outside the COG extent already returns a transparent tile. |
 | L10 Raw error strings | Open | `schemas/imagery.py:25,38`; `timeline.py:198,402,650`. *2026-08-22: the log half the security audit reopened (SEC-4/SEC-7) is resolved in `52b0223` — `app/redact.py` at the log pipeline and the task-row sinks; the client-facing accept stands.* |
 | L11 Prefork engine | Resolved (dd99cee) | `worker_process_init` → `engine.dispose(close=False)`. |
@@ -539,7 +539,7 @@ never by editing the prediction.
   vs P1_001N (2020), and an unavailable variable makes the API reject the
   whole request. Worth doing: it would extend the Housing chart from ~2009
   back to 1990.
-- **M7, M8, M5 (autocomplete half), L1, L3, L8, L10 hygiene, L12
+- **M7, M8, M5 (autocomplete half), L1, L3, L8 (autocomplete half), L10 hygiene, L12
   Dockerfile.** Real, and larger than a one-liner or touching shared surface.
   See the second audit's triage for the design decision each one turns on.
 
@@ -712,8 +712,10 @@ never by editing the prediction.
   Unrelated to M4: no new occurrence data came out of the triage.
 - **A frontend test harness exists as of 1a8bb3c (2026-08-24).** Vitest +
   @testing-library/react + jsdom, run with `npm test` in `frontend/`; the
-  suite is 15 tests across `HousingChart`, `DemographicsPanel`, `ParcelInfo`,
-  `useAddressAutocomplete`, `SearchInput` and the types contract test. CI runs
+  suite is 17 tests across `HousingChart`, `DemographicsPanel`, `ParcelInfo`,
+  `useAddressAutocomplete`, `SearchInput`, `SearchBar` and the types contract
+  test (15 at 1a8bb3c; L8's fix converted three `it.fails` into guards and
+  added `SearchBar.test.tsx`). CI runs
   it as the `test-frontend` job behind a `frontend/**` path filter.
   **Blocking as a signal from the commit carrying this note**
   (`continue-on-error` removed): a red run is visible on the PR and has to be
@@ -743,7 +745,13 @@ never by editing the prediction.
   because a fixer who does not know this reads a red CI on a correct fix as a
   broken test. Measured, not assumed: `npm test` exits **0** with all four
   `it.fails` tests present (15 passed), and **1** when an ordinary assertion is
-  broken. Fixtures under `frontend/src/test/fixtures/` are real captured API
+  broken. **Observed, 2026-08-24 — confirmed:** the L8 fix commit removed its
+  three markers in the same batch, exactly as predicted here, and `npm test`
+  exits 0 with 17 passed. The prediction's mechanism was also re-measured
+  against the fix: with `clearOnSettle` reverted to a synchronous clear, the
+  suite reports **3 failed | 2 passed** plus two unhandled rejections, so the
+  three tests do bite on the real defect and the empty rejection handler is
+  load-bearing rather than decorative. Fixtures under `frontend/src/test/fixtures/` are real captured API
   payloads with provenance headers (endpoint, parcel, capture date, backend
   SHA), never objects built from the TypeScript types — DEVELOPMENT.md records
   what hand-built input cost the backend suite.
@@ -765,8 +773,9 @@ never by editing the prediction.
   payload it describes. **Never hand-edit a field inside a captured fixture** —
   a fixture with one edited value is a hand-built fixture wearing a provenance
   header, which is worse than an obviously synthetic one.
-- **Four frontend tests are expected to fail, on purpose** (one for H1, three
-  for L8 — see the L8 row and the gating note above).
+- **One frontend test is expected to fail, on purpose** (H1's decennial half).
+  *Was four until L8's fix; the three L8 markers were removed in the same
+  commit that fixed it — see the L8 row and the gating note above.*
   `HousingChart.test.tsx` asserts via `it.fails` that a decennial year with a
   housing-unit total appears in the chart. It does not — that is H1's open
   decennial half. The captured Stapleton fixture shows the real shape: 2010 and

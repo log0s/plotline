@@ -120,12 +120,13 @@ export function ParcelInfo({
     void navigate("/");
   };
 
+  // mutateAsync, not mutate: SearchInput defers clearing the box until this
+  // promise settles, so a failed geocode leaves the typed address in place.
+  // SearchInput owns the rejection handler (see clearOnSettle there).
   const handleSearch = (
     address: string,
     coords?: { lat: number; lon: number },
-  ) => {
-    geocodeMutation.mutate({ address, navigate, ...coords });
-  };
+  ) => geocodeMutation.mutateAsync({ address, navigate, ...coords });
 
   const tasks = timelineStatus?.tasks ?? [];
   const unavailableSources = tasks.filter(

@@ -33,3 +33,17 @@ if (!window.matchMedia) {
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia;
 }
+
+// framer-motion's whileInView (HowItWorks, FeaturedCards) mounts an
+// IntersectionObserver on layout effect, which jsdom does not implement. The
+// stub never fires, so those sections stay at their initial variant — the
+// elements are in the DOM either way, which is all the queries need.
+class IntersectionObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords() {
+    return [];
+  }
+}
+globalThis.IntersectionObserver ??= IntersectionObserverStub as never;

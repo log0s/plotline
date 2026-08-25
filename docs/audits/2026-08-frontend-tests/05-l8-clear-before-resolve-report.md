@@ -266,9 +266,21 @@ on a correct fix as a broken test. It is now in the STATUS.md L8 row.
 ## 10. What this pass did not do
 
 - **L8 is not fixed.** By instruction. The row stays Open.
+
+  **Later (2026-08-24, `06-l8-fix-report.md`):** fixed, clear-before-resolve
+  half only. The sketch in §8 was followed with one deviation — `clear()` on
+  the autocomplete hook stays synchronous at submit time; only `setValue("")`
+  moved behind the promise. The autocomplete half of L8 (the 150ms debounce,
+  the swallowed 429) is still open.
 - **`SearchBar.tsx`** (the landing-page search) was not examined for the same
   pattern. It is a different component with its own submit path; whether it
   shares the defect is unverified and is not claimed either way here.
+
+  **Later (2026-08-24, `06-l8-fix-report.md`):** examined. It does **not**
+  share the defect — it sets `value` to the selected address (`:76`) or leaves
+  it untouched (`:85,:97,:164`) and never calls `setValue("")`. No fix was
+  needed; `SearchBar.test.tsx` now guards it so the answer is a test rather
+  than a sentence.
 - **The 429, 503 and client-timeout paths** are undistinguished from 422/502 in
   the UI (§4). That is an observation from this trace, not a finding this pass
   was scoped to fix or to file.

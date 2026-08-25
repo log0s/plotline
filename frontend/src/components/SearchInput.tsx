@@ -3,7 +3,10 @@ import { useRef, useState } from "react";
 import { useAddressAutocomplete } from "../hooks/useAddressAutocomplete";
 
 interface SearchInputProps {
-  onSearch: (address: string, coords?: { lat: number; lon: number }) => void;
+  onSearch: (
+    address: string,
+    coords?: { lat: number; lon: number },
+  ) => void | Promise<unknown>;
   isLoading: boolean;
   error: string | null;
   onClearError: () => void;
@@ -29,22 +32,38 @@ export function SearchInput({
   const exactOffset = showExactSearch ? 1 : 0;
   const totalItems = exactOffset + suggestions.length;
 
+  /**
+   * Clear the box only once the geocode has settled. Clearing first wipes the
+   * typed address out from under a rejection, leaving "check the spelling"
+   * pointing at an empty input (L8).
+   *
+   * The rejection handler is empty on purpose. The error is already surfaced
+   * to the user through the `error` prop (ParcelInfo passes the mutation's
+   * error), and this catch is the ONLY thing between mutateAsync's rejection
+   * and an unhandled promise rejection: useGeocodeMutation defines no onError,
+   * and `throwOnError` is set nowhere in the app or the test QueryClient.
+   */
+  const clearOnSettle = (result: void | Promise<unknown>) => {
+    void Promise.resolve(result).then(
+      () => setValue(""),
+      () => {},
+    );
+  };
+
   const handleSelect = (displayName: string, lat: number, lon: number) => {
     const typed = value.trim();
     const address = /^\d+\s/.test(typed) ? typed : displayName;
-    setValue("");
     setShowSuggestions(false);
     clear();
-    onSearch(address, { lat, lon });
+    clearOnSettle(onSearch(address, { lat, lon }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (showExactSearch && highlightIndex === 0) {
-      setValue("");
       clear();
       setShowSuggestions(false);
-      onSearch(typedTrimmed);
+      clearOnSettle(onSearch(typedTrimmed));
       return;
     }
     const si = highlightIndex - exactOffset;
@@ -54,10 +73,9 @@ export function SearchInput({
       return;
     }
     if (typedTrimmed.length >= 5) {
-      setValue("");
       clear();
       setShowSuggestions(false);
-      onSearch(typedTrimmed);
+      clearOnSettle(onSearch(typedTrimmed));
     }
   };
 
@@ -109,10 +127,9 @@ export function SearchInput({
                   type="button"
                   onMouseDown={(e) => {
                     e.preventDefault();
-                    setValue("");
                     clear();
                     setShowSuggestions(false);
-                    onSearch(typedTrimmed);
+                    clearOnSettle(onSearch(typedTrimmed));
                   }}
                   onMouseEnter={() => setHighlightIndex(0)}
                   className={`

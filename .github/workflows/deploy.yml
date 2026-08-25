@@ -77,16 +77,16 @@ jobs:
   # job's needs. A real gate (a wrangler-driven Pages deploy behind this job)
   # is deferred to its own pass.
   #
-  # The suite deliberately contains four tests expected to fail, via it.fails:
-  # H1's decennial half in HousingChart.test.tsx, and three for L8's
-  # clear-before-resolve race in SearchInput.test.tsx. Vitest counts an
-  # it.fails test whose body throws as a pass, so the suite exits 0 with all
-  # four present. When one of those bugs is fixed the assertion starts
-  # passing, it.fails reports it as a failure, and this job goes red — the
-  # fixing commit must remove the corresponding .fails marker and turn the
-  # test into an ordinary regression guard. That is intended, not a broken
-  # test. See the frontend-harness note in
-  # docs/audits/2026-08-second-audit/STATUS.md.
+  # The suite deliberately contains one test expected to fail, via it.fails:
+  # H1's decennial half in HousingChart.test.tsx. (It was four until L8's
+  # clear-before-resolve fix removed the three SearchInput.test.tsx markers in
+  # the same commit that fixed the bug — the mechanism below, working.) Vitest
+  # counts an it.fails test whose body throws as a pass, so the suite exits 0
+  # with it present. When that bug is fixed the assertion starts passing,
+  # it.fails reports it as a failure, and this job goes red — the fixing
+  # commit must remove the marker and turn the test into an ordinary
+  # regression guard. That is intended, not a broken test. See the
+  # frontend-harness note in docs/audits/2026-08-second-audit/STATUS.md.
   test-frontend:
     needs: changes
     if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'

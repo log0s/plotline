@@ -188,6 +188,8 @@ L7. _fetch_source's lat=0.0, lng=0.0 defaults. timeline.py:168-169 — the elif 
 
 L8. Autocomplete self-DoS. useAddressAutocomplete.ts:12 (150ms debounce) vs the 60/min/IP limit — one fast typer refining a search a few times can exhaust the bucket; everyone behind a corporate NAT shares it; 429s are swallowed to [] so suggestions just silently stop. Debounce ≥300ms and surface the degraded state. Related UX bug: SearchInput.tsx clears the input before the geocode resolves, so a 422 leaves the user with an error and an empty box — clear on success only.
 
+**Partially resolved:** the commit carrying this note, 2026-08-24 — the clear-before-resolve half only. `SearchInput.tsx` defers the clear until the geocode settles, so a 422 no longer leaves an error over an empty box; `SearchBar.tsx` was checked and never had the defect (guarded by `SearchBar.test.tsx`). The debounce and the swallowed 429 are untouched and remain open. Detail: `docs/audits/2026-08-frontend-tests/06-l8-fix-report.md`.
+
 L9. Tile-proxy input hygiene. [partially lost — surviving fragment:] z/x/y accept any int (z=50, negatives) and ride to Titiler, which errors into your 502 path; clamp z to 0–24. Snapshot cache: expired entries linger until LRU pressure and _get_cached_snapshot doesn't evict; capped at 500 entries.
 
 L10. Task error_message passes raw exception strings to the client. schemas/imagery.py exposes it; str(httpx.HTTPStatusError) includes full upstream URLs. I traced the Census-key case specifically — the key does not leak (census errors are re-wrapped without the URL) — so this is hygiene, not disclosure: map to curated messages at the boundary.

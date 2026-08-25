@@ -119,15 +119,13 @@ async function flushDebounce() {
   });
 }
 
-// L8 (Open), clear-before-resolve half — SearchInput.tsx:35,44,57,112 call
-// setValue("") synchronously before onSearch, so the typed address is gone
-// before the geocode settles. (a) and (b) are `it.fails`: they assert the
-// target behaviour and are expected to fail until L8 is fixed, at which point
-// they flip to "expected failure did not occur" and must be un-`.fails`ed.
-// (c) and (d) pass today and guard the fix against over-correcting.
+// L8 (Resolved), clear-before-resolve half — SearchInput used to call
+// setValue("") synchronously before onSearch, so the typed address was gone
+// before the geocode settled. The clear now runs in clearOnSettle, behind the
+// promise ParcelInfo returns from mutateAsync. (a)-(c) assert the fixed
+// behaviour; (d) and (e) guard it against over-correcting.
 describe("SearchInput geocode race (L8)", () => {
-  // L8 — expected to FAIL until the clear moves after the geocode settles.
-  it.fails("keeps the typed address while the geocode is pending", async () => {
+  it("keeps the typed address while the geocode is pending", async () => {
     const pending = deferred<GeocodeResponse>();
     vi.mocked(geocodeAddress).mockReturnValue(pending.promise);
 
@@ -145,64 +143,65 @@ describe("SearchInput geocode race (L8)", () => {
     });
   });
 
-  // L8 — expected to FAIL until a rejected geocode leaves the input alone.
-  it.fails(
-    "keeps the typed address and shows the error when the geocode rejects",
-    async () => {
-      const pending = deferred<GeocodeResponse>();
-      vi.mocked(geocodeAddress).mockReturnValue(pending.promise);
+  it("keeps the typed address and shows the error when the geocode rejects", async () => {
+    const pending = deferred<GeocodeResponse>();
+    vi.mocked(geocodeAddress).mockReturnValue(pending.promise);
 
-      const { input, form } = await renderPanel();
-      await typeAddress(input);
-      await actAsync(() => {
-        fireEvent.submit(form);
-      });
+    const { input, form } = await renderPanel();
+    await typeAddress(input);
+    await actAsync(() => {
+      fireEvent.submit(form);
+    });
 
-      // Built before entering act(): Response.json() settles over several
-      // microtasks, and awaiting it inside act() lets act() exit before React
-      // has processed the rejection.
-      const apiError = await capturedApiError(geocodeError502);
-      await actAsync(() => {
-        pending.reject(apiError);
-      });
+    // Built before entering act(): Response.json() settles over several
+    // microtasks, and awaiting it inside act() lets act() exit before React
+    // has processed the rejection.
+    const apiError = await capturedApiError(geocodeError502);
+    await actAsync(() => {
+      pending.reject(apiError);
+    });
 
-      // findByText polls: React Query commits the mutation error over an
-      // indeterminate number of ticks, and a single act() flush is not
-      // enough to catch it reliably.
-      await screen.findByText(geocodeError502.message);
-      expect(input.value).toBe(ADDRESS);
-    },
-  );
+    // findByText polls: React Query commits the mutation error over an
+    // indeterminate number of ticks, and a single act() flush is not
+    // enough to catch it reliably.
+    await screen.findByText(geocodeError502.message);
+    expect(input.value).toBe(ADDRESS);
+    // The box must be usable again, not just populated: `disabled` is driven
+    // solely by the mutation's isPending (SearchInput takes no isLoading from
+    // the autocomplete hook), so a rejection re-enables it for a retry.
+    expect(input.disabled).toBe(false);
+  });
 
   // Same assertion against the other error the API really returns. 422 is the
   // worse case for L8: "check the spelling" against an empty box.
-  it.fails(
-    "keeps the typed address when the geocode rejects with a 422 no-match",
-    async () => {
-      const pending = deferred<GeocodeResponse>();
-      vi.mocked(geocodeAddress).mockReturnValue(pending.promise);
+  it("keeps the typed address when the geocode rejects with a 422 no-match", async () => {
+    const pending = deferred<GeocodeResponse>();
+    vi.mocked(geocodeAddress).mockReturnValue(pending.promise);
 
-      const { input, form } = await renderPanel();
-      await typeAddress(input);
-      await actAsync(() => {
-        fireEvent.submit(form);
-      });
+    const { input, form } = await renderPanel();
+    await typeAddress(input);
+    await actAsync(() => {
+      fireEvent.submit(form);
+    });
 
-      // Built before entering act(): Response.json() settles over several
-      // microtasks, and awaiting it inside act() lets act() exit before React
-      // has processed the rejection.
-      const apiError = await capturedApiError(geocodeError422);
-      await actAsync(() => {
-        pending.reject(apiError);
-      });
+    // Built before entering act(): Response.json() settles over several
+    // microtasks, and awaiting it inside act() lets act() exit before React
+    // has processed the rejection.
+    const apiError = await capturedApiError(geocodeError422);
+    await actAsync(() => {
+      pending.reject(apiError);
+    });
 
-      // findByText polls: React Query commits the mutation error over an
-      // indeterminate number of ticks, and a single act() flush is not
-      // enough to catch it reliably.
-      await screen.findByText(geocodeError422.message);
-      expect(input.value).toBe(ADDRESS);
-    },
-  );
+    // findByText polls: React Query commits the mutation error over an
+    // indeterminate number of ticks, and a single act() flush is not
+    // enough to catch it reliably.
+    await screen.findByText(geocodeError422.message);
+    expect(input.value).toBe(ADDRESS);
+    // The box must be usable again, not just populated: `disabled` is driven
+    // solely by the mutation's isPending (SearchInput takes no isLoading from
+    // the autocomplete hook), so a rejection re-enables it for a retry.
+    expect(input.disabled).toBe(false);
+  });
 
   // Guard, passes today: whatever L8's fix does, success must still clear the
   // box and navigate to the new parcel.
