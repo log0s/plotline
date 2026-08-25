@@ -600,6 +600,38 @@ never by editing the prediction.
 
 ## To investigate
 
+- **A total `/featured` outage renders as a healthy landing page — M11's shape,
+  on the flagship surface.** `FeaturedCards.tsx:129-130` is
+  `apiLocations && apiLocations.length > 0 ? apiLocations : PLACEHOLDER_CARDS`,
+  and the component destructures only `data` from `useQuery` (`:110-114`) — no
+  `isLoading`, no `isError`, no `status`. Loading, fetch failure and
+  `{"locations": []}` therefore collapse into one branch: `data` is `undefined`
+  both before the query resolves and after it fails, and `[]` when the response
+  is empty. **The six fallback cards are not skeletons.** They carry real
+  editorial names and blurbs (`:20-22`), render through the identical card JSX
+  as live data with no dimming or shimmer (`:147-185`), and each is wrapped in
+  `<Link to={`/featured/${card.slug}`}>` (`:154-155`) whose six slugs are
+  byte-identical to the six real seeded slugs — verified 2026-08-24 against a
+  captured `/featured` payload (`frontend/src/test/fixtures/featured-list.ts`).
+  On a 5xx the client throws (`api/featured.ts:119-125` →
+  `api/client.ts:38-46`), `retry: 1` (`main.tsx:12`) gives two attempts, and
+  then the page sits on placeholders **permanently with no error indication
+  anywhere**. The failure surfaces only one click later and on a different
+  page: `FeaturedRedirectPage.tsx:45-60` for the 5xx, `:26-43` (404) for the
+  unseeded case — which is also the only place the two are distinguishable.
+  **The empty-response fallback is deliberate and documented** (`:3-4`, "falls
+  back to static placeholders if the API returns nothing (e.g. before
+  seeding)"); the failure case silently inherited it, because `apiLocations &&`
+  cannot tell "returned nothing" from "failed to return". This is the same
+  class as the M11 row above (Medium, `Resolved (256ed32)`, which fixed
+  `ParcelInfo.tsx` and `DemographicsPanel.tsx`) — the landing page was not in
+  that sweep's scope. **Not fixed, deliberately: recorded before acting**, and
+  the fix is a product decision, not a mechanical one. Splitting the branch is
+  two lines, but *what* an outage should show — stale placeholders with a
+  banner, an empty state, or the cards suppressed — is a call about the
+  flagship page that belongs to Ryan. Observed by code reading, not by
+  reproducing an outage; nothing was fixed or changed in `FeaturedCards.tsx`.
+
 - **Adams County property returns empty, every time.** The single Adams parcel
   has run five property tasks across two months — two of them after the H4
   fix shipped — and every one reported `complete` with `items_found: 0`.
