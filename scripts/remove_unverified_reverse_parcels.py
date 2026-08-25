@@ -172,6 +172,10 @@ def run(db: Session, *, do_verify: bool, execute: bool, radius_m: float = RADIUS
 
 
 def main() -> None:
+    from app.logging_config import configure_script_logging
+
+    configure_script_logging()
+
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--verify", action="store_true", help="Ask Photon about each candidate")
     parser.add_argument("--radius-m", type=float, default=RADIUS_M)
@@ -181,8 +185,6 @@ def main() -> None:
         help="Delete condemned rows (requires --verify and every candidate conclusive)",
     )
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-
     from app.db import SessionLocal
 
     with SessionLocal() as db:

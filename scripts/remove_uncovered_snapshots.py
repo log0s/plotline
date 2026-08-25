@@ -45,6 +45,7 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.logging_config import configure_script_logging
 from app.services import stac as stac_service
 
 logger = logging.getLogger("remove_uncovered_snapshots")
@@ -302,6 +303,8 @@ def run(db: Session, targets: list[Target], *, execute: bool) -> int:
 
 
 def main() -> None:
+    configure_script_logging()
+
     parser = argparse.ArgumentParser(
         description="Delete named imagery snapshots whose imagery excludes the parcel"
     )
@@ -315,8 +318,6 @@ def main() -> None:
     )
     args = parser.parse_args()
     targets = parse_targets(args)
-
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     from app.db import SessionLocal
 

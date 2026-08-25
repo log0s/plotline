@@ -95,6 +95,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.config import get_settings
 from app.db import SessionLocal
+from app.logging_config import configure_script_logging
 from app.models.parcels import Parcel
 from app.services import imagery as imagery_service
 from app.services.admission import AdmissionRefused
@@ -186,6 +187,8 @@ def _known_parcels(parcel_ids: list[uuid.UUID]) -> set[uuid.UUID]:
 
 
 def main() -> None:
+    configure_script_logging()
+
     parser = argparse.ArgumentParser(description="Re-queue timelines for specific parcels")
     parser.add_argument("parcel_ids", nargs="+", help="Parcel UUIDs to re-queue")
     parser.add_argument(

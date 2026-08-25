@@ -38,6 +38,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.db import SessionLocal
+from app.logging_config import configure_script_logging
 from app.models.parcels import Parcel, TimelineRequest, TimelineRequestTask
 from app.services import imagery as imagery_service
 from app.services.admission import AdmissionRefused
@@ -91,6 +92,8 @@ def find_candidates(county_filter: str | None) -> list[tuple[uuid.UUID, str]]:
 
 
 def main() -> None:
+    configure_script_logging()
+
     parser = argparse.ArgumentParser(description="Re-queue empty property timelines")
     parser.add_argument(
         "--dry-run",

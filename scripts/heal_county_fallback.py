@@ -22,11 +22,14 @@ import argparse
 from sqlalchemy import text
 
 from app.db import SessionLocal
+from app.logging_config import configure_script_logging
 
 _MATCH = "Census Tract%"
 
 
 def main() -> None:
+    configure_script_logging()
+
     parser = argparse.ArgumentParser(description="Null out tract-name county values")
     parser.add_argument(
         "--dry-run",

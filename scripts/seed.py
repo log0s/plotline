@@ -41,6 +41,12 @@ def geocode(api_url: str, address: str) -> dict:  # type: ignore[type-arg]
 
 
 def main() -> None:
+    # No configure_script_logging() here, unlike every other script in this
+    # directory: seed.py imports nothing from app — it drives the API over
+    # HTTP and emits no log records at all — and the import needed to
+    # configure logging would break the documented "python scripts/seed.py"
+    # invocation from the repo root, where app/ is not on the path. Add the
+    # call together with the first app import this script ever grows.
     parser = argparse.ArgumentParser(description="Seed Plotline with example parcels")
     parser.add_argument(
         "--api-url",

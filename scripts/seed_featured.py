@@ -109,6 +109,10 @@ FEATURED_LOCATIONS = [
 
 
 def main() -> None:
+    from app.logging_config import configure_script_logging
+
+    configure_script_logging()
+
     parser = argparse.ArgumentParser(description="Seed featured locations")
     parser.add_argument(
         "--api-url",

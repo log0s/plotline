@@ -75,6 +75,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import SessionLocal
+from app.logging_config import configure_script_logging
 from app.models.parcels import ImagerySnapshot, TimelineRequest
 from app.services import imagery as imagery_service
 from app.services.admission import AdmissionRefused
@@ -156,6 +157,8 @@ def _parse_since(raw: str) -> datetime:
 
 
 def main() -> None:
+    configure_script_logging()
+
     parser = argparse.ArgumentParser(description="Re-queue Landsat timelines")
     parser.add_argument(
         "--dry-run",

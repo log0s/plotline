@@ -20,6 +20,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import SessionLocal
+from app.logging_config import configure_script_logging
 from app.models.parcels import TimelineRequest
 from app.tasks.timeline import _fetch_census
 
@@ -96,6 +97,8 @@ def _report(label: str) -> None:
 
 
 def main() -> None:
+    configure_script_logging()
+
     parser = argparse.ArgumentParser(description="Backfill census housing fields")
     parser.add_argument(
         "--dry-run", action="store_true", help="List affected parcels without fetching"
