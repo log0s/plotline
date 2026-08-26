@@ -1,13 +1,35 @@
 #!/usr/bin/env python3
-"""Re-queue full timelines for the parcel ids given on the command line.
+"""Re-queue timelines for specific parcels, or for what the ledger selects.
 
-The general heal path. A parcel loses years to a transient upstream — a
-signing-rate burst, a Census timeout — and the task still reports
-``complete``, so backfill will never retry it (M4). Until per-year failures
-are persisted, healing means re-running the whole pipeline for the parcels
-an audit identified, and there has been a fresh set of those after every
-incident. This script takes ids rather than deriving them, so it does not
-need a new heuristic each time.
+The general heal path, and since M3 the delivery mechanism ledger selection
+runs through. Three shapes:
+
+* **ids, full scope** — the original. An audit named these parcels; re-run
+  everything for them.
+* **``--sources``** — the same, narrowed. Only the named sources get task
+  rows and only they are fetched; every other source's snapshots and ledger
+  history are untouched.
+* **``--from-ledger``** — the parcels and their per-parcel scopes come from
+  the ledger rather than from the command line, through the same
+  ``services/ledger.py`` query ``scripts/ledger_gaps.py`` reports on and
+  ``maybe_refetch_for_backfill`` dispatches on. What is selected is what the
+  retry policy says to retry, so an operator cannot heal on a different
+  definition of "still broken" than the report they read first.
+
+``--sources`` names sources the way the **ledger** does, so
+``census_decennial`` is a legal value and narrows selection to that dataset;
+the request it creates declares the task source that would re-run it
+(``census``). Ledger selection is scope-preserving per parcel: one with only
+failed Landsat years gets a Landsat-only request even in a run that also
+selects a census-only parcel.
+
+Two classes of outcome are selectable only behind an explicit flag, because
+retrying them asserts that the *request* changed, not that time passed:
+``absent/api_no_data`` (``--include-absent-api``, which is what the
+decennial-2000 six-character tract trim needs) and
+``absent/all_cloud_filtered`` (``--include-cloud-filtered``, for a change to
+the 40% cloud threshold). Without the flag they are never selected, by
+anything.
 
 Parcels with a request already in flight are skipped and logged; the batch
 continues, so re-running is safe.
@@ -79,6 +101,13 @@ Usage (API + worker must be running):
         --require-sha <sha> <id> [<id> ...]
     docker compose exec api python scripts/requeue_parcels.py \
         --skip-deploy-check <id> [<id> ...]
+    docker compose exec api python scripts/requeue_parcels.py \
+        --skip-deploy-check --sources naip <id>
+    docker compose exec api python scripts/requeue_parcels.py \
+        --require-sha <sha> --from-ledger --dry-run
+    docker compose exec api python scripts/requeue_parcels.py \
+        --require-sha <sha> --from-ledger --sources census_decennial \
+        --include-absent-api
 """
 
 from __future__ import annotations
@@ -96,12 +125,19 @@ from sqlalchemy.exc import IntegrityError
 from app.config import get_settings
 from app.db import SessionLocal
 from app.logging_config import configure_script_logging
-from app.models.parcels import Parcel
+from app.models.parcels import Parcel, TimelineRequest
 from app.services import imagery as imagery_service
+from app.services import ledger as ledger_service
 from app.services.admission import AdmissionRefused
 from app.services.deploy import fetch_deployed_version
 
 logger = structlog.get_logger(__name__)
+
+# --sources speaks the ledger's vocabulary, which is finer than the task's:
+# one `census` task writes `census_decennial` and `census_acs5` rows, and
+# selecting one of those two is the whole point of the decennial-2000 heal.
+_CENSUS_LEDGER_SOURCES = ("census_acs5", "census_decennial")
+SELECTABLE_SOURCES = tuple(sorted({*TimelineRequest.FULL_SCOPE, *_CENSUS_LEDGER_SOURCES}))
 
 _WHY = (
     "re-queueing through the un-fixed imagery point filter re-selects the same "
@@ -180,6 +216,69 @@ def _check_deploy_gate(api_url: str, require_sha: str | None, skip: bool) -> Non
     _refuse(deployed, require_sha)
 
 
+def ledger_filter(sources: list[str] | None) -> set[str] | None:
+    """Expand ``--sources`` into the ledger source names it covers.
+
+    ``census`` means both census datasets; every other task source names
+    itself. ``None`` means no filter.
+    """
+    if not sources:
+        return None
+    expanded: set[str] = set()
+    for source in sources:
+        if source == "census":
+            expanded.update(_CENSUS_LEDGER_SOURCES)
+        else:
+            expanded.add(source)
+    return expanded
+
+
+def select_from_ledger(
+    parcel_ids: list[uuid.UUID],
+    sources: list[str] | None,
+    *,
+    include_cloud_filtered: bool,
+    include_absent_api: bool,
+) -> dict[uuid.UUID, dict[str, list[ledger_service.LedgerGroup]]]:
+    """Parcels the retry policy has work for, and the scope each one needs.
+
+    An empty ``parcel_ids`` means the whole fleet. The scope is derived per
+    parcel, not shared: a parcel with only failed Landsat years gets a
+    Landsat-only request even when the run also selects a census-only parcel.
+    """
+    wanted = set(parcel_ids) or None
+    with SessionLocal() as db:
+        groups = ledger_service.retryable_groups(
+            db,
+            sources=ledger_filter(sources),
+            include_cloud_filtered=include_cloud_filtered,
+            include_absent_api=include_absent_api,
+        )
+
+    selected: dict[uuid.UUID, dict[str, list[ledger_service.LedgerGroup]]] = {}
+    for group in groups:
+        if wanted is not None and group.parcel_id not in wanted:
+            continue
+        selected.setdefault(group.parcel_id, {}).setdefault(group.task_source, []).append(group)
+    return selected
+
+
+def _print_ledger_selection(
+    selected: dict[uuid.UUID, dict[str, list[ledger_service.LedgerGroup]]],
+) -> None:
+    for parcel_id in sorted(selected, key=str):
+        by_source = selected[parcel_id]
+        scope = ",".join(sorted(by_source))
+        print(f"  would re-queue: {parcel_id} [{scope}]")
+        for source in sorted(by_source):
+            for group in sorted(by_source[source], key=lambda g: (g.source, g.group_key)):
+                reason = f"/{group.reason}" if group.reason else ""
+                print(
+                    f"      {group.source} {group.group_key}"
+                    f"  {group.outcome}{reason}  (attempt {group.attempts})"
+                )
+
+
 def _known_parcels(parcel_ids: list[uuid.UUID]) -> set[uuid.UUID]:
     with SessionLocal() as db:
         rows = db.execute(select(Parcel.id).where(Parcel.id.in_(parcel_ids))).scalars().all()
@@ -190,11 +289,42 @@ def main() -> None:
     configure_script_logging()
 
     parser = argparse.ArgumentParser(description="Re-queue timelines for specific parcels")
-    parser.add_argument("parcel_ids", nargs="+", help="Parcel UUIDs to re-queue")
+    parser.add_argument(
+        "parcel_ids",
+        nargs="*",
+        help="Parcel UUIDs to re-queue; with --from-ledger, narrows the "
+        "selection to these parcels instead of the whole fleet",
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help="List what would be queued without queuing anything",
+    )
+    parser.add_argument(
+        "--sources",
+        nargs="+",
+        metavar="SOURCE",
+        choices=SELECTABLE_SOURCES,
+        help="Limit the run to these sources, named as the ledger names them "
+        f"({', '.join(SELECTABLE_SOURCES)}). Default: every source.",
+    )
+    parser.add_argument(
+        "--from-ledger",
+        action="store_true",
+        help="Select parcels and their scopes from the per-year ledger "
+        "instead of taking them from the command line",
+    )
+    parser.add_argument(
+        "--include-cloud-filtered",
+        action="store_true",
+        help="Also select absent/all_cloud_filtered groups — only meaningful "
+        "once the eo:cloud_cover threshold has changed",
+    )
+    parser.add_argument(
+        "--include-absent-api",
+        action="store_true",
+        help="Also select absent/api_no_data groups — only meaningful once "
+        "the request itself has changed (e.g. the decennial tract trim)",
     )
     parser.add_argument(
         "--api-url",
@@ -223,6 +353,14 @@ def main() -> None:
 
     if args.max_wait_minutes < 0:
         parser.error("--max-wait-minutes cannot be negative")
+    if not args.parcel_ids and not args.from_ledger:
+        parser.error("give at least one parcel id, or --from-ledger")
+    for flag, name in (
+        (args.include_cloud_filtered, "--include-cloud-filtered"),
+        (args.include_absent_api, "--include-absent-api"),
+    ):
+        if flag and not args.from_ledger:
+            parser.error(f"{name} only means something with --from-ledger")
 
     _check_deploy_gate(args.api_url, args.require_sha, args.skip_deploy_check)
 
@@ -236,7 +374,28 @@ def main() -> None:
     for pid in unknown:
         print(f"  skipped {pid} — no such parcel")
 
-    targets = [pid for pid in parcel_ids if pid in known]
+    # scope[pid] is what that parcel's request will declare; None means full.
+    scope: dict[uuid.UUID, list[str] | None]
+    if args.from_ledger:
+        selected = select_from_ledger(
+            [pid for pid in parcel_ids if pid in known],
+            args.sources,
+            include_cloud_filtered=args.include_cloud_filtered,
+            include_absent_api=args.include_absent_api,
+        )
+        targets = sorted(selected, key=str)
+        scope = {pid: sorted(selected[pid]) for pid in targets}
+        groups = sum(len(g) for by_source in selected.values() for g in by_source.values())
+        print(f"Ledger selected {groups} group(s) across {len(targets)} parcel(s).")
+    else:
+        targets = [pid for pid in parcel_ids if pid in known]
+        declared = (
+            sorted({ledger_service.task_source_for(s) for s in args.sources})
+            if args.sources
+            else None
+        )
+        scope = dict.fromkeys(targets, declared)
+
     if not targets:
         print("Nothing to do.")
         return
@@ -244,8 +403,12 @@ def main() -> None:
     print(f"Re-queuing {len(targets)} parcel(s).")
 
     if args.dry_run:
-        for pid in targets:
-            print(f"  would re-queue: {pid}")
+        if args.from_ledger:
+            _print_ledger_selection(selected)
+        else:
+            for pid in targets:
+                sources = scope[pid]
+                print(f"  would re-queue: {pid} [{','.join(sources) if sources else 'all'}]")
         return
 
     deadline = time.monotonic() + args.max_wait_minutes * 60
@@ -256,7 +419,7 @@ def main() -> None:
         with SessionLocal() as db:
             try:
                 request, created = imagery_service.create_queued_request_waiting(
-                    db, parcel_id, deadline=deadline
+                    db, parcel_id, deadline=deadline, sources=scope[parcel_id], origin="heal"
                 )
             except AdmissionRefused as exc:
                 # Even a hand-written list of ids is worth waiting out: the
@@ -281,7 +444,7 @@ def main() -> None:
             continue
 
         queued += 1
-        print(f"  queued {request.id} for parcel {parcel_id}")
+        print(f"  queued {request.id} for parcel {parcel_id} [{','.join(request.sources)}]")
 
     print(f"\nDone — queued {queued} timeline request(s), skipped {skipped}.")
 

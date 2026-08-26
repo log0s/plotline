@@ -36,34 +36,13 @@ from sqlalchemy import text
 
 from app.db import SessionLocal
 from app.logging_config import configure_script_logging
+from app.services import ledger as ledger_service
 
-# One row per (parcel, source, group_key): the outcome of the most recent
-# run that had an opinion, plus how many runs have had one.
-_LATEST_SQL = """
-WITH ranked AS (
-    SELECT r.parcel_id            AS parcel_id,
-           y.source               AS source,
-           y.group_key            AS group_key,
-           y.outcome              AS outcome,
-           y.reason               AS reason,
-           y.detail               AS detail,
-           r.created_at           AS run_at,
-           ROW_NUMBER() OVER (
-               PARTITION BY r.parcel_id, y.source, y.group_key
-               ORDER BY r.created_at DESC, y.created_at DESC
-           ) AS rn,
-           COUNT(*) OVER (
-               PARTITION BY r.parcel_id, y.source, y.group_key
-           ) AS attempts
-    FROM timeline_task_years y
-    JOIN timeline_request_tasks t ON t.id = y.task_id
-    JOIN timeline_requests r      ON r.id = t.timeline_request_id
-)
-SELECT parcel_id, source, group_key, outcome, reason, detail, run_at, attempts
-FROM ranked
-WHERE rn = 1
-ORDER BY parcel_id, source, group_key
-"""
+# The latest-outcome query itself lives in ``app/services/ledger.py`` so this
+# report, ``maybe_refetch_for_backfill`` and ``requeue_parcels.py
+# --from-ledger`` cannot disagree about what "latest" means. Reading a report
+# built on one definition and then healing on another is how a sweep misses
+# exactly the rows the operator was looking at.
 
 # Every reason ever recorded for a triple, so a group that failed three
 # different ways is not reported as if it failed the same way three times.
@@ -79,9 +58,14 @@ JOIN timeline_requests r      ON r.id = t.timeline_request_id
 WHERE y.reason IS NOT NULL
 """
 
-# Outcomes a heal would act on. Everything else is either fine or a
-# deliberate suppression, and printing them by default buries these.
-ACTIONABLE = ("failed", "indeterminate")
+# Outcomes a heal would act on. Deliberately *not* the retry policy: this is
+# a reporting filter, and it is wider on purpose. ``indeterminate`` is a code
+# fix rather than a retry, and ``suppressed`` is reconciliation input rather
+# than either — but all three are things a human should be looking at, and
+# collapsing the report onto ``ledger.is_retryable`` would hide the two
+# classes that need a decision made about them. The ``retry`` column below is
+# where the policy's own answer appears, row by row.
+ACTIONABLE = ("failed", "indeterminate", "suppressed")
 
 
 @dataclass(frozen=True)
@@ -95,11 +79,12 @@ class LedgerRow:
     reason: str
     attempts: int
     reasons_seen: tuple[str, ...]
+    policy: str
 
 
 def _fetch(source: str | None, parcel: str | None, outcome: str | None) -> list[LedgerRow]:
     with SessionLocal() as db:
-        rows = db.execute(text(_LATEST_SQL)).mappings().all()
+        groups = ledger_service.latest_outcomes(db)
         reason_rows = db.execute(text(_REASONS_SQL)).mappings().all()
 
     seen: dict[tuple[str, str, str], set[str]] = defaultdict(set)
@@ -109,23 +94,24 @@ def _fetch(source: str | None, parcel: str | None, outcome: str | None) -> list[
         )
 
     result: list[LedgerRow] = []
-    for raw in rows:
-        key = (str(raw["parcel_id"]), str(raw["source"]), str(raw["group_key"]))
+    for group in groups:
+        key = (str(group.parcel_id), group.source, group.group_key)
         if source and key[1] != source:
             continue
         if parcel and key[0] != parcel:
             continue
-        if outcome and str(raw["outcome"]) != outcome:
+        if outcome and group.outcome != outcome:
             continue
         result.append(
             LedgerRow(
                 parcel_id=key[0],
                 source=key[1],
                 group_key=key[2],
-                outcome=str(raw["outcome"]),
-                reason=str(raw["reason"] or ""),
-                attempts=int(raw["attempts"]),
+                outcome=group.outcome,
+                reason=group.reason or "",
+                attempts=group.attempts,
                 reasons_seen=tuple(sorted(seen.get(key, ()))),
+                policy=ledger_service.retry_policy(group.outcome, group.reason),
             )
         )
     return result
@@ -136,7 +122,7 @@ def _print_table(rows: list[LedgerRow]) -> None:
         print("No ledger rows match.")
         return
 
-    headers = ("parcel", "source", "group", "outcome", "reason", "n", "reasons seen")
+    headers = ("parcel", "source", "group", "outcome", "reason", "n", "retry", "reasons seen")
     table = [
         (
             r.parcel_id[:8],
@@ -145,6 +131,7 @@ def _print_table(rows: list[LedgerRow]) -> None:
             r.outcome,
             r.reason,
             str(r.attempts),
+            r.policy,
             ",".join(r.reasons_seen) if r.outcome in ACTIONABLE else "",
         )
         for r in rows

@@ -19,6 +19,7 @@ from typing import Any
 
 import httpx
 import pytest
+from sqlalchemy.orm import Session, sessionmaker
 
 _HERE = Path(__file__).resolve()
 # Repo layout puts scripts/ beside backend/; the container copies it to /app/scripts.
@@ -134,3 +135,89 @@ def test_both_flags_refuse(no_http: list[str], capsys: Any) -> None:
     assert exc.value.code == 1
     assert no_http == []
     assert "mutually exclusive" in capsys.readouterr().err
+
+
+# ── --sources and --from-ledger ──────────────────────────────────────────────
+
+
+def test_sources_speaks_the_ledgers_vocabulary() -> None:
+    """``census_decennial`` is a legal --sources value and expands to the two
+    census ledger sources only when the operator asked for ``census``."""
+    assert "census_decennial" in script.SELECTABLE_SOURCES
+    assert script.ledger_filter(["census_decennial"]) == {"census_decennial"}
+    assert script.ledger_filter(["census"]) == {"census_acs5", "census_decennial"}
+    assert script.ledger_filter(["naip", "landsat"]) == {"naip", "landsat"}
+    assert script.ledger_filter(None) is None
+
+
+def test_ledger_selection_is_scoped_per_parcel(
+    committing_db: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two parcels, different damage: each gets its own scope, not the union.
+
+    Delete the per-parcel ``setdefault`` in ``select_from_ledger`` and both
+    parcels would be re-queued with both sources — half of it pointless work
+    against a source that is fine.
+    """
+    from tests.test_ledger_selection import _parcel, _record, _run
+
+    monkeypatch.setattr(script, "SessionLocal", committing_db)
+
+    landsat_parcel = _parcel(committing_db)
+    census_parcel = _parcel(committing_db)
+    landsat_tasks = _run(committing_db, landsat_parcel, sources=("landsat",), age_hours=2)
+    census_tasks = _run(committing_db, census_parcel, sources=("census",), age_hours=2)
+    _record(committing_db, landsat_tasks["landsat"], "landsat", "1993", "failed", "read_timeout")
+    _record(committing_db, census_tasks["census"], "census_decennial", "2000", "failed", "sign_5xx")
+
+    selected = script.select_from_ledger(
+        [], None, include_cloud_filtered=False, include_absent_api=False
+    )
+
+    assert sorted(selected[landsat_parcel]) == ["landsat"]
+    assert sorted(selected[census_parcel]) == ["census"]
+
+
+def test_from_ledger_needs_the_flag_to_reach_absent_api(
+    committing_db: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The decennial-2000 case. Without --include-absent-api the selection is
+    empty; with it the parcel appears scoped to census."""
+    from tests.test_ledger_selection import _parcel, _record, _run
+
+    monkeypatch.setattr(script, "SessionLocal", committing_db)
+
+    parcel_id = _parcel(committing_db)
+    tasks = _run(committing_db, parcel_id, sources=("census",), age_hours=2)
+    _record(committing_db, tasks["census"], "census_decennial", "2000", "absent", "api_no_data")
+
+    without = script.select_from_ledger(
+        [], ["census_decennial"], include_cloud_filtered=False, include_absent_api=False
+    )
+    with_flag = script.select_from_ledger(
+        [], ["census_decennial"], include_cloud_filtered=False, include_absent_api=True
+    )
+
+    assert without == {}
+    assert sorted(with_flag[parcel_id]) == ["census"]
+    assert len(with_flag[parcel_id]["census"]) == 1
+
+
+def test_from_ledger_narrows_to_the_ids_given(
+    committing_db: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.test_ledger_selection import _parcel, _record, _run
+
+    monkeypatch.setattr(script, "SessionLocal", committing_db)
+
+    wanted = _parcel(committing_db)
+    other = _parcel(committing_db)
+    for parcel_id in (wanted, other):
+        tasks = _run(committing_db, parcel_id, sources=("landsat",), age_hours=2)
+        _record(committing_db, tasks["landsat"], "landsat", "1993", "failed", "read_timeout")
+
+    selected = script.select_from_ledger(
+        [wanted], None, include_cloud_filtered=False, include_absent_api=False
+    )
+
+    assert list(selected) == [wanted]
