@@ -1046,7 +1046,15 @@ fix commit will get cited.
   and all — while still passing. They now patch what the code calls. Nothing
   in the harness would have caught it; `-p no:cacheprovider` style network
   blocking is not configured. Worth a `socket`-blocking conftest hook if this
-  recurs.
+  recurs. **Resolved:** 794af9f, 2026-08-26 — `pytest-socket` with
+  `--disable-socket --allow-hosts=127.0.0.1,localhost,::1` added to
+  `backend/pyproject.toml`; full suite re-run clean under the guard (532
+  passed under CI env), delete-the-fix confirmed on one of the three named
+  tests (live-passes without the guard, blocked-fails with it), and a sweep
+  of all 72 `patch`/`monkeypatch.setattr` module-path targets in `tests/`
+  found none stale. See `docs/audits/2026-08-test-network-guard/REPORT.md`.
+  Every "N passing" count reported before this commit may include live-
+  network passes the guard would now catch.
 - **M9 reads as an oversight; it isn't.** See the accept rationale above —
   c6213d5 predates the audit by three months.
 - **L12's URL-normalization item cites no file.** The code is
