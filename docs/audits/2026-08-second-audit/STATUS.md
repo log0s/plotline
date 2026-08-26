@@ -32,6 +32,12 @@ geocoder-guard work — and none had.
 "Partially resolved" here always means the remainder is an explicit accept or
 an explicit deferral, both recorded below — never an unfinished edit.
 
+Two rows do not fit those buckets and are not recounted here. **M4** reads
+"Instrumented" as of 2026-08-25: its per-year outcomes are now persisted, but
+the heal path that acts on them is M3, so it stays inside the Open four rather
+than moving. **M7-5** is a row split out of M7, not a thirteenth Medium
+finding.
+
 ## The fix commits
 
 | Hash | Covers |
@@ -41,6 +47,7 @@ an explicit deferral, both recorded below — never an unfinished edit.
 | ffb71b2 | L2, L4, L6 (source id), L7, L9 |
 | ae5793a | M2 (atomicity), M3 (cooldown), counties item 13 |
 | 56d6647 | M9 (exposure), L12 (CORS) |
+| 0814d7e, ef2d0a2 | M4 (per-year ledger — instrumentation half; the heal path is M3) |
 
 ## High — all resolved
 
@@ -60,10 +67,11 @@ an explicit deferral, both recorded below — never an unfinished edit.
 | M1 Geocoder decode | Resolved (949c1b3) | `geocoder.py:158,196`. The finding's retry-asymmetry aside (only timeouts retried) is unchanged; it was flagged as defensible, not as a defect. |
 | M2 Rate limiting | Partially resolved (ae5793a) | INCR and EXPIRE now ship in one pipeline with `EXPIRE … NX`, so a death between them can no longer leave an immortal counter. The X-Forwarded-For handling is accepted — see below. |
 | M3 Backfill scope | Partially resolved (ae5793a) | A cooldown (`backfill_cooldown_hours`, default 6) bounds the per-visit cost and logs each suppression. The cooldown is dispatch-anchored — it reads the latest `TimelineRequest.created_at`, which includes a request the current visit may have just created — not completion-anchored; correct for cost-bounding, and the per-source work inherits it unless it deliberately changes it. Per-source scope is deferred, not accepted — see below. |
-| M4 Partial census/Landsat failures | Open | `timeline.py:234-259`, `:616-692` (the census year loop moved into `_fetch_census_years` in b5a306a; line numbers refreshed after c82ed51 shifted the file), **and `:434-506`, the topo path — a TNM response truncated at its cap (T3 below), or a product skipped for a missing `sourceId`, drops whole decades under a `complete` task exactly as the census and Landsat halves do, so topo/TNM is the third silent-drop door, not a footnote to the other two.** *Precision correction, 2026-08-15 (source inventory): this clause originally also named "a TNM search that fails", and that half was wrong — a **whole-search** TNM failure propagates out of `_search_and_persist_topo` to `_fetch_usgs_topo`, which marks the task **`failed`**, not `complete` (`timeline.py:457-462`). What does match this row as written is the cap (`usgs_topo.py:89-97`) and the missing-`sourceId` skip (`timeline.py:513-518`). Its sibling, the unparseable-`publicationDate` skip (`timeline.py:497-505`), is a **latent guard rather than a live door** — `select_topo_items` already drops items whose year will not parse (`usgs_topo.py:113-116`), which is the same reachability T2 below establishes for the 1900 fallback, so nothing reaches it.* — failures counted, never persisted, so nothing can target the gaps. Sharper than the finding states on the census half: a year the API has no data for returns `{}` and is skipped by `if data:` (`:639` decennial, `:666` ACS5) **without** incrementing `failed_requests` (`:653`, `:680`), so the all-failed check at `:692` cannot see it either. The gap is not merely unpersisted — it is invisible to the task's own failure arithmetic, which is why a parcel could sit at `complete` with four of six ACS years missing. One instance of that shape — years lost to the 2020 tract redistricting — is healed by b5a306a and its `scripts/heal_tract_vintage_gaps.py`; the general problem of persisting per-year failures is untouched. **Observed in production three times, from three independent upstreams.** (1) 2026-08-11: a burst of 21 SAS signing 429s in four seconds cost one parcel 20 of its 43 Landsat years. (2) 2026-08-12 00:45Z: a second parcel (Ocean County NJ) lost 8 Landsat years — after the incident, and **on production that did not have a536d07**. The throttle was committed 2026-08-11 and left unpushed; CI deploys on push, so the running release was still pre-throttle when those years were lost. Whatever else a536d07 does, it demonstrably did not prevent this: the loss is post-commit and pre-deploy, and no signing-throttle event appears in any log buffer. (3) 2026-08-12 01:25Z: four `httpx.ReadTimeout`s against `api.census.gov` cost a Maricopa parcel its acs5 2021 and decennial 2020 rows — the Census API, not our signing, so no throttle could have helped. Each of the three ended `complete`, and backfill only triggers on failed/missing tasks, so none of them has a healing path. **This row is not "mitigated".** Capping our own call rate narrows one of three doors; a year lost to a Census timeout, a TNM endpoint returning non-JSON (see the zero-topo parcel in the ops audit's §8), or any upstream we have not met yet is still silently dropped under a `complete` task. M4's per-year failure persistence is the actual fix, and it is now scheduled work rather than deferred design — see below. Evidence: `docs/audits/2026-08-ops-audit/FINDINGS.md` §0, HIGH-2, MEDIUM-2. **(4) 2026-08-12, from the geometry sweep: one parcel — `2f1b332e`, Racebrook Road, Orange, Connecticut — still holds only 5 census years (decennial 2010; acs5 2012, 2015, 2018, 2023) against 7–9 for its peers, *after* a full re-run. It is the sharpest instance yet, because nothing in the system can say whether those years re-failed or were never published: the task ended `complete`, no failure was recorded, and the 63 `Census API: no data for tract` 404s observed during the sweep are indistinguishable from genuine absence. Connecticut's 2022 county-to-planning-region change makes genuine absence entirely plausible — which is the point. Telling the two apart is exactly what per-year persistence would buy, and no heal script can be written until it can. Only 3 census rows across 2 parcels were gained sweep-wide, so the opportunistic ride-along did not reach it.** Evidence: `docs/audits/2026-08-geometry-audit/HEAL-SCORECARD.md` §6. *A later commentary restated that ride-along as a net **loss** of 3 rows across 44 parcels; it is a phantom, closed in `docs/audits/2026-08-geometry-audit/CENSUS_TRIAGE.md` — `census_snapshots` has no deletion path, so no census loss is reachable and no new M4 occurrence follows from it. (4) above remains the only occurrence from the sweep.* **Two mechanism gaps recorded 2026-08-15 by the source inventory (`../2026-08-source-inventory/INVENTORY.md`) and tracked as N1 and N2 below.** N1 is a **fourth door, not a fourth occurrence**: `_sas_get` retries only 429 (`stac.py:315-316`), so an unretried PC 5xx or connection error on the signing endpoint returns `False` from `_validate_asset` (`stac.py:1014-1021`), which `_validate_selection` reads as "item is broken" and answers by walking **every** same-period candidate against the same unhealthy endpoint (`stac.py:1111-1127`) before dropping the period (`stac.py:1130`) under a task that still ends `complete` (`timeline.py:435`). N2 names the mechanism behind instance (3): `CensusFetcher._request` has no retry at all (`census.py:249-253`), so **not one of that incident's four `httpx.ReadTimeout`s would have been retried** — this row recorded the outcome, never that the client did not try again. **Neither changes this row's remedy, only its occurrence surface.** Retry-policy work would reduce how *often* a year is lost; only per-year failure persistence makes a loss *visible*, and that is still the scheduled work below. |
+| M4 Partial census/Landsat failures | **Instrumented (`0814d7e`, `ef2d0a2`, 2026-08-25) — per-year outcomes persisted; heal path pending M3** | **Every attempted year now records an outcome in `timeline_task_years`: `ok` / `failed` / `absent` / `suppressed` / `indeterminate`, with a machine reason. All seven per-year sites are wired (`docs/audits/2026-08-m4-ledger/REPORT.md` §4), `scripts/ledger_gaps.py` is the read query, and the design is `docs/audits/2026-08-m4-design/INVESTIGATION.md`. Two things this does *not* do. (a) **Task status semantics are unchanged** — a task with failed years still ends `complete`, and the census `{}` skip still increments nothing; the ledger is the record, and what to do with it is M3. (b) **The ledger starts at deploy and carries no history** — no backfill exists or can exist, since the outcomes it records were never written down. A parcel last fetched before deploy has zero rows, and its absence from `ledger_gaps.py` means "not yet swept", not "healthy". Committed, not yet deployed as of 2026-08-25; the prediction for the first full sweep is `docs/audits/2026-08-m4-ledger/PREDICTION.md`, written before deploy. The four occurrences below are what the ledger would now make visible; none is healed by this batch.** Original row follows. `timeline.py:234-259`, `:616-692` (the census year loop moved into `_fetch_census_years` in b5a306a; line numbers refreshed after c82ed51 shifted the file), **and `:434-506`, the topo path — a TNM response truncated at its cap (T3 below), or a product skipped for a missing `sourceId`, drops whole decades under a `complete` task exactly as the census and Landsat halves do, so topo/TNM is the third silent-drop door, not a footnote to the other two.** *Precision correction, 2026-08-15 (source inventory): this clause originally also named "a TNM search that fails", and that half was wrong — a **whole-search** TNM failure propagates out of `_search_and_persist_topo` to `_fetch_usgs_topo`, which marks the task **`failed`**, not `complete` (`timeline.py:457-462`). What does match this row as written is the cap (`usgs_topo.py:89-97`) and the missing-`sourceId` skip (`timeline.py:513-518`). Its sibling, the unparseable-`publicationDate` skip (`timeline.py:497-505`), is a **latent guard rather than a live door** — `select_topo_items` already drops items whose year will not parse (`usgs_topo.py:113-116`), which is the same reachability T2 below establishes for the 1900 fallback, so nothing reaches it.* — failures counted, never persisted, so nothing can target the gaps. Sharper than the finding states on the census half: a year the API has no data for returns `{}` and is skipped by `if data:` (`:639` decennial, `:666` ACS5) **without** incrementing `failed_requests` (`:653`, `:680`), so the all-failed check at `:692` cannot see it either. The gap is not merely unpersisted — it is invisible to the task's own failure arithmetic, which is why a parcel could sit at `complete` with four of six ACS years missing. One instance of that shape — years lost to the 2020 tract redistricting — is healed by b5a306a and its `scripts/heal_tract_vintage_gaps.py`; the general problem of persisting per-year failures is untouched. **Observed in production three times, from three independent upstreams.** (1) 2026-08-11: a burst of 21 SAS signing 429s in four seconds cost one parcel 20 of its 43 Landsat years. (2) 2026-08-12 00:45Z: a second parcel (Ocean County NJ) lost 8 Landsat years — after the incident, and **on production that did not have a536d07**. The throttle was committed 2026-08-11 and left unpushed; CI deploys on push, so the running release was still pre-throttle when those years were lost. Whatever else a536d07 does, it demonstrably did not prevent this: the loss is post-commit and pre-deploy, and no signing-throttle event appears in any log buffer. (3) 2026-08-12 01:25Z: four `httpx.ReadTimeout`s against `api.census.gov` cost a Maricopa parcel its acs5 2021 and decennial 2020 rows — the Census API, not our signing, so no throttle could have helped. Each of the three ended `complete`, and backfill only triggers on failed/missing tasks, so none of them has a healing path. **This row is not "mitigated".** Capping our own call rate narrows one of three doors; a year lost to a Census timeout, a TNM endpoint returning non-JSON (see the zero-topo parcel in the ops audit's §8), or any upstream we have not met yet is still silently dropped under a `complete` task. M4's per-year failure persistence is the actual fix, and it is now scheduled work rather than deferred design — see below. Evidence: `docs/audits/2026-08-ops-audit/FINDINGS.md` §0, HIGH-2, MEDIUM-2. **(4) 2026-08-12, from the geometry sweep: one parcel — `2f1b332e`, Racebrook Road, Orange, Connecticut — still holds only 5 census years (decennial 2010; acs5 2012, 2015, 2018, 2023) against 7–9 for its peers, *after* a full re-run. It is the sharpest instance yet, because nothing in the system can say whether those years re-failed or were never published: the task ended `complete`, no failure was recorded, and the 63 `Census API: no data for tract` 404s observed during the sweep are indistinguishable from genuine absence. Connecticut's 2022 county-to-planning-region change makes genuine absence entirely plausible — which is the point. Telling the two apart is exactly what per-year persistence would buy, and no heal script can be written until it can. Only 3 census rows across 2 parcels were gained sweep-wide, so the opportunistic ride-along did not reach it.** Evidence: `docs/audits/2026-08-geometry-audit/HEAL-SCORECARD.md` §6. *A later commentary restated that ride-along as a net **loss** of 3 rows across 44 parcels; it is a phantom, closed in `docs/audits/2026-08-geometry-audit/CENSUS_TRIAGE.md` — `census_snapshots` has no deletion path, so no census loss is reachable and no new M4 occurrence follows from it. (4) above remains the only occurrence from the sweep.* **Two mechanism gaps recorded 2026-08-15 by the source inventory (`../2026-08-source-inventory/INVENTORY.md`) and tracked as N1 and N2 below.** N1 is a **fourth door, not a fourth occurrence**: `_sas_get` retries only 429 (`stac.py:315-316`), so an unretried PC 5xx or connection error on the signing endpoint returns `False` from `_validate_asset` (`stac.py:1014-1021`), which `_validate_selection` reads as "item is broken" and answers by walking **every** same-period candidate against the same unhealthy endpoint (`stac.py:1111-1127`) before dropping the period (`stac.py:1130`) under a task that still ends `complete` (`timeline.py:435`). N2 names the mechanism behind instance (3): `CensusFetcher._request` has no retry at all (`census.py:249-253`), so **not one of that incident's four `httpx.ReadTimeout`s would have been retried** — this row recorded the outcome, never that the client did not try again. **Neither changes this row's remedy, only its occurrence surface.** Retry-policy work would reduce how *often* a year is lost; only per-year failure persistence makes a loss *visible*, and that is still the scheduled work below. |
 | M5 Sync I/O on the loop | Open | `geocode.py:55-57,146-151`; `timeline.py:310-360`. The worker half is accepted; the autocomplete half is not. |
 | M6 Redis socket timeouts | Resolved (dd99cee) | `socket_timeout` and `socket_connect_timeout` of 2s on both clients, matching the DB probe's `statement_timeout`. |
-| M7 ORM/schema drift | Open | Partial indexes in `0009:49`, `0010:67,83` absent from `models/parcels.py`; `conftest.py:55-190` still hand-written DDL. |
+| M7 ORM/schema drift | Open | Partial indexes in `0009:49`, `0010:67,83` absent from `models/parcels.py`; `conftest.py:55-190` still hand-written DDL. **Understated by three items the M4 design investigation found (§1.5): (4) `idx_parcels_address`, the GIN index created at `0001:67-73`, is absent from the ORM; (6) `index=True` on `TimelineRequest.parcel_id` and `TimelineRequestTask.timeline_request_id` implies `ix_*` names while the database carries `idx_timeline_requests_parcel_id` and `idx_trt_request` — harmless today, a duplicate-index hazard for any autogenerate. Item (5) has its own row below.** |
+| M7-5 `ck_trt_*` name drift | Open | **The ORM declares `ck_trt_source` / `ck_trt_status` on `timeline_request_tasks` (`models/parcels.py:202-209`); the database has `ck_timeline_request_tasks_source` / `ck_timeline_request_tasks_status` (`0002:117-128`, replaced `0008:35-39`). An `op.drop_constraint("ck_trt_source", …)` written from the ORM would fail against production.** Split out of M7 because it is the only drift item that is a *trap for a future migration* rather than a missing declaration, and `timeline_request_tasks` is the table M4 hangs off. Migration `0011` avoids it by issuing no `ALTER` on that table and naming every new constraint explicitly, with the ORM repeating those names — so `timeline_task_years` starts without drift. UNVERIFIED, still: the prediction that the drop would fail is inferred from migration source, not from `pg_constraint` on production. |
 | M8 DO NOTHING freezes records | Open | `property_events.py:74`; `county_adapters.py:473,741`. |
 | M9 Titiler callback path | Partially resolved (56d6647) | `/warmup` (30/min as shipped in 56d6647; **60/min since `69b94e1`, 2026-08-04** — `api/imagery.py:624`; corrected here 2026-08-15, see N3) and `/{id}/stac` (600/min) now carry rate limits. The routing itself is accepted — see below. |
 | M10 Migration on boot | Partially resolved (dd99cee) | A session-scoped `pg_advisory_lock` in `alembic/env.py` serializes concurrent boots. The worker-ahead-of-schema window is accepted — see below. |
@@ -472,6 +480,26 @@ never by editing the prediction.
 
 ## Accepted, with reasons
 
+- **M4 ledger, the empty-year cloud probe costs one extra STAC request per
+  empty year.** `eo:cloud_cover < 40` rides in the STAC query itself, so a
+  year whose every scene is cloudy and a year the satellite never imaged both
+  arrive as the same empty list — `absent/all_cloud_filtered` is not
+  observable from the response. `timeline._classify_empty_chunk` re-runs the
+  year once with the cloud filter dropped and `max_items=1`, only for empty
+  years and only for sources carrying a cloud query. **The load-bearing
+  assumption is that empty years are rare** — fleet Landsat sits at 43 of 43
+  years for most parcels — so this is a handful of requests per run against
+  the 55 the run already makes. It is written at the function. If a future
+  source has mostly-empty years, this doubles its request count.
+- **M4 ledger, `get_task_id` fails soft.** A `task_id` that will not parse as
+  a UUID logs a warning and returns `None`, so the fetch continues with no
+  ledger rather than raising. A fetch should not die over bookkeeping; the
+  cost is that a broken task row makes the ledger silent instead of loud, and
+  a source's rows going missing fleet-wide would read as "not swept".
+- **M4 ledger, `idx_tty_task` is redundant.** `(task_id)` is a prefix of the
+  index `uq_tty_task_group` already creates. It is built as specified; on a
+  table projected to grow ~23× faster than its parent it is a small standing
+  write cost, and dropping it is a one-line follow-up migration.
 - **M2, client identification.** `Fly-Client-IP` takes precedence and Fly's
   proxy overwrites it on every inbound request, so the spoofable
   `X-Forwarded-For` branch is unreachable in production. This makes the
@@ -612,6 +640,18 @@ never by editing the prediction.
   fetch failed" — a distinction a persisted per-year `absent` outcome would
   have carried in the row itself (`../2026-08-s2-year/LOGGING-FIX.md` §4).
 
+  **Built 2026-08-25, `0814d7e` + `ef2d0a2` — the design question is answered
+  and the instrumentation half is done.** A per-year *table*
+  (`timeline_task_years`), not a JSONB column: the test harness is SQLite with
+  neither `jsonb_each` nor GIN, the codebase has never queried JSON by content
+  anywhere, and every consumer is a set query across parcels or runs
+  (`../2026-08-m4-design/INVESTIGATION.md` §4, §9). What remains scheduled is
+  **M3**, the half that acts on it — `maybe_refetch_for_backfill` still
+  triggers on three all-or-nothing task-status probes, still has no imagery
+  trigger at all, and still produces an untargeted full-pipeline re-run. Until
+  it reads the ledger, the ledger is a record nothing consumes. Committed, not
+  deployed as of 2026-08-25.
+
 ## To investigate
 
 - **A total `/featured` outage renders as a healthy landing page — M11's shape,
@@ -683,6 +723,34 @@ never by editing the prediction.
 
 ## Notes for future readers
 
+- **The M4 ledger starts at deploy and carries no history.**
+  `timeline_task_years` has no backfill and cannot have one — the outcomes it
+  records were never written down anywhere, which is the finding. A parcel
+  last fetched before deploy has zero rows. **Absence from
+  `scripts/ledger_gaps.py` output means "not yet swept", not "healthy",** and
+  it stays that way until every parcel has been swept once. That is also why
+  `revalidate_landsat.py` and `heal_tract_vintage_gaps.py` are not deleted
+  even though the ledger subsumes their selection logic: a ledger-driven
+  selection would miss every parcel the sweep has not reached.
+- **The ledger deliberately references no snapshot row**, and that is a
+  decision, not an omission. `docs/adr/0001-imagery-normalization.md` rule 1:
+  ledger rows carry `(task_id, source, group_key, outcome)` and the served row
+  for a group is looked up by `(parcel_id, source, group_key)` at read time.
+  That decoupling is what lets the normalization pass replace
+  `imagery_snapshots` with `scenes` + `parcel_scenes` without touching this
+  table. **Do not add a `snapshot_id` column, even as a nullable
+  convenience.** Rule 2 of the same ADR makes `group_key` the shared
+  encoding — it is defined once in `services/imagery.py` beside
+  `SELECTION_SCOPES`, and `parcel_scenes.group_key` is meant to speak it too.
+- **A rename can turn a mocked test into a live one, and the suite has no
+  network guard.** Found 2026-08-25 while wiring the ledger: the topo path
+  moved from `search_usgs_topo` to `search_usgs_topo_products`, and three
+  tests in `test_timeline.py` that patched the old name began making real
+  requests to `tnmaccess.nationalmap.gov` — HTTP 200, 152 KB, row-cap warning
+  and all — while still passing. They now patch what the code calls. Nothing
+  in the harness would have caught it; `-p no:cacheprovider` style network
+  blocking is not configured. Worth a `socket`-blocking conftest hook if this
+  recurs.
 - **M9 reads as an oversight; it isn't.** See the accept rationale above —
   c6213d5 predates the audit by three months.
 - **L12's URL-normalization item cites no file.** The code is
