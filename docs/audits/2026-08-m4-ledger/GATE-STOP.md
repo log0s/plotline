@@ -523,3 +523,132 @@ the old runner even the setup migration does not commit.
 - **The `WITH (FORCE)` drop.** Requires PostgreSQL 13+. Both the local
   container and the CI service are 16; a maintenance URL pointing at anything
   older would fail on teardown rather than on the assertion.
+
+---
+
+# Addendum, 2026-08-26 — `edc13db` deployed; X2 closed
+
+Observe-only deploy watch. Nothing in this session issued a write; every claim
+below is read from `fly logs`, `fly status`, `fly image show`, and `SELECT`
+through the app's own `app.db.engine` on a fresh connection. §1–§14 above are
+unedited.
+
+**Target:** `3a86dd69211c460cee22245d30605941fdd55168` (`git rev-parse HEAD`
+at the start of this watch — the docs-only commit on top of `edc13db`).
+
+## Deploy sequence — two boots, not one
+
+`fly image show` at the start of this watch still showed both apps on
+`ce307e35…` — the pre-fix deploy §1–§10 above describe, itself captured
+mid-flight. Two full API boot cycles landed before the target SHA was
+reached:
+
+**Boot A, `ce307e35…`, ~00:52Z (pre-fix code, captured live by this
+session's log tail, not by GATE-STOP.md's earlier read):**
+
+```
+00:52:27Z app[825d69b7e46618] INFO [alembic.runtime.migration] Running upgrade 0010 -> 0011, Per-year outcome ledger for timeline fetches.
+00:52:28Z app[825d69b7e46618] Migrations complete.
+00:52:45Z app[48e0de9a713918] INFO [alembic.runtime.migration] Running upgrade 0010 -> 0011, Per-year outcome ledger for timeline fetches.
+00:52:45Z app[48e0de9a713918] Migrations complete.
+```
+
+Both machines report the upgrade; no head check exists yet to catch the
+rollback. This is X1 happening, live, not inferred — the same shape §2
+describes, one deploy earlier than the SHA the row was written against.
+Consistent with §1's finding: production was still at `0010` when this
+watch began.
+
+**Boot B, target SHA `3a86dd6…`, 01:29Z (fixed code):**
+
+```
+01:29:35Z  runner[48e0de9a713918] Pulling container image …c839dc99…
+01:29:40Z  app[48e0de9a713918] INFO [alembic.runtime.migration] Running upgrade 0010 -> 0011, Per-year outcome ledger for timeline fetches.
+01:29:41Z  app[48e0de9a713918] INFO [alembic.env] Migration head check: database=['0011'] scripts=['0011']
+01:29:41Z  app[48e0de9a713918] Migrations complete.
+01:29:44Z  app[48e0de9a713918] INFO:     Application startup complete.
+
+01:29:51Z  runner[825d69b7e46618] (pulls the same image, boots after 48e0 already committed)
+01:29:56Z  app[825d69b7e46618] INFO [alembic.runtime.migration] Context impl PostgresqlImpl.
+01:29:56Z  app[825d69b7e46618] INFO [alembic.runtime.migration] Will assume transactional DDL.
+01:29:56Z  app[825d69b7e46618] INFO [alembic.env] Migration head check: database=['0011'] scripts=['0011']
+01:29:56Z  app[825d69b7e46618] Migrations complete.
+01:29:59Z  app[825d69b7e46618] INFO:     Application startup complete.
+```
+
+`48e0de9a713918` performed the real, committed upgrade — `Running upgrade
+0010 -> 0011` followed immediately by a head check that reads back `0011` on
+a fresh connection. `825d69b7e46618` booted second, took the
+`pg_advisory_xact_lock`, found the database already at head, and logged only
+the head check — **no `Running upgrade` line**. This is the first production
+observation of M10's serialization actually working: one booter mutates, the
+other waits on the lock and finds nothing to do, and this time the state it
+finds is real because the lock's release and the commit are the same event.
+Full log capture: `docs/audits/2026-08-m4-ledger/` session (not committed —
+raw `fly logs` buffer, referenced here by timestamp instead).
+
+## Boot outcome
+
+`fly status -a log0s-plotline-api`: both machines `started`, `LAST UPDATED`
+`01:29:35Z` / `01:29:51Z`, one boot cycle each — no crash loop, no restart.
+`GET /api/v1/health`:
+
+```
+{"status":"ok","db":"connected","redis":"connected",
+ "version":{"sha":"3a86dd69211c460cee22245d30605941fdd55168","built":"2026-08-26T01:29:08Z"}}
+```
+
+## Schema, fresh connection, `app.db.engine`
+
+```
+$ alembic current
+0011 (head)
+
+CONSTRAINTS on timeline_task_years:
+  ck_tty_outcome    CHECK (outcome = ANY (ARRAY['ok','failed','absent','indeterminate','suppressed']))
+  fk_tty_task_id    FOREIGN KEY (task_id) REFERENCES timeline_request_tasks(id) ON DELETE CASCADE
+  timeline_task_years_pkey  PRIMARY KEY (id)
+  uq_tty_task_group UNIQUE (task_id, group_key)
+
+INDEXES:
+  timeline_task_years_pkey       btree (id)
+  uq_tty_task_group              btree (task_id, group_key)
+  idx_tty_source_group_outcome   btree (source, group_key, outcome)
+  idx_tty_task                   btree (task_id)
+
+COUNT: 0
+```
+
+Matches migration `0011` as written. Table is empty, as predicted — nothing
+has recorded a year yet.
+
+## X2 casualty window
+
+```
+NOW: 2026-08-26 01:36:06 UTC
+timeline_requests WHERE created_at >= '2026-08-26T00:52:00Z': 0 rows
+Most recent request overall: e6657b66…, complete, 2026-08-25 22:20:00.603722+00
+```
+
+Zero requests were created between the `ce307e35` deploy (`00:52Z`, the
+boundary GATE-STOP.md §1.3 already established) and this check (`01:36Z`),
+which spans both the broken boot and the fixed one. Nothing hit the missing
+table. No casualties to record.
+
+## Worker
+
+`fly logs -a plotline-worker`, boot at `01:29:41Z`–`01:29:52Z`: no `alembic`
+activity (`entrypoint.sh` skips migrations for `celery` — confirmed by
+observing the boot, not only by reading the script, closing GATE-STOP.md
+§9's second UNVERIFIED item), no `UndefinedTable`, no `does not exist`.
+`Janitor found no stranded work` → `celery@e2862966b306d8 ready.`
+`fly image show -a plotline-worker`: both machines `GH_SHA=3a86dd6…`.
+
+## Verdict
+
+**X2 closed.** `0011` is applied, `timeline_task_years` exists with the
+constraints and indexes migration `0011` defines, and no request reached the
+recorder while the table was missing — the window that mattered (`00:52Z`
+deploy through this check) had zero arrivals. `edc13db` is deployed, not
+merely committed. The M4 sweep (`../2026-08-m4-ledger/PREDICTION.md`) is now
+runnable; running it is out of scope for this observe-only session.
