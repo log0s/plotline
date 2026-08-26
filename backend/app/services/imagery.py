@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
@@ -483,18 +483,41 @@ def maybe_refetch_for_backfill(
     """Return a fresh TimelineRequest if the existing one is missing data
     we can now provide; otherwise None.
 
-    Backfill triggers:
+    Two kinds of trigger, and they produce different requests.
+
+    **The task-row triggers, full scope, unchanged.**
+
       * Census tract FIPS is now available but no census task ran, or the
         previous census task failed (e.g. a Census API outage).
       * The parcel's county now has a property adapter, but the previous
         run's property task was missing, skipped, or failed (e.g. a county
         portal outage).
-      * No usgs_topo snapshots exist (source added after initial fetch).
+      * No usgs_topo task row exists (source added after initial fetch).
+
+    None of the three is subsumed by the ledger, and each for its own
+    reason. A *missing* census or topo task row means the source never ran,
+    so it has no ledger rows to be retryable — absence is not an outcome. A
+    census task that failed before its first year wrote nothing either.
+    Property has no ledger source at all: its axis is the feed, not a period
+    (INVESTIGATION §6.1), so it writes no ``timeline_task_years`` rows in any
+    circumstance. They keep dispatching a full-scope request, which is also
+    what keeps the topo trigger a one-shot latch — a topo-*scoped* run would
+    leave the parcel's current full-scope request still lacking a topo task
+    row, and the trigger would fire again every cooldown, forever.
+
+    **The ledger trigger, scoped.** Groups whose latest outcome the retry
+    policy says to retry, folded onto the sources that would re-run them.
+    This is the path that can see a ``failed`` year under a ``complete``
+    task — Crawford County ``6563dedf``'s 33 ``read_timeout`` groups, which
+    no self-running code could reach before. It never selects the
+    flag-gated classes (``absent/api_no_data``, ``absent/all_cloud_filtered``):
+    making absence retryable is an operator's assertion that the request
+    changed, not a default.
 
     Caller is responsible for dispatching the Celery task on the returned
     request.
     """
-    if existing_req.status != "complete":
+    if existing_req.status not in ("complete", "partial"):
         return None
 
     needs_refetch = False
@@ -552,38 +575,21 @@ def maybe_refetch_for_backfill(
             extra={"parcel_id": str(parcel.id)},
         )
 
-    if not needs_refetch:
-        return None
-
-    # A source that fails persistently (a retired Census vintage, a county
-    # portal that stays down) keeps needs_refetch true forever, and every
-    # page view would dispatch the full five-source pipeline again — dozens
-    # of upstream calls and minutes of worker time to re-attempt one source.
-    # The cooldown makes that visit-driven cost bounded per parcel. It does
-    # not narrow the refetch to the missing source; that is deliberately
-    # deferred (M3's per-source scope).
-    cooldown = timedelta(hours=get_settings().backfill_cooldown_hours)
-    last_attempt = db.execute(
-        select(TimelineRequest.created_at)
-        .where(TimelineRequest.parcel_id == parcel.id)
-        .order_by(TimelineRequest.created_at.desc())
-        .limit(1)
-    ).scalar_one_or_none()
-    if last_attempt is not None:
-        age = datetime.now(UTC) - _as_utc(last_attempt)
-        if age < cooldown:
-            logger.info(
-                "Backfill suppressed — last attempt is inside the cooldown",
-                extra={
-                    "parcel_id": str(parcel.id),
-                    "age_hours": round(age.total_seconds() / 3600, 2),
-                    "cooldown_hours": cooldown.total_seconds() / 3600,
-                },
-            )
+    if needs_refetch:
+        wanted: set[str] | None = None  # None means full scope
+    else:
+        wanted = _ledger_backfill_sources(db, parcel.id)
+        if not wanted:
             return None
 
+    eligible = _outside_cooldown(db, parcel.id, wanted)
+    if eligible is _COOLING:
+        return None
+
     try:
-        new_req, created = _create_queued_request(db, parcel.id, origin="backfill")
+        new_req, created = _create_queued_request(
+            db, parcel.id, sources=eligible, origin="backfill"
+        )
     except AdmissionRefused as exc:
         # A backfill is optional work on a parcel that already renders;
         # refusing it must not surface as an error on that parcel's page.
@@ -597,9 +603,92 @@ def maybe_refetch_for_backfill(
         return None
     logger.info(
         "Created new timeline request for backfill",
-        extra={"parcel_id": str(parcel.id), "request_id": str(new_req.id)},
+        extra={
+            "parcel_id": str(parcel.id),
+            "request_id": str(new_req.id),
+            "sources": new_req.sources,
+        },
     )
     return new_req
+
+
+def _ledger_backfill_sources(db: Session, parcel_id: uuid.UUID) -> set[str]:
+    """Task sources with at least one group the retry policy says to retry."""
+    from app.services import ledger as ledger_service
+
+    groups = ledger_service.retryable_groups(db, parcel_id=parcel_id)
+    if not groups:
+        return set()
+    by_source = ledger_service.group_by_task_source(groups)
+    logger.info(
+        "Ledger backfill candidates",
+        extra={
+            "parcel_id": str(parcel_id),
+            "sources": sorted(by_source),
+            "groups": sum(len(g) for g in by_source.values()),
+        },
+    )
+    return set(by_source)
+
+
+# Sentinel for "every candidate source is still cooling down". Distinct from
+# an empty set, which would mean full scope to _create_queued_request.
+_COOLING: list[str] = []
+
+
+def _outside_cooldown(
+    db: Session, parcel_id: uuid.UUID, wanted: set[str] | None
+) -> list[str] | None:
+    """Narrow ``wanted`` to the sources whose cooldown has expired.
+
+    ``None`` in and ``None`` out means full scope. Returns ``_COOLING`` when
+    everything asked for is still inside the window.
+
+    The cooldown is still dispatch-anchored — it measures time since a
+    request that *included* the source was created — but it is now per
+    source rather than per parcel. A single per-parcel timestamp meant a
+    census-only backfill fired at T blocked a landsat backfill until T+6h,
+    and a fleet sweep reset the clock on every parcel at once
+    (INVESTIGATION §7.3).
+    """
+    from app.services import ledger as ledger_service
+
+    cooldown = timedelta(hours=get_settings().backfill_cooldown_hours)
+    last_by_source = ledger_service.last_attempt_by_source(db, parcel_id)
+    candidates = sorted(wanted) if wanted is not None else list(FULL_SCOPE)
+
+    now = datetime.now(UTC)
+    ready: list[str] = []
+    cooling: dict[str, float] = {}
+    for source in candidates:
+        last = last_by_source.get(source)
+        if last is None:
+            ready.append(source)
+            continue
+        age = now - _as_utc(last)
+        if age >= cooldown:
+            ready.append(source)
+        else:
+            cooling[source] = round(age.total_seconds() / 3600, 2)
+
+    if not ready:
+        logger.info(
+            "Backfill suppressed — every candidate source is inside the cooldown",
+            extra={
+                "parcel_id": str(parcel_id),
+                "cooling": cooling,
+                "cooldown_hours": cooldown.total_seconds() / 3600,
+            },
+        )
+        return _COOLING
+
+    # A full-scope trigger stays full scope even when some of its sources are
+    # cooling: the topo latch and requeue_empty_property's latest-request
+    # join both need the replacement request to be full-scope, and narrowing
+    # it here to dodge a cooldown would cost that for a few minutes of work.
+    if wanted is None:
+        return None
+    return ready
 
 
 # ── Stranded-work janitor ─────────────────────────────────────────────────────
@@ -863,6 +952,7 @@ def reconcile_source_snapshots(
     selected: Iterable[tuple[str, date]],
     *,
     scope: str = "year",
+    suppressed: Mapping[str, set[str]] | None = None,
 ) -> int:
     """Delete snapshots that this run's selection replaced.
 
@@ -890,6 +980,34 @@ def reconcile_source_snapshots(
     a transient upstream error into permanent data loss. So absent groups
     are always left alone.
 
+    ``suppressed`` is the one exception, and the only thing in the system
+    that may say a served row is wrong. It maps a group key to the item ids
+    **this run** positively identified as not servable — the tiles the NAIP
+    point-coverage gate rejected, or a selected item carrying no COG asset.
+    A row in one of those groups whose item id is named is deleted even
+    though the group is absent from the selection.
+
+    Three properties make that safe, and none of them is decoration:
+
+    * **This run only.** The mapping comes from the run's own outcomes, not
+      from a ledger query. A suppression corrected since would otherwise
+      license a delete years later.
+    * **Item ids, not periods.** A *different* item that happens to fall in
+      the same year is left alone, which makes the rule a statement about an
+      item rather than about a period.
+    * **``suppressed`` only.** An ``absent/*`` outcome is not authority — all
+      four absent reasons mean "the fetch completed and found nothing usable
+      *this time*", and ``naip absent/no_scenes`` alone is 1,848 latest
+      ledger rows fleet-wide. A rule that deleted on absence would delete on
+      the largest population in the ledger. ``failed`` knows strictly less
+      than ``absent``, and ``indeterminate`` names a site that could not
+      decide.
+
+    Parcel ``e513188c`` is the live case: it serves a NAIP 2023 card built
+    from tile ``nj_m_4007309_sw_18_030_…``, and the gate records that year
+    ``suppressed``/``naip_no_point_coverage`` naming that same tile. The
+    gate could refuse to *write* such a row; it had no way to *remove* one.
+
     Mosaics are safe because the comparison is against the full set of
     selected item ids: NAIP's several tiles for one year are all in
     ``selected``, so all of them are kept.
@@ -904,7 +1022,8 @@ def reconcile_source_snapshots(
         keep.add(stac_item_id)
         groups.add(encode_group_key(scope, capture_date))
 
-    if not keep:
+    suppressed = suppressed or {}
+    if not keep and not suppressed:
         return 0
 
     rows = db.execute(
@@ -916,12 +1035,28 @@ def reconcile_source_snapshots(
     ).all()
 
     stale: list[object] = []
+    suppressed_deleted = 0
     for row in rows:
         if row.stac_item_id in keep:
             continue
         captured = _capture_date(row.capture_date)
-        if captured is not None and encode_group_key(scope, captured) in groups:
+        if captured is None:
+            continue
+        group_key = encode_group_key(scope, captured)
+        if group_key in groups:
             stale.append(row.id)
+        elif row.stac_item_id in suppressed.get(group_key, ()):
+            stale.append(row.id)
+            suppressed_deleted += 1
+            logger.warning(
+                "Deleting a served snapshot this run suppressed",
+                extra={
+                    "parcel_id": str(parcel_id),
+                    "source": source,
+                    "group": group_key,
+                    "stac_item_id": row.stac_item_id,
+                },
+            )
 
     if not stale:
         return 0
@@ -939,6 +1074,7 @@ def reconcile_source_snapshots(
             "parcel_id": str(parcel_id),
             "source": source,
             "deleted": len(stale),
+            "suppressed_deleted": suppressed_deleted,
             "scope": scope,
             "groups": sorted(groups),
         },

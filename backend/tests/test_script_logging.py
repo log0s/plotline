@@ -79,19 +79,28 @@ def test_admission_wait_reaches_stdout_with_depth_and_cap(
     settings = Settings(  # type: ignore[call-arg]  # the rest come from the test env
         database_url="postgresql://t:t@localhost/t",
         max_inflight_timeline_requests=30,
+        user_admission_reserve=0,
     )
     depths = iter([30, 30, 0])
     monkeypatch.setattr(admission_service, "inflight_depth", lambda db: next(depths))
 
-    def fake_create(db: Any, pid: uuid.UUID, *, deadline: float) -> tuple[Any, bool]:
+    def fake_create(
+        db: Any,
+        pid: uuid.UUID,
+        *,
+        deadline: float,
+        sources: list[str] | None = None,
+        origin: str = "heal",
+    ) -> tuple[Any, bool]:
         admission_service.wait_for_admission_slot(
             db,
             settings,
             deadline=deadline,
+            origin=origin,
             sleeper=lambda seconds: None,
             clock=lambda: 0.0,
         )
-        return SimpleNamespace(id=uuid.uuid4()), True
+        return SimpleNamespace(id=uuid.uuid4(), sources=sources or ["naip"]), True
 
     monkeypatch.setattr(script, "_check_deploy_gate", lambda *a, **k: None)
     monkeypatch.setattr(script, "_known_parcels", lambda ids: set(ids))

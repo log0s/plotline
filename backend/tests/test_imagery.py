@@ -1547,3 +1547,236 @@ def test_aggregate_request_status_complete_and_failed() -> None:
         ["naip", "census"],
     )
     assert aggregate_request_status([]) == ("complete", [])
+
+
+# ── Reconciliation: a suppressed group is the one authority to delete ────────
+
+# e513188c, live on 2026-08-26: the parcel serves a NAIP 2023 card built from
+# tile nj_m_4007309_sw_18_030_20230820_20231019, while the point-coverage gate
+# records that year suppressed/naip_no_point_coverage naming that same tile.
+_E513188C_TILE = "nj_m_4007309_sw_18_030_20230820_20231019"
+_E513188C_SIBLING = "nj_m_4007424_ne_18_030_20230820_20231019"
+
+
+def _e513188c(db: Session) -> uuid.UUID:
+    """Its eight ok NAIP years plus the wrong 2023 card."""
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    for year in (2010, 2011, 2013, 2015, 2017, 2019, 2021, 2022):
+        _persist(db, parcel_id, "naip", f"naip_{year}", f"{year}-08-20")
+    _persist(db, parcel_id, "naip", _E513188C_TILE, "2023-08-20")
+    return parcel_id
+
+
+def _reselect_the_eight_ok_years() -> list[tuple[str, date]]:
+    return [(f"naip_{y}", date(y, 8, 20)) for y in (2010, 2011, 2013, 2015, 2017, 2019, 2021, 2022)]
+
+
+def test_reconcile_deletes_a_group_this_run_suppressed(db: Session) -> None:
+    """The G1 fix. 2023 is absent from the selection — rule 3 keeps it — but
+    this run positively identified the served tile as not covering the
+    parcel, and that is the one thing allowed to say a served row is wrong.
+
+    Delete the ``suppressed.get(group_key, ())`` branch from
+    ``reconcile_source_snapshots`` and the wrong card survives, which is
+    exactly what production does today.
+    """
+    from app.services.imagery import reconcile_source_snapshots
+
+    parcel_id = _e513188c(db)
+
+    deleted = reconcile_source_snapshots(
+        db,
+        parcel_id,
+        "naip",
+        _reselect_the_eight_ok_years(),
+        suppressed={"2023": {_E513188C_TILE, _E513188C_SIBLING}},
+    )
+
+    assert deleted == 1
+    assert _E513188C_TILE not in _item_ids(db, parcel_id, "naip")
+    assert len(_item_ids(db, parcel_id, "naip")) == 8, "no other NAIP row may change"
+
+
+def test_reconcile_does_not_delete_on_an_absent_outcome(db: Session) -> None:
+    """The inverse, and it matters more than the delete does.
+
+    All four absent reasons mean "the fetch completed and found nothing
+    usable *this time*"; naip absent/no_scenes alone is 1,848 latest ledger
+    rows fleet-wide, so a rule that deleted on absence would delete on the
+    largest population in the ledger. Only ``suppressed`` reaches the
+    ``suppressed`` argument at all — this asserts the boundary holds when the
+    same group is absent rather than suppressed.
+    """
+    from app.services.imagery import reconcile_source_snapshots
+
+    parcel_id = _e513188c(db)
+
+    deleted = reconcile_source_snapshots(
+        db, parcel_id, "naip", _reselect_the_eight_ok_years(), suppressed={}
+    )
+
+    assert deleted == 0
+    assert _E513188C_TILE in _item_ids(db, parcel_id, "naip")
+
+
+def test_reconcile_leaves_a_different_item_in_a_suppressed_group(db: Session) -> None:
+    """The item-id condition is the safety property, not decoration.
+
+    A suppression names the tiles the gate rejected. A row for the same year
+    built from a *different* item was never judged, so it is not the
+    suppression's to delete.
+    """
+    from app.services.imagery import reconcile_source_snapshots
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    _persist(db, parcel_id, "naip", "some_other_2023_item", "2023-08-20")
+    _persist(db, parcel_id, "naip", "naip_2021", "2021-08-20")
+
+    deleted = reconcile_source_snapshots(
+        db,
+        parcel_id,
+        "naip",
+        [("naip_2021", date(2021, 8, 20))],
+        suppressed={"2023": {_E513188C_TILE}},
+    )
+
+    assert deleted == 0
+    assert _item_ids(db, parcel_id, "naip") == {"some_other_2023_item", "naip_2021"}
+
+
+def test_reconcile_can_delete_a_suppression_when_nothing_was_selected(db: Session) -> None:
+    """A run whose every other year came back empty still knows this tile is
+    wrong: the suppression is positive evidence about an item, not an
+    inference from an absence."""
+    from app.services.imagery import reconcile_source_snapshots
+
+    parcel_id = _e513188c(db)
+
+    deleted = reconcile_source_snapshots(
+        db, parcel_id, "naip", [], suppressed={"2023": {_E513188C_TILE}}
+    )
+
+    assert deleted == 1
+    assert _E513188C_TILE not in _item_ids(db, parcel_id, "naip")
+
+
+# ── Backfill reads the ledger ────────────────────────────────────────────────
+
+
+def _ledger_backfill_parcel(
+    db: Session, *, age_hours: float = 24.0, declared: list[str] | None = None
+) -> tuple[object, object, uuid.UUID]:
+    """A parcel whose latest full-scope request reads complete and whose
+    ledger holds one failed landsat year. The three task-row triggers are all
+    satisfied, so only the ledger can produce a refetch."""
+    from types import SimpleNamespace
+
+    from app.models.parcels import TimelineRequest, TimelineRequestTask
+    from app.services.year_ledger import record_year_outcome
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id, "Crawford County")
+    req = TimelineRequest(
+        id=uuid.uuid4(),
+        parcel_id=parcel_id,
+        status="complete",
+        sources=declared if declared is not None else list(TimelineRequest.FULL_SCOPE),
+        origin="user",
+        created_at=datetime.now(UTC) - timedelta(hours=age_hours),
+    )
+    db.add(req)
+    db.commit()
+    task_ids = {}
+    for source in ("landsat", "usgs_topo"):
+        task = TimelineRequestTask(
+            id=uuid.uuid4(),
+            timeline_request_id=req.id,
+            source=source,
+            status="complete",
+            items_found=1,
+        )
+        db.add(task)
+        task_ids[source] = task.id
+    db.commit()
+    record_year_outcome(db, task_ids["landsat"], "landsat", "1993", "failed", "read_timeout")
+    record_year_outcome(db, task_ids["usgs_topo"], "usgs_topo", "1960s", "ok")
+
+    parcel = SimpleNamespace(id=parcel_id, census_tract_id=None, county=None)
+    return parcel, req, task_ids["landsat"]
+
+
+def test_backfill_dispatches_a_scoped_request_from_the_ledger(db: Session) -> None:
+    """The Crawford shape: a failed year under a complete task, which no
+    task-row trigger can see. Delete the ``_ledger_backfill_sources`` call
+    and this returns None — which is what production does today.
+    """
+    from app.services.imagery import maybe_refetch_for_backfill
+
+    parcel, req, _ = _ledger_backfill_parcel(db)
+
+    new_req = maybe_refetch_for_backfill(db, parcel, req)  # type: ignore[arg-type]  # SimpleNamespace stands in for Parcel
+
+    assert new_req is not None
+    assert new_req.sources == ["landsat"], "scoped to the source with work, not a full re-run"
+    assert new_req.origin == "backfill"
+
+
+def test_backfill_does_not_dispatch_for_a_never_retryable_outcome(db: Session) -> None:
+    """absent/no_scenes is the fleet's largest population. It must not become
+    a per-page-view dispatch."""
+    from app.services.imagery import maybe_refetch_for_backfill
+    from app.services.year_ledger import record_year_outcome
+
+    parcel, req, task_id = _ledger_backfill_parcel(db)
+    record_year_outcome(db, task_id, "landsat", "1993", "absent", "no_scenes")
+
+    assert maybe_refetch_for_backfill(db, parcel, req) is None  # type: ignore[arg-type]  # SimpleNamespace
+
+
+def test_backfill_never_selects_the_flag_gated_classes(db: Session) -> None:
+    """Making absence retryable is an operator's assertion that the request
+    changed. Backfill has no way to make that assertion, so it never does."""
+    from app.services.imagery import maybe_refetch_for_backfill
+    from app.services.year_ledger import record_year_outcome
+
+    parcel, req, task_id = _ledger_backfill_parcel(db)
+    record_year_outcome(db, task_id, "landsat", "1993", "absent", "api_no_data")
+
+    assert maybe_refetch_for_backfill(db, parcel, req) is None  # type: ignore[arg-type]  # SimpleNamespace
+
+
+def test_the_ledger_cooldown_is_per_source(db: Session) -> None:
+    """A landsat request an hour ago blocks a landsat backfill. A census-only
+    request an hour ago does not — which is what a per-parcel max(created_at)
+    could not express.
+    """
+    from app.models.parcels import TimelineRequest
+    from app.services.imagery import maybe_refetch_for_backfill
+
+    parcel, req, _ = _ledger_backfill_parcel(db)
+
+    # A census-only run an hour ago. Landsat was untouched by it, so the
+    # landsat backfill is still eligible; a per-parcel max(created_at) would
+    # have blocked it for six hours.
+    db.add(
+        TimelineRequest(
+            id=uuid.uuid4(),
+            parcel_id=parcel.id,  # type: ignore[attr-defined]  # SimpleNamespace
+            status="complete",
+            sources=["census"],
+            origin="backfill",
+            created_at=datetime.now(UTC) - timedelta(hours=1),
+        )
+    )
+    db.commit()
+    assert maybe_refetch_for_backfill(db, parcel, req) is not None  # type: ignore[arg-type]  # SimpleNamespace
+
+
+def test_a_recent_run_of_the_same_source_suppresses_the_backfill(db: Session) -> None:
+    from app.services.imagery import maybe_refetch_for_backfill
+
+    parcel, req, _ = _ledger_backfill_parcel(db, age_hours=1.0)
+
+    assert maybe_refetch_for_backfill(db, parcel, req) is None  # type: ignore[arg-type]  # SimpleNamespace

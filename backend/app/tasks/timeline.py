@@ -506,6 +506,11 @@ async def _search_and_persist_source(
         elif key not in surviving:
             ledger.record(key, "absent", "no_covering_item")
 
+    # Group key -> the item ids this run positively identified as not
+    # servable. The only thing allowed to delete a served snapshot for a
+    # group this run did not select — see reconcile_source_snapshots.
+    suppressed_items: dict[str, set[str]] = {}
+
     # Select representative items. NAIP selector accepts the viewport for
     # greedy multi-tile coverage; other selectors ignore it.
     if source_cfg.get("use_viewport_filter"):
@@ -530,6 +535,11 @@ async def _search_and_persist_source(
                         "naip_no_point_coverage",
                         f"selected tiles do not contain the parcel: {', '.join(tile_ids)}",
                     )
+                    # Carried to reconciliation as ids rather than re-parsed
+                    # out of the detail string: the delete is authorised by
+                    # *this* item being unservable, and a prose field is not
+                    # a place to keep a machine's evidence.
+                    suppressed_items.setdefault(suppressed_key, set()).update(tile_ids)
                 logger.warning(
                     "Suppressing imagery year with no covering tile",
                     extra={
@@ -603,6 +613,8 @@ async def _search_and_persist_source(
                 # Was a silent `continue`. A selected group with no COG asset
                 # is a candidate deliberately not served, which is a
                 # different answer from "the year was empty".
+                if group_key is not None:
+                    suppressed_items.setdefault(group_key, set()).add(str(primary.get("id")))
                 if task_id is not None and group_key is not None:
                     year_ledger.record_year_outcome(
                         db,
@@ -682,6 +694,7 @@ async def _search_and_persist_source(
             source_name,
             selected_refs,
             scope=source_cfg["selection_scope"],
+            suppressed=suppressed_items,
         )
 
         # Anything attempted that reached here with no verdict is a
