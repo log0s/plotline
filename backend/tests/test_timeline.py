@@ -672,14 +672,18 @@ async def test_fetch_census_uses_county_tract_before_planning_regions() -> None:
     # ACS 2022+ is the only family published under the planning regions.
     assert asked[("acs5", 2023)] == "170"
 
-    # Decennial 1990 and 2000 keep the stored tract: their geography predates
-    # every vintage the geocoder serves. Neither returns data under either
-    # FIPS, for reasons that have nothing to do with the county code —
-    # REPORT.md §4.2 (2000 addresses CT tracts as `1571`) and §4.3 (there is no
-    # 1990 decennial dataset on api.census.gov). Asserted so that a later
-    # change to those years is a deliberate one.
-    for year in (1990, 2000):
-        assert asked[("decennial", year)] == "170", f"decennial {year}"
+    # Decennial 2000 keeps the stored tract: its geography predates every
+    # vintage the geocoder serves, so this parcel is asked under the planning
+    # region and stays absent even now that the tract width is right — the
+    # one parcel in the fleet where that is true
+    # (../2026-08-census-decennial/REPORT.md §1.5). Asserted so that a later
+    # change to it is a deliberate one.
+    assert asked[("decennial", 2000)] == "170"
+
+    # 1990 is not asked at all: there is no 1990 decennial dataset on
+    # api.census.gov, and attempting it wrote one impossible `absent` ledger
+    # row per parcel per sweep.
+    assert ("decennial", 1990) not in asked
 
     # The tract each row is labelled with follows the tract it was fetched from.
     stored = {

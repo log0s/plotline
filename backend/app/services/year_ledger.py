@@ -19,6 +19,7 @@ Two rules shape it:
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 
@@ -96,6 +97,14 @@ REASONS: dict[str, frozenset[str]] = {
     OUTCOME_INDETERMINATE: frozenset(),
 }
 
+# `failed` also takes `http_<status>` for an upstream that answered with a
+# status rather than a transport error.  It is a family rather than an
+# enumeration because the set of statuses an upstream can return is not ours
+# to fix: what matters is that the status is *in* the reason, so a dead
+# endpoint can never again be aggregated with genuine absence the way
+# `1990/dec/sf1`'s 404 was.
+_HTTP_REASON_RE = re.compile(r"^http_[1-5]\d\d$")
+
 DETAIL_MAX_CHARS = 500
 
 
@@ -129,8 +138,11 @@ def _validate(outcome: str, reason: str | None) -> None:
         if reason is not None:
             raise LedgerVocabularyError(f"{outcome!r} takes no reason, got {reason!r}")
         return
-    if reason not in allowed:
-        raise LedgerVocabularyError(f"Unknown reason for {outcome!r}: {reason!r}")
+    if reason in allowed:
+        return
+    if outcome == OUTCOME_FAILED and reason and _HTTP_REASON_RE.match(reason):
+        return
+    raise LedgerVocabularyError(f"Unknown reason for {outcome!r}: {reason!r}")
 
 
 # ── Writing ───────────────────────────────────────────────────────────────────

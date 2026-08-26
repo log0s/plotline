@@ -10,6 +10,7 @@ import pytest
 
 from app.services.census import (
     _ACS5_VARIABLES,
+    CensusApiError,
     CensusFetcher,
     CensusMissingKeyError,
     _parse_response,
@@ -235,7 +236,17 @@ class TestCensusFetcher:
         assert result == {}
 
     @pytest.mark.asyncio
-    async def test_fetch_returns_empty_on_404(self) -> None:
+    async def test_fetch_raises_on_404(self) -> None:
+        """Delete-the-fix: `raise CensusHttpStatusError(...)` in `_request`.
+
+        404 means the URL does not resolve — it is not a tract with no data.
+        Reverting to the old `if resp.status_code in (204, 404): return None`
+        makes this return `{}`, which is exactly the collapse that recorded
+        `1990/dec/sf1`'s dead endpoint as `absent`/`api_no_data` on every
+        parcel in the fleet.
+        """
+        from app.services.census import CensusHttpStatusError
+
         mock_response = MagicMock()
         mock_response.status_code = 404
 
@@ -243,8 +254,13 @@ class TestCensusFetcher:
         fetcher.client = AsyncMock()
         fetcher.client.get = AsyncMock(return_value=mock_response)
 
-        result = await fetcher.fetch_decennial(1990, "08", "031", "999999")
-        assert result == {}
+        with pytest.raises(CensusHttpStatusError) as caught:
+            await fetcher.fetch_decennial(2000, "08", "031", "999999")
+
+        assert caught.value.status_code == 404
+        assert caught.value.path == "/2000/dec/sf1"
+        # The key lives in the query string and must never ride along.
+        assert "key" not in str(caught.value)
 
     @pytest.mark.asyncio
     async def test_fetch_decennial_unsupported_year(self) -> None:
@@ -269,19 +285,91 @@ class TestCensusFetcher:
 
     @pytest.mark.asyncio
     async def test_request_raises_on_unexpected_status(self) -> None:
-        """Non-200/204/404 responses should raise CensusApiError."""
-        from app.services.census import CensusApiError
-
+        """A non-200, non-204 response raises, carrying status and dataset."""
         mock_response = MagicMock()
         mock_response.status_code = 500
         mock_response.text = "Internal Server Error"
+
+        fetcher = CensusFetcher(api_key="secret-key")
+        fetcher.client = AsyncMock()
+        fetcher.client.get = AsyncMock(return_value=mock_response)
+
+        with pytest.raises(CensusApiError, match="500") as caught:
+            await fetcher.fetch_acs5(2023, "08", "031", "006202")
+
+        # The dataset path, so a ledger `detail` names the URL that failed —
+        # and never the query string, where the key is.
+        assert "/2023/acs/acs5" in str(caught.value)
+        assert "secret-key" not in str(caught.value)
+
+    @pytest.mark.asyncio
+    async def test_decennial_2000_asks_for_the_four_character_tract(self) -> None:
+        """Delete-the-fix: `_tract_for_dataset` on the 2000 config.
+
+        `2000/dec/sf1` addresses a tract by its basic code plus a real
+        suffix. A stored `002500` is tract 25 with no suffix, and the
+        six-character form 204s — 80 of 186 parcels in the fleet. Reverting
+        the trim sends `002500` and this test fails on the asked `for=`.
+        """
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json = MagicMock(return_value=[["P001001", "H001001"], ["1981", "988"]])
 
         fetcher = CensusFetcher(api_key="test-key")
         fetcher.client = AsyncMock()
         fetcher.client.get = AsyncMock(return_value=mock_response)
 
-        with pytest.raises(CensusApiError, match="500"):
-            await fetcher.fetch_acs5(2023, "08", "031", "006202")
+        result = await fetcher.fetch_decennial(2000, "13", "121", "002500")
+
+        assert result["total_population"] == 1981
+        assert fetcher.client.get.await_args.kwargs["params"]["for"] == "tract:0025"
+
+    @pytest.mark.asyncio
+    async def test_decennial_2000_keeps_a_real_tract_suffix(self) -> None:
+        """A suffixed tract is left alone.
+
+        `009903` is tract 99.03. Trimming it would ask for tract 99 — a
+        different, coarser geography — and label the answer with the
+        parcel's tract. The 2000 vintage has no `009903`, and 204 is the
+        correct outcome.
+        """
+        mock_response = MagicMock()
+        mock_response.status_code = 204
+
+        fetcher = CensusFetcher(api_key="test-key")
+        fetcher.client = AsyncMock()
+        fetcher.client.get = AsyncMock(return_value=mock_response)
+
+        assert await fetcher.fetch_decennial(2000, "36", "061", "009903") == {}
+        assert fetcher.client.get.await_args.kwargs["params"]["for"] == "tract:009903"
+
+    @pytest.mark.asyncio
+    async def test_decennial_2010_pads_every_tract_to_six(self) -> None:
+        """The trim is per-dataset: 2010 and 2020 use the six-character form."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json = MagicMock(return_value=[["P001001", "H001001"], ["2000", "900"]])
+
+        fetcher = CensusFetcher(api_key="test-key")
+        fetcher.client = AsyncMock()
+        fetcher.client.get = AsyncMock(return_value=mock_response)
+
+        await fetcher.fetch_decennial(2010, "13", "121", "002500")
+        assert fetcher.client.get.await_args.kwargs["params"]["for"] == "tract:002500"
+
+    def test_1990_is_not_attempted(self) -> None:
+        """There is no 1990 decennial dataset on api.census.gov.
+
+        `data.json` lists `dec/*` at vintages 2000, 2010 and 2020 only, and
+        `1990/dec/sf1` is a 404. Attempting it produced one impossible
+        `absent` row per parcel per sweep. 1990 returns via the census
+        tabular ingest (NHGIS / www2 download), not by re-adding a config.
+        """
+        from app.services.census import _DECENNIAL_CONFIGS, DECENNIAL_YEARS
+
+        assert 1990 not in DECENNIAL_YEARS
+        assert 1990 not in _DECENNIAL_CONFIGS
+        assert DECENNIAL_YEARS == [2000, 2010, 2020]
 
     @pytest.mark.asyncio
     async def test_close_calls_aclose(self) -> None:

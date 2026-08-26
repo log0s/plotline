@@ -30,6 +30,7 @@ from app.services.census import (
     DECENNIAL_YEARS,
     CensusApiError,
     CensusFetcher,
+    CensusHttpStatusError,
     CensusMissingKeyError,
     geography_vintage,
     parse_tract_fips,
@@ -168,9 +169,12 @@ def _census_failure_reason(exc: Exception) -> str:
     ``CensusFetcher._request`` wraps every ``httpx.HTTPError`` as
     ``CensusApiError(f"HTTP error: {exc}")``, so the transport type survives
     only on ``__cause__`` — which the ``raise ... from exc`` there sets. A
-    non-200 status carries no cause and lands in ``other`` with the status
-    already in the message, which becomes the ledger's ``detail``.
+    non-200 status arrives as ``CensusHttpStatusError`` and carries the status
+    itself, so it becomes ``http_<status>`` rather than ``other``: an endpoint
+    that errors must never aggregate with a tract that has no data.
     """
+    if isinstance(exc, CensusHttpStatusError):
+        return f"http_{exc.status_code}"
     cause = exc.__cause__
     if isinstance(cause, httpx.TimeoutException):
         return "read_timeout"
@@ -1063,11 +1067,13 @@ async def _fetch_census_years(
                         items_saved += 1
                     logger.info("Census decennial saved", extra={"year": year, "tract": year_tract})
                 else:
-                    # The silent skip. `{}` arrives from a 204/404, a year
-                    # with no decennial config, and every requested variable
-                    # being dropped as unrecognised for the vintage — all
-                    # collapsed before the loop sees them. No counter, no log
-                    # at this level: the ledger is the only record it happened.
+                    # The silent skip. `{}` arrives from a 204, a year with
+                    # no decennial config, and every requested variable being
+                    # dropped as unrecognised for the vintage — all collapsed
+                    # before the loop sees them. No counter, no log at this
+                    # level: the ledger is the only record it happened. A 404
+                    # no longer arrives here; it raises and lands below as
+                    # `failed`/`http_404`.
                     ledger.record(
                         key,
                         "absent",

@@ -1,6 +1,6 @@
 """US Census Bureau API client.
 
-Fetches demographic data from Decennial Census (1990–2020) and American
+Fetches demographic data from Decennial Census (2000–2020) and American
 Community Survey 5-year estimates (2009–2023) at the census-tract level.
 """
 
@@ -41,18 +41,35 @@ _DECENNIAL_CONFIGS: dict[int, dict[str, Any]] = {
     },
     2000: {
         "dataset": "dec/sf1",
+        # 2000/dec/sf1 addresses a tract by its basic code plus a *real*
+        # suffix: four characters when the tract has no suffix, six when it
+        # does.  2010 and 2020 pad every code to six, which is the form a
+        # parcel's stored FIPS carries, so the six-character form 204s on
+        # every no-suffix tract — 80 of 186 parcels in the fleet, across 27
+        # states.  Verified against the dataset's own tract inventory: 3,088
+        # tracts over 8 counties in 8 states, no six-character code ending in
+        # `00` and no collision between the two widths, so dropping a trailing
+        # `00` re-encodes the same tract rather than substituting its parent.
+        # docs/audits/2026-08-census-decennial/REPORT.md §1.4.
+        "trim_empty_tract_suffix": True,
         "vars": {
             "P001001": "total_population",
             "H001001": "total_housing_units",
         },
     },
-    1990: {
-        "dataset": "dec/sf1",
-        "vars": {
-            "P0010001": "total_population",
-            "H0010001": "total_housing_units",
-        },
-    },
+    # 1990 is deliberately absent.  There is no 1990 decennial dataset on
+    # api.census.gov at all: data.json lists 1,798 datasets, `dec/*` appears
+    # at vintages 2000, 2010 and 2020 only, and all 36 datasets at vintage
+    # 1990 are CPS, CBP, PEP and SIPP.  `1990/dec/sf1` has always been a 404,
+    # which the ledger recorded as `absent`/`api_no_data` on every parcel
+    # until that collapse was closed (see `_request` below).
+    #
+    # 1990 tract-level decennial data does exist — as a download, not a call:
+    # NHGIS (nhgis.org) redistributes STF1/STF3 at tract level, and
+    # www2.census.gov/census_1990/ carries the raw STF files.  Either is an
+    # ingest, so 1990 comes back with the census tabular ingest pass (the
+    # Scheduled entry in docs/audits/2026-08-second-audit/STATUS.md), not by
+    # adding a config here.
 }
 
 # ACS 5-year variable names (consistent across all available years).
@@ -71,7 +88,7 @@ _ACS5_VARIABLES: dict[str, str] = {
 }
 
 # Years to fetch for each dataset.
-DECENNIAL_YEARS = [1990, 2000, 2010, 2020]
+DECENNIAL_YEARS = [2000, 2010, 2020]
 ACS5_YEARS = [2009, 2012, 2015, 2018, 2021, 2023]
 
 # Census geocoder vintage each (dataset, year) is published on.
@@ -94,10 +111,11 @@ ACS5_YEARS = [2009, 2012, 2015, 2018, 2021, 2023]
 #
 # So every year the geocoder can serve names its vintage, rather than only the
 # years that happened to be failing when the map was written.  Years absent
-# from the map fall back to the stored tract: decennial 1990 and 2000 are 2000
-# geography or older, which no vintage serves — Census2010_Current is the
-# geocoder's oldest.  (Neither would return data anyway; see
-# docs/audits/2026-08-racebrook/REPORT.md §4.2, §4.3.)
+# from the map fall back to the stored tract: decennial 2000 is 2000 geography,
+# which no vintage serves — Census2010_Current is the geocoder's oldest.  That
+# costs 2000 only where the stored county-equivalent is not the one the 2000
+# vintage answers under, which today is Connecticut alone
+# (docs/audits/2026-08-census-decennial/REPORT.md §1.5).
 #
 # ACS 2009 is 2000 tract geography too, and is mapped to Census2010_Current
 # regardless: it is the nearest vintage that exists, it carries the county-era
@@ -127,6 +145,24 @@ class CensusApiError(Exception):
 
 class CensusMissingKeyError(CensusApiError):
     """Raised when the Census API rejects a request due to a missing or invalid key."""
+
+
+class CensusHttpStatusError(CensusApiError):
+    """Raised when the Census API answers with a non-200, non-204 status.
+
+    "The endpoint errored" and "the tract has no data" are different states,
+    and this class is the difference.  ``_request`` used to map 404 to
+    ``None`` alongside 204, which became ``{}`` and then an
+    ``absent``/``api_no_data`` ledger row — so ``1990/dec/sf1``, a URL that
+    has never resolved, spent every sweep recorded as data absence on every
+    parcel.  The status and the dataset path travel with the error so the
+    ledger can write ``failed``/``http_404`` and say which URL.
+    """
+
+    def __init__(self, status_code: int, path: str) -> None:
+        super().__init__(f"Census API returned {status_code} for {path}")
+        self.status_code = status_code
+        self.path = path
 
 
 class CensusUnknownVariableError(CensusApiError):
@@ -209,7 +245,7 @@ class CensusFetcher:
             variables=list(config["vars"].keys()),
             state_fips=state_fips,
             county_fips=county_fips,
-            tract_code=tract_code,
+            tract_code=_tract_for_dataset(tract_code, config),
         )
         if resp is None:
             return {}
@@ -262,7 +298,12 @@ class CensusFetcher:
         county_fips: str,
         tract_code: str,
     ) -> list[list[str]] | None:
-        """Make a Census API request. Returns None on 204/404 (tract not found)."""
+        """Make a Census API request. Returns None on a 204 (tract not found).
+
+        A 4xx/5xx raises ``CensusHttpStatusError``: an endpoint that errors is
+        not a tract that has no data, and collapsing the two is what made a
+        dead 1990 URL read as absence on every parcel.
+        """
         params: dict[str, str] = {
             "get": ",".join(variables),
             "for": f"tract:{tract_code}",
@@ -286,7 +327,7 @@ class CensusFetcher:
                     "and set CENSUS_API_KEY in your .env file."
                 )
 
-        if resp.status_code in (204, 404):
+        if resp.status_code == 204:
             logger.info(
                 "Census API: no data for tract",
                 extra={"url": url, "status": resp.status_code},
@@ -303,7 +344,7 @@ class CensusFetcher:
                 "Census API error",
                 extra={"url": url, "status": resp.status_code, "body": resp.text[:500]},
             )
-            raise CensusApiError(f"Census API returned {resp.status_code}")
+            raise CensusHttpStatusError(resp.status_code, _dataset_path(url))
 
         # The Census API sometimes returns its HTML error page with a 200.
         try:
@@ -314,6 +355,29 @@ class CensusFetcher:
                 extra={"url": url, "body": resp.text[:200]},
             )
             raise CensusApiError(f"Census API returned invalid JSON: {exc}") from exc
+
+
+def _tract_for_dataset(tract_code: str, config: dict[str, Any]) -> str:
+    """Re-encode a stored six-character tract for the dataset asking for it.
+
+    Only ``2000/dec/sf1`` needs this, and only for a tract whose two-digit
+    suffix is empty — see the comment on that config entry.  A tract with a
+    real suffix is left alone: trimming one would ask about a different,
+    coarser geography and quietly label it with the parcel's tract.
+    """
+    if not config.get("trim_empty_tract_suffix"):
+        return tract_code
+    if len(tract_code) != 6 or not tract_code.endswith("00"):
+        return tract_code
+    return tract_code[:4]
+
+
+def _dataset_path(url: str) -> str:
+    """The dataset part of a Census API URL, for an error message.
+
+    Never the query string: the API key lives there.
+    """
+    return url.removeprefix(CensusFetcher.BASE_URL) or url
 
 
 def parse_tract_fips(tract_fips: str) -> tuple[str, str, str]:

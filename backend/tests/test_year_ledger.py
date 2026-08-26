@@ -17,7 +17,7 @@ import uuid
 from contextlib import ExitStack
 from datetime import date
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -743,6 +743,55 @@ async def test_census_empty_response_is_absent_api_no_data(
         assert (row["outcome"], row["reason"]) == ("absent", "api_no_data")
     for year in ACS5_YEARS:
         assert rows[("census_acs5", str(year))]["outcome"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_census_http_404_is_failed_http_404(
+    committing_db: sessionmaker[Session],
+) -> None:
+    """Delete-the-fix: `raise CensusHttpStatusError(...)` in `census._request`,
+    and the `isinstance` branch in `_census_failure_reason`.
+
+    A 404 is a URL that does not resolve. It used to return `None` alongside
+    204, become `{}`, and land as `absent`/`api_no_data` — which is how
+    `1990/dec/sf1`, an endpoint that has never existed, read as "this tract
+    has no data" on all 186 parcels. Revert `_request` to
+    `if resp.status_code in (204, 404)` and every row below reads `absent`.
+
+    A real `CensusFetcher` over a mocked transport, not a mocked fetcher: the
+    collapse being tested lives inside `_request`.
+    """
+    from app.services.census import ACS5_YEARS, DECENNIAL_YEARS, CensusFetcher
+    from app.tasks.timeline import _fetch_census
+
+    response = MagicMock()
+    response.status_code = 404
+    response.text = "Not Found"
+
+    fetcher = CensusFetcher(api_key="test-key")
+    fetcher.client = AsyncMock()
+    fetcher.client.get = AsyncMock(return_value=response)
+
+    parcel_id, request_id = _ids(committing_db, "census")
+    with (
+        patch("app.db.SessionLocal", committing_db),
+        patch("app.tasks.timeline.CensusFetcher", return_value=fetcher),
+        patch("app.tasks.timeline.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await _fetch_census(parcel_id, request_id, "08031006202", api_key="test-key")
+
+    rows = _ledger_rows(committing_db)
+    for year in DECENNIAL_YEARS:
+        row = rows[("census_decennial", str(year))]
+        assert (row["outcome"], row["reason"]) == ("failed", "http_404"), year
+    for year in ACS5_YEARS:
+        row = rows[("census_acs5", str(year))]
+        assert (row["outcome"], row["reason"]) == ("failed", "http_404"), year
+
+    # The detail names the dataset that answered 404, never the key.
+    assert "/2000/dec/sf1" in rows[("census_decennial", "2000")]["detail"]
+    assert "/2023/acs/acs5" in rows[("census_acs5", "2023")]["detail"]
+    assert "test-key" not in rows[("census_acs5", "2023")]["detail"]
 
 
 @pytest.mark.asyncio
