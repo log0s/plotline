@@ -64,7 +64,7 @@ strictly worse than none, and my status ledger said "partially resolved."
 
 ## The mechanism
 
-Fourteen lines, `env.py:96-109` as it stood at `ce307e35`: open a connection,
+Fourteen lines in `env.py` as it stood at `ce307e35`: open a connection,
 execute `SELECT pg_advisory_lock(:key)`, configure alembic's migration context
 on it, run the migrations inside `context.begin_transaction()`, unlock in a
 `finally`, close.
@@ -109,18 +109,16 @@ What it would have broken matters, because "nothing was lost" is a claim about
 arrivals, not safety. `ce307e35` deployed the ledger's recorder against a
 database with no ledger table, and the recorder sits on the mandatory path:
 `_run_timeline` moves a request to `processing` and calls
-`create_request_tasks` (`timeline.py:1374`, `:1383`), which runs
-`clear_task_year_outcomes` for every source on every request, not only on a
-Celery redelivery (`imagery.py:287-288`). That issues a `DELETE FROM
-timeline_task_years` (`year_ledger.py:195-217`) against a table that does not
-exist, and nothing catches the `UndefinedTable` — deliberately, since a ledger
-row is meant to commit atomically with its snapshot — so the task boundary
-marks the request `failed` and re-raises (`timeline.py:1577-1601`): every
-timeline request reaching the worker would have failed at its first write. None
-did: zero `timeline_requests` rows were created after the deploy, and none were
-`queued` or `processing`. GATE-STOP.md §9 bounds that to *created* requests, so
-the honest claim is that nothing arrived, not that nothing could have. The
-sweep would have arrived 184 times.
+`create_request_tasks`, which runs `clear_task_year_outcomes` for every source
+on every request, not only on a Celery redelivery. That issues a `DELETE FROM
+timeline_task_years` against a table that does not exist, and nothing catches
+the `UndefinedTable` — deliberately, since a ledger row is meant to commit
+atomically with its snapshot — so the task boundary marks the request `failed`
+and re-raises: every timeline request reaching the worker would have failed at
+its first write. None did: zero `timeline_requests` rows were created after the
+deploy, and none were `queued` or `processing`. GATE-STOP.md §9 bounds that to
+*created* requests, so the honest claim is that nothing arrived, not that
+nothing could have. The sweep would have arrived 184 times.
 
 ## Why nothing caught it, and what did
 
@@ -203,3 +201,8 @@ report. It is a silence. And the fix for a silence is never a better log line �
 the broken version was already logging success. It is an instrument that reads
 back what it just wrote, on a connection that cannot see its own uncommitted
 work, and refuses to exit 0 when the two disagree.
+
+Sources. The investigation record is
+`docs/audits/2026-08-m4-ledger/GATE-STOP.md` and its addenda; the gate line is
+`docs/audits/2026-08-m4-ledger/SWEEP-PROMPT-1.md`, Phase 1, line 2. The lock is
+commit `dd99cee` and the fix is commit `edc13db`.
