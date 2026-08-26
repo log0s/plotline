@@ -214,3 +214,84 @@ reconstruct it afterwards.
   instrumented — that is the entire point. Whatever number comes back is the
   first measurement of it, and `2f1b332e` (Racebrook Road, 5 census years
   against 7–9 for its peers, M4 occurrence 4) is the parcel to read first.
+
+---
+
+# Addendum, 2026-08-26 — the next fleet sweep, after the census decennial batch
+
+Written before the sweep, against commit `e6afa9b` (committed, **not
+deployed**). Scored by the sweep that first runs a worker carrying it. The
+baseline is the production state read 2026-08-26 and recorded in
+`../2026-08-census-decennial/REPORT.md` §1.1: **186 parcels**, decennial 1990
+`absent` ×186, decennial 2000 `ok` 47 / `absent` 139, acs5 2009 `ok` 112 /
+`absent` 74. If the fleet is a different size when the sweep runs, scale the
+per-parcel claims and say so; do not edit them.
+
+## P7 — decennial 1990 rows vanish from the ledger entirely
+
+`census_decennial` / `1990` recorded groups: **186 → 0**. Not `absent` → some
+other outcome; the group is never attempted, so no row exists. Fleet-wide
+`absent` census rows drop by **186** on this account alone.
+
+Falsifier: any `timeline_task_years` row with `source = 'census_decennial'`
+and `group_key = '1990'` created after the deploy.
+
+## P8 — decennial 2000 gains 64 parcels
+
+`census_decennial` / `2000`: **`ok` 47 → 111, `absent` 139 → 75.**
+`census_snapshots` for `(dataset='decennial', year=2000)`: **47 → 111 rows.**
+
+The 64 are exactly the parcels whose stored `census_tract_id` ends in `00`
+**and** whose four-character form answered 200 on 2026-08-26 (§1.5 of the
+report lists the 16 that did not, by tract). The 47 already-`ok` parcels are
+untouched — none of their tracts ends in `00`, so the trim does not fire.
+
+Falsifiers, any one of which is a deviation to write down rather than explain
+away:
+
+* a parcel whose tract does **not** end in `00` changing outcome at all;
+* fewer than 64 gained — the difference is either a tract that has changed
+  since the probe or an upstream change, and the report's per-tract list says
+  which parcels to check;
+* more than 64 gained — the trim is firing somewhere the probe did not
+  predict, which means the rule in §1.4 is narrower than the code.
+
+`09170157100` (Racebrook) **stays `absent`** and is the only parcel in the
+fleet expected to. Its stored county is a planning region; decennial 2000 has
+no `_GEOGRAPHY_VINTAGES` entry, so it is still asked as `09170`/`1571`.
+
+## P9 — acs5 2009 gains from the Racebrook ride-along
+
+`4ce1822` mapped acs5 2009 to `Census2010_Current`, so a parcel redistricted
+in 2010 is now asked under its 2010 tract instead of its 2020 one. **74
+parcels currently have no acs5 2009 row** (`ok` 112 / `absent` 74).
+
+Predicted: **between 0 and 74 gained, and never a loss.** This is deliberately
+not a point estimate — the ride-along was never measured fleet-wide, and
+§4.4 of `../2026-08-racebrook/REPORT.md` shows the recovery only works where
+the 2010 tract is also the 2000 tract. The falsifiable half is the floor: any
+parcel moving acs5 2009 from `ok` to `absent` falsifies the "never worse"
+claim the fix was accepted on.
+
+## P10 — no `absent` census row hides an HTTP status
+
+After the reason split, **every** remaining `absent`/`api_no_data` census row
+carries a 200-with-empty-body or a 204, and **no `failed`/`http_*` census row
+exists at all** unless the worker log shows the matching status in the same
+window.
+
+Falsifier: an `absent`/`api_no_data` row for a (dataset, year) whose log line
+in the same request shows a 4xx/5xx. That would mean a second collapse
+survives somewhere upstream of the ledger.
+
+A `failed`/`http_*` row appearing **is not** a falsification — it is the
+instrument working. What it must come with is a log line carrying the same
+status and the same dataset path.
+
+## P11 — the decennial floor, stated plainly
+
+After the sweep, production's decennial coverage is **2000 for 111 parcels,
+2010 for the remaining 75, and 2020 for all 186**. There is no 1990 anywhere
+and there will not be until the census tabular ingest lands. Any user-facing
+copy still claiming 1990 is false on the day this sweep finishes — the copy
+batch is tracked separately in STATUS.md.

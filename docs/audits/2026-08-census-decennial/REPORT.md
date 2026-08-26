@@ -226,5 +226,163 @@ discovered, per engineering norm 3.
 
 ## 5. What changed
 
-*(Written with the fix; the code commit follows this one. §5-§8 are appended in
-the docs commit so that the report file matches the code that landed.)*
+Commit `e6afa9b`, three files of code and three of tests. Committed, **not
+deployed**; nothing below is running in production yet.
+
+### 5.1 An HTTP error stops reading as an absence
+
+`backend/app/services/census.py`:
+
+* New `CensusHttpStatusError(CensusApiError)` (`census.py:150-166`) carrying
+  `status_code` and the dataset `path`.
+* `_request` (`census.py:330-347`): `if resp.status_code in (204, 404)` becomes
+  `== 204`. Every other non-200 — 404 included — raises
+  `CensusHttpStatusError(status, _dataset_path(url))`. `_dataset_path`
+  (`census.py:375-380`) strips `BASE_URL` and never touches the query string,
+  which is where the key is.
+
+`backend/app/tasks/timeline.py`: `_census_failure_reason` (`:176-177`) returns
+`f"http_{exc.status_code}"` for that class, ahead of the `__cause__` walk that
+separates timeouts from transport errors.
+
+`backend/app/services/year_ledger.py`: `failed` now also accepts
+`http_<status>` (`_HTTP_REASON_RE`, `year_ledger.py:100-106`, checked in
+`_validate` at `:143`). A family rather than an enumeration, and the comment
+says why: the statuses an upstream can return are not ours to enumerate, and
+what matters is that the status is *in* the reason.
+
+The ledger `detail` is `str(exc)` as before, which now reads
+`Census API returned 404 for /1990/dec/sf1`.
+
+### 5.2 Decennial 1990 is not attempted
+
+`DECENNIAL_YEARS` is `[2000, 2010, 2020]` (`census.py:91`), and
+`_DECENNIAL_CONFIGS[1990]` is gone, replaced by a comment at the same site
+naming what §2 established and where 1990 actually lives — NHGIS or
+`www2.census.gov/census_1990/`, a download, so it returns with the census
+tabular ingest pass, not by re-adding a config. The module docstring's
+"Decennial Census (1990–2020)" is corrected to 2000. The `_GEOGRAPHY_VINTAGES`
+comment, which explained why 1990 and 2000 are unmapped, now explains only
+2000 and names the one parcel it costs.
+
+### 5.3 Decennial 2000 asks for the tract the dataset addresses
+
+A `"trim_empty_tract_suffix": True` flag on the 2000 config entry
+(`census.py:42-59`, the flag itself at `:54`), applied by `_tract_for_dataset` (`census.py:360-372`),
+called once in `fetch_decennial` (`census.py:248`). Six characters ending in
+`00` become four; everything else is passed through untouched, including a
+real suffix — trimming one would ask for a coarser geography and label the
+answer with the parcel's tract.
+
+Per-dataset by construction: 2010 and 2020 carry no flag, so their requests
+are byte-identical to before.
+
+---
+
+## 6. Tests
+
+529 passing, 2 skipped. **5 added, 2 rewritten in place** (523 → 524 in the
+Racebrook batch, 524 → 529 here).
+
+| test | file | what only it can catch |
+|---|---|---|
+| `test_fetch_raises_on_404` *(rewritten from `test_fetch_returns_empty_on_404`)* | `test_census.py` | 404 raising with status and path, and the key not riding along |
+| `test_request_raises_on_unexpected_status` *(extended)* | `test_census.py` | a 500 carrying the dataset path, not the key |
+| `test_decennial_2000_asks_for_the_four_character_tract` | `test_census.py` | the trim fires — asserts the literal `for=tract:0025` |
+| `test_decennial_2000_keeps_a_real_tract_suffix` | `test_census.py` | the trim does **not** fire on `009903` |
+| `test_decennial_2010_pads_every_tract_to_six` | `test_census.py` | the trim is per-dataset |
+| `test_1990_is_not_attempted` | `test_census.py` | 1990 out of both the year list and the config map |
+| `test_census_http_404_is_failed_http_404` | `test_year_ledger.py` | end-to-end: a real `CensusFetcher` over a mocked transport, all nine groups reading `failed`/`http_404` with the dataset path in `detail` |
+
+`test_fetch_census_uses_county_tract_before_planning_regions`
+(`test_timeline.py`) is the second rewrite: its 1990-and-2000 assertion
+becomes a 2000 assertion plus `("decennial", 1990) not in asked`.
+
+### 6.1 Delete-the-fix, five reversions, each run and observed
+
+| reverted | result |
+|---|---|
+| `== 204` back to `in (204, 404)` | 2 failed — `test_fetch_raises_on_404`, `test_census_http_404_is_failed_http_404` |
+| `_tract_for_dataset(...)` back to `tract_code` | 1 failed — `test_decennial_2000_asks_for_the_four_character_tract` |
+| `_DECENNIAL_CONFIGS[1990]` and `DECENNIAL_YEARS` restored | 2 failed — `test_1990_is_not_attempted`, `test_fetch_census_uses_county_tract_before_planning_regions` |
+| the `isinstance(exc, CensusHttpStatusError)` branch removed | 1 failed — the ledger test, on `other` instead of `http_404` |
+| the ledger's `http_` allowance removed | 1 failed — the ledger test, on the vocabulary error |
+
+Restored after each; the suite is green at 529.
+
+---
+
+## 7. Test and lint results
+
+Docker is not running on this workstation, so the suite ran under
+`backend/.venv` rather than `make test`'s `docker compose exec api pytest` —
+same interpreter (3.12), same `tests/conftest.py` SQLite harness.
+
+```
+$ .venv/bin/python -m pytest tests/ -q
+529 passed, 2 skipped, 2 warnings in 6.84s
+
+$ .venv/bin/python -m ruff check app/ tests/
+All checks passed!
+
+$ .venv/bin/python -m ruff format --check app/ tests/
+72 files already formatted
+
+$ .venv/bin/python -m mypy app/
+Success: no issues found in 47 source files
+```
+
+---
+
+## 8. Deviations from the brief
+
+1. **The fleet is 186 parcels, not 184.** Every count in this report is over
+   186; the brief's 184 is the M4 sweep's number. Two parcels were added
+   since, and no claim here depends on which.
+2. **Item 1 asked what the API's *docs* say the tract format is; the docs do
+   not say.** `geography.json` gives `tract` a level and its required
+   parents and no width, and `examples.json` carries no tract example (§1.4).
+   The evidence used instead is the dataset's own tract inventory over 3,088
+   tracts — the API answering the question directly rather than describing
+   it. The underlying Census 2000 "basic code + suffix" convention is named
+   in §9 as UNVERIFIED, because the primary technical documentation was not
+   fetched and the fix does not rest on it.
+3. **Item 5's stop condition was "CT-specific or inconclusive → do not fix".**
+   Neither held — the rule is mechanical and universal — so the fix landed.
+4. **Racebrook still does not get decennial 2000, and the reason is not the
+   width.** Its stored county is a planning region. Recovering it needs a
+   `("decennial", 2000)` vintage entry, which is a fleet-wide behaviour
+   change to recover one parcel; not done, recorded in STATUS.md under To
+   investigate with the argument for and against.
+5. **One finding outside the census path.** §4's grep found `socrata.py`'s
+   404 → `[]`. Out of scope, unfixed, in STATUS.md.
+6. **`census.py`'s module docstring was edited despite item 2's "do not edit
+   copy".** It is the code's own claim, not product copy, and leaving a
+   docstring saying 1990–2020 next to a config that no longer has 1990 would
+   be a new false statement. Every user-facing string in §3 is untouched.
+
+---
+
+## 9. UNVERIFIED
+
+- **That the Census 2000 "basic code + optional two-digit suffix" convention
+  is documented as such by the Bureau.** The behaviour is measured over 3,088
+  tracts in 8 states and the two widths partition cleanly, but the primary
+  technical documentation (Census 2000 SF1, Appendix A geographic terms) was
+  not fetched. If it turns out the rule has an exception somewhere, the
+  falsifier is a `2000/dec/sf1` tract code that is six characters and ends in
+  `00`; none exists in the sample.
+- **That the 64 recoverable parcels are still 64 when the sweep runs.** They
+  were probed live on 2026-08-26 against tracts stored in production that
+  day. A parcel re-geocoded between now and the sweep could change its stored
+  tract.
+- **The acs5 2009 ride-along's fleet-wide size.** 74 parcels have no 2009 row;
+  how many the `Census2010_Current` mapping recovers was never measured, here
+  or in the Racebrook pass. P9 predicts a range and a floor, not a number.
+- **That no non-census upstream is currently returning a 4xx/5xx that reads as
+  absence in the ledger.** §4 establishes that no other *client* has the
+  collapse in its code. It does not establish that production is quiet — the
+  first sweep under `e6afa9b` is what would show a `failed`/`http_*` row.
+- **That 1990 tract-level data on NHGIS matches what this product would want.**
+  Named as where 1990 lives; not evaluated for coverage, variables, or
+  licensing. That is the ingest pass's problem.
