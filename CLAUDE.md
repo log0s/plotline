@@ -80,11 +80,12 @@ stale.
 
 ## Commits
 
-Conventional commits (feat:/fix:/docs:/chore:). Every commit carries the
+- Conventional commits (feat:/fix:/docs:/chore:). Every commit carries the
 `Co-Authored-By` trailer for the model that wrote it — the provenance analysis
 documents what the unstamped era cost. One session writes the repo at a time;
 per-session instructions don't transfer between concurrent sessions. Never push:
 push, deploy, and heal execution belong to Ryan.
+- Dependency changes ship with the lockfile. Any edit to `backend/pyproject.toml` dependencies is committed together with the regenerated `backend/uv.lock` (`uv lock`). Run tests with `uv sync --locked` before reporting results — that is what CI runs, and a stale lockfile fails there even when tests pass locally.
 
 ## Production access
 
