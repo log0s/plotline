@@ -652,3 +652,50 @@ recorder while the table was missing — the window that mattered (`00:52Z`
 deploy through this check) had zero arrivals. `edc13db` is deployed, not
 merely committed. The M4 sweep (`../2026-08-m4-ledger/PREDICTION.md`) is now
 runnable; running it is out of scope for this observe-only session.
+
+---
+
+# Addendum, 2026-08-26 — three corrections to §6 and §10
+
+Written after the edit pass on `docs/posts/2026-08-migration-lock.md`
+(`docs/posts/2026-08-migration-lock.EDIT-NOTES.md`, items 5, 10 and 11), which
+checked this file's numbers against the primary record and found three that do
+not survive it. Nothing above is edited; the corrections live here.
+
+**1. §6's "488-test suite" is the wrong count.** The suite that ships with
+`0011` at `ce307e35` is **522** tests, not 488. 488 is the pre-ledger count at
+`fa3ea89`: `REPORT.md` §6 reads "**522 passed, 0 failed** … up from 488 at
+`fa3ea89`", and `pytest --collect-only -q` in a throwaway worktree at
+`ce307e35` collects 522 (525 at `edc13db`, which adds three). §6's argument is
+untouched — a suite whose tables come from `_create_test_tables()` is not a
+test of the migration at either count — but the number is wrong and STATUS.md's
+X3 row carried it forward. X3 is corrected in place.
+
+**2. §10 anomaly 1 reads the 00:52Z pair as evidence about the lock. It is
+not.** The two boots never overlapped: `825d69b7e46618` logged `Migrations
+complete.` at `00:52:28Z`, and `48e0de9a713918` logged `Running database
+migrations...` at `00:52:40Z`, twelve seconds after the first machine was done.
+Nothing was contended, so the pair says nothing about whether the lock
+serializes — in either direction. What it does show is unchanged and is §3's
+mechanism: the second boot re-ran `0010 -> 0011` because the first boot's
+version bump had been rolled back. Anomaly 1's conclusion — that M10's
+"Partially resolved (dd99cee)" does not stand — survives on §3 and §4 alone,
+which is where it should have rested.
+
+**3. The second addendum's 01:29Z reading has the same shape.** "Boot A/Boot B"
+above says `825d69b7e46618` "took the `pg_advisory_xact_lock`, found the
+database already at head" and calls it "the first production observation of
+M10's serialization actually working". The log block printed directly above
+that sentence does not support the wait: `48e0de9a713918`'s head check is
+`01:29:41Z` and `825d69b7e46618` pulls its image at `01:29:51Z`, ten seconds
+later. No log line in either boot shows a lock wait. What is observed is the
+outcome — the second boot found committed head and ran no upgrade, the first
+time in this project's history that a second booter has read real state — and
+the outcome is consistent with serialization without being an observation of
+it. `test_concurrent_boots_from_0010_converge_on_head` (§13) is where the
+contention is forced and the property is actually tested.
+
+STATUS.md's X1 and M10 rows are corrected in place for all three. M10's
+re-mark also said "23 days" from `dd99cee` to discovery, which differences the
+local commit dates; on UTC — the convention every log timestamp here uses —
+`dd99cee` is `2026-08-04T00:56Z` and the interval is **22 days**.
