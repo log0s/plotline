@@ -1,0 +1,19 @@
+# M4 ledger baseline — outcome=indeterminate, 2026-08-26T03:07Z, SHA 3a86dd69211c460cee22245d30605941fdd55168
+# Command: python scripts/ledger_gaps.py --outcome indeterminate
+#
+parcel    source     group  outcome        reason                                                                                                                    n  reasons seen                                                                                                            
+--------  ---------  -----  -------------  ------------------------------------------------------------------------------------------------------------------------  -  ------------------------------------------------------------------------------------------------------------------------
+9c35ceb0  usgs_topo  *      indeterminate  TNM response hit its row cap at usgs_topo.search_usgs_topo_products; a decade absent from the response may be truncation  1  TNM response hit its row cap at usgs_topo.search_usgs_topo_products; a decade absent from the response may be truncation
+fe065e2d  naip       2010   indeterminate  naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation                     1  naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation                   
+fe065e2d  naip       2019   indeterminate  naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation                     1  naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation                   
+fe065e2d  naip       2020   indeterminate  naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation                     1  naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation                   
+fe065e2d  naip       2022   indeterminate  naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation                     1  naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation                   
+fe065e2d  naip       2024   indeterminate  naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation                     1  naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation                   
+fe065e2d  naip       2025   indeterminate  naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation                     1  naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation                   
+fe065e2d  naip       2026   indeterminate  naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation                     1  naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation                   
+
+8 (parcel, source, group) triples with a recorded outcome.
+  indeterminate  8
+
+  naip               indeterminate  7
+  usgs_topo          indeterminate  1

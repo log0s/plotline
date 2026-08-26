@@ -1,0 +1,7 @@
+# M4 ledger baseline — outcome=failed, 2026-08-26T03:07Z, SHA 3a86dd69211c460cee22245d30605941fdd55168
+# Command: python scripts/ledger_gaps.py --outcome failed
+#
+No ledger rows match.
+
+0 (parcel, source, group) triples with a recorded outcome.
+
