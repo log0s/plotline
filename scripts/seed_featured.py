@@ -56,7 +56,7 @@ FEATURED_LOCATIONS = [
         "description": (
             "The area east of Denver near E-470 was open prairie and farmland in the "
             "early 2000s. Annual Landsat imagery reaches back to 1984 and NAIP "
-            "aerials cover 2011–2023, alongside four decades of Census data on the "
+            "aerials cover 2011–2023, alongside Census data back to 2000 on the "
             "population growth."
         ),
         "display_order": 3,

@@ -386,3 +386,56 @@ Success: no issues found in 47 source files
 - **That 1990 tract-level data on NHGIS matches what this product would want.**
   Named as where 1990 lives; not evaluated for coverage, variables, or
   licensing. That is the ingest pass's problem.
+
+---
+
+## 10. Addendum, 2026-08-26 — the copy batch itself
+
+§3's inventory closed. Re-grepped `1990` across `README.md`, `scripts/`,
+`frontend/src`, `docs/posts/`, `DEVELOPMENT.md` (leaving `docs/audits/`
+untouched, per the audit norm). No new hits beyond §3's list — the only
+remaining `1990` occurrences are Landsat claims (`README.md:34`,
+`scripts/revalidate_landsat.py:4`, `scripts/seed_featured.py:101`, and
+`frontend/src/test/fixtures/*`), all true (Landsat reaches 1984) and out of
+scope.
+
+Six lines corrected, one commit:
+
+| file:line | before | after |
+|---|---|---|
+| `README.md:17` | "Census demographic data across **four decades**" | "Census demographic data **back to 2000**" |
+| `README.md:28` | Green Valley Ranch: "**four decades** of Census data" | "Census data **back to 2000**" |
+| `README.md:81` | data-source table: "Nationwide, **1990–2023**" | "Nationwide, **2000–2023**" |
+| `README.md:205` | "the **1990 data** may represent a much larger geographic area" | "the **2000 data** may represent a much larger geographic area" |
+| `README.md:207` | "A median income of $40,000 **in 1990**" | "A median income of $40,000 **in 2009**" (median income is ACS-only; the decennial config never requested it, and the ACS floor is 2009 — §3's "doubly false" note) |
+| `scripts/seed_featured.py:59` | Green Valley Ranch `description`: "alongside **four decades** of Census data" | "alongside Census data **back to 2000**" |
+
+`census.py`'s docstring already read "Decennial Census (2000–2020)" — corrected
+in `e6afa9b`, per §3's note that it is code's own claim, not product copy.
+
+**Prod comparison, read-only (`fly ssh console -a log0s-plotline-api -C`,
+2026-08-26).** `featured_locations` row for `green-valley-ranch`:
+
+    ('green-valley-ranch', 'The area east of Denver near E-470 was open
+    prairie and farmland in the early 2000s. NAIP imagery shows the rapid
+    development of subdivisions, schools, and commercial centers that now
+    house tens of thousands.')
+
+This is the T6 NAIP-only text, not `seed_featured.py`'s current description
+(which now reads "...alongside Census data back to 2000..."). §3's deviation
+note holds: the two differ, and per the brief this is not reconciled here —
+prod carries no false "four decades" claim today, and would only pick one up
+if `seed_featured.py` were run against it.
+
+**Item 4's guard.** No existing test asserted README/blurb copy against
+config — the NAIP correction (T6) did not add one. Added
+`test_readme_decennial_floor_matches_config` in `backend/tests/test_census.py`,
+asserting `f"Nationwide, {min(DECENNIAL_YEARS)}–2023"` appears in `README.md`
+and that no line combining "1990" with "census" (case-insensitive) survives.
+Delete-the-fix: run against README.md before this batch's edits (`git stash`),
+the table-line assertion fails and both `1990`+`census` lines are caught. The
+test `pytest.skip`s if `README.md` isn't present — true inside the `api`
+container, which mounts only `backend/` — but runs for real in CI, which
+checks out the full repo before `cd backend && uv run pytest`.
+
+STATUS.md: the "user-facing 1990 claim" row → resolved, this commit.

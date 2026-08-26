@@ -874,6 +874,15 @@ fix commit will get cited.
   corrected in `e6afa9b` — it is the code's claim, not product copy. Evidence:
   `../2026-08-census-decennial/REPORT.md` §3.
 
+  **Resolved, this commit, 2026-08-26.** All six lines corrected to the true
+  floor (decennial 2000, ACS5 2009); before/after and the re-verified prod
+  comparison are `../2026-08-census-decennial/REPORT.md` §10. Prod's
+  `green-valley-ranch` blurb still carries the older NAIP-only text, not
+  the script's now-fixed sentence — confirmed unchanged and not reconciled,
+  per §10. Guard added: `test_readme_decennial_floor_matches_config` in
+  `backend/tests/test_census.py`, delete-the-fix verified against the
+  pre-edit README.
+
 - **`socrata.py` reads a 404 as "this county has no records" — the same
   collapse the census fix just closed, one path over.** Found 2026-08-26 by
   grepping for the shape while splitting the census reason

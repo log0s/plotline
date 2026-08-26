@@ -371,6 +371,27 @@ class TestCensusFetcher:
         assert 1990 not in _DECENNIAL_CONFIGS
         assert DECENNIAL_YEARS == [2000, 2010, 2020]
 
+    def test_readme_decennial_floor_matches_config(self) -> None:
+        """README's stated Census coverage floor must track DECENNIAL_YEARS.
+
+        Prevents a repeat of the "1990" copy drift: if the decennial floor
+        ever moves, this fails until the README is updated too.
+        """
+        from pathlib import Path
+
+        from app.services.census import DECENNIAL_YEARS
+
+        readme = Path(__file__).resolve().parents[2] / "README.md"
+        if not readme.exists():
+            pytest.skip("README.md not mounted in this test environment")
+        text = readme.read_text()
+        floor = min(DECENNIAL_YEARS)
+
+        assert f"Nationwide, {floor}–2023" in text
+        for line in text.splitlines():
+            if "1990" in line and "census" in line.lower():
+                pytest.fail(f"README line names 1990 in a Census context: {line!r}")
+
     @pytest.mark.asyncio
     async def test_close_calls_aclose(self) -> None:
         fetcher = CensusFetcher(api_key="test-key")
