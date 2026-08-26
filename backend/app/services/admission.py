@@ -51,25 +51,49 @@ def inflight_depth(db: Session) -> int:
     )
 
 
-def ensure_admission(db: Session, settings: Settings, *, what: str) -> None:
+def effective_cap(settings: Settings, origin: str) -> int:
+    """The in-flight cap this origin may fill.
+
+    User traffic gets the whole cap; ``backfill`` and ``heal`` stop
+    ``user_admission_reserve`` slots short of it. Before ``origin`` existed
+    nothing at the gate could tell a first-time visitor's geocode from a
+    six-year-old Landsat gap being retried, and the geocode is the one whose
+    refusal a human sees as a 503 (INVESTIGATION §7.2, §7.4).
+
+    The reserve is clamped at the cap, so a misconfigured reserve larger than
+    the cap refuses all non-user work rather than admitting it unbounded.
+    """
+    cap = settings.max_inflight_timeline_requests
+    if origin == "user":
+        return cap
+    return max(0, cap - min(settings.user_admission_reserve, cap))
+
+
+def ensure_admission(db: Session, settings: Settings, *, what: str, origin: str = "user") -> None:
     """Raise ``AdmissionRefused`` when new work must not be started.
 
     Every refusal is logged with its reason so a flood is visible as a
     count of ``Admission refused`` lines, not as silence.
     """
     if not settings.accept_new_parcels:
-        logger.warning("Admission refused", extra={"what": what, "reason": "kill_switch"})
+        logger.warning(
+            "Admission refused",
+            extra={"what": what, "origin": origin, "reason": "kill_switch"},
+        )
         raise AdmissionRefused("kill_switch")
 
+    cap = effective_cap(settings, origin)
     depth = inflight_depth(db)
-    if depth >= settings.max_inflight_timeline_requests:
+    if depth >= cap:
         logger.warning(
             "Admission refused",
             extra={
                 "what": what,
+                "origin": origin,
                 "reason": "queue_full",
                 "depth": depth,
-                "cap": settings.max_inflight_timeline_requests,
+                "cap": cap,
+                "hard_cap": settings.max_inflight_timeline_requests,
             },
         )
         raise AdmissionRefused("queue_full", depth=depth)
@@ -83,6 +107,7 @@ def wait_for_admission_slot(
     settings: Settings,
     *,
     deadline: float,
+    origin: str = "user",
     poll_seconds: float = WAIT_POLL_SECONDS,
     sleeper: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
@@ -102,6 +127,10 @@ def wait_for_admission_slot(
     ``deadline`` is a ``clock()`` value, not a duration. The kill switch is
     not waited out — it is off by operator intent, and no amount of waiting
     changes it.
+
+    ``origin`` selects the cap being waited on, so a heal waits for the queue
+    to fall below *its* ceiling rather than the user one — otherwise the wait
+    would return, the gate would refuse, and the loop would spin.
     """
     while True:
         if not settings.accept_new_parcels:
@@ -118,8 +147,23 @@ def wait_for_admission_slot(
         # READ this loop would never see the drain and would spend its
         # whole budget — start a fresh session per poll if that ever
         # changes.
+        cap = effective_cap(settings, origin)
+        if cap <= 0:
+            # A reserve at or above the hard cap leaves this origin no slots
+            # at all. Depth can never fall below zero, so waiting is a spin,
+            # not a wait — refuse and let the caller report it.
+            logger.warning(
+                "Admission wait abandoned — this origin has no slots",
+                extra={
+                    "origin": origin,
+                    "reason": "queue_full",
+                    "hard_cap": settings.max_inflight_timeline_requests,
+                    "reserve": settings.user_admission_reserve,
+                },
+            )
+            return False
+
         depth = inflight_depth(db)
-        cap = settings.max_inflight_timeline_requests
         if depth < cap:
             return True
 

@@ -12,7 +12,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from redis.exceptions import RedisError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 # ── Imagery service unit tests ─────────────────────────────────────────────────
 
@@ -1326,3 +1326,224 @@ def test_tile_proxy_refuses_non_allowlisted_cog_host(client: TestClient, db: Ses
     assert warm.status_code == 204
     sign.assert_not_awaited()
     mock_titiler.assert_not_called()
+
+
+# ── Declared scope: sources, origin, and what counts as the current request ──
+
+
+def _scoped_request(
+    db: Session,
+    parcel_id: uuid.UUID,
+    sources: list[str],
+    *,
+    status: str = "complete",
+    origin: str = "backfill",
+    age_hours: float = 1.0,
+) -> object:
+    from app.models.parcels import TimelineRequest
+
+    req = TimelineRequest(
+        id=uuid.uuid4(),
+        parcel_id=parcel_id,
+        status=status,
+        sources=sources,
+        origin=origin,
+        created_at=datetime.now(UTC) - timedelta(hours=age_hours),
+    )
+    db.add(req)
+    db.commit()
+    return req
+
+
+def test_a_request_declares_full_scope_by_default(db: Session) -> None:
+    from app.models.parcels import TimelineRequest
+    from app.services.imagery import get_or_create_timeline_request
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+
+    request, _ = get_or_create_timeline_request(db, parcel_id)
+
+    assert request.sources == list(TimelineRequest.FULL_SCOPE)
+    assert request.origin == "user"
+
+
+def test_normalize_sources_dedupes_sorts_and_rejects_unknowns() -> None:
+    """The cardinality test for "full scope" is only sound if this is."""
+    from app.services.imagery import FULL_SCOPE, normalize_sources
+
+    assert normalize_sources(None) == list(FULL_SCOPE)
+    assert normalize_sources(["naip", "naip", "census"]) == ["census", "naip"]
+    with pytest.raises(ValueError, match="Unknown timeline source"):
+        normalize_sources(["naip", "landsat_8"])
+    with pytest.raises(ValueError, match="at least one source"):
+        normalize_sources([])
+
+
+def test_scoped_request_never_becomes_the_parcels_current_request(db: Session) -> None:
+    """INVESTIGATION §2.2a, trigger 6, traced through the new query.
+
+    Before this filter: a census-only backfill is the parcel's newest
+    queued/complete request, so ``_find_reusable_request`` hands it to
+    ``maybe_refetch_for_backfill``, which finds no ``usgs_topo`` task row on
+    it, fires trigger 6, and dispatches a full pipeline — on every page view,
+    forever. Delete the ``full_scope_clause`` line from
+    ``_find_reusable_request`` and this test fails on the id assertion.
+    """
+    from app.services.imagery import (
+        _find_reusable_request,
+        get_or_create_timeline_request,
+        update_timeline_request_status,
+    )
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    full, _ = get_or_create_timeline_request(db, parcel_id)
+    update_timeline_request_status(db, full, "complete")
+
+    scoped = _scoped_request(db, parcel_id, ["census"], age_hours=0.0)
+
+    current = _find_reusable_request(db, parcel_id)
+    assert current is not None
+    assert current.id == full.id, "a scoped request must never be the current one"
+    assert current.id != scoped.id
+
+
+def test_a_scoped_request_does_not_trigger_a_full_backfill(db: Session) -> None:
+    """The same scenario one level up: the trigger cannot see the scoped run."""
+    from types import SimpleNamespace
+
+    from app.services.imagery import (
+        create_request_tasks,
+        get_or_create_timeline_request,
+        maybe_refetch_for_backfill,
+        update_timeline_request_status,
+    )
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    full, _ = get_or_create_timeline_request(db, parcel_id)
+    create_request_tasks(db, full.id, ["usgs_topo", "property"])
+    update_timeline_request_status(db, full, "complete")
+    _scoped_request(db, parcel_id, ["census"], age_hours=0.0)
+
+    parcel = SimpleNamespace(id=parcel_id, census_tract_id=None, county=None)
+    assert maybe_refetch_for_backfill(db, parcel, full) is None
+
+
+def test_a_partial_request_is_reusable_like_a_complete_one(db: Session) -> None:
+    from app.services.imagery import (
+        _find_reusable_request,
+        get_or_create_timeline_request,
+        update_timeline_request_status,
+    )
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    request, _ = get_or_create_timeline_request(db, parcel_id)
+    update_timeline_request_status(db, request, "partial")
+
+    found = _find_reusable_request(db, parcel_id)
+    assert found is not None and found.id == request.id
+
+
+def test_losing_the_race_to_a_scoped_request_reuses_it(
+    committing_db: sessionmaker[Session],
+) -> None:
+    """``uq_timeline_requests_parcel_inflight`` does not care about scope.
+
+    A scoped backfill holds the parcel's one in-flight slot, so the loser of
+    that race has to be able to find it. Point ``_create_queued_request``'s
+    recovery at ``_find_reusable_request`` — which is scope-filtered — and
+    the lookup returns None and the IntegrityError is re-raised.
+
+    ``committing_db`` rather than ``db``: the recovery path runs after a
+    ``rollback()``, and the rollback-per-test fixture would take the racing
+    request with it, so the race could not be staged at all.
+    """
+    from app.services.imagery import _create_queued_request
+
+    parcel_id = uuid.uuid4()
+    with committing_db() as db:
+        _insert_parcel(db, parcel_id)
+        inflight = _scoped_request(db, parcel_id, ["landsat"], status="queued", age_hours=0.0)
+        inflight_id = inflight.id  # type: ignore[attr-defined]  # _scoped_request returns a TimelineRequest
+
+    with committing_db() as db:
+        request, created = _create_queued_request(db, parcel_id)
+
+    assert created is False
+    assert request.id == inflight_id
+
+
+# ── Scoped task creation leaves other sources' ledger history alone ──────────
+
+
+def test_create_request_tasks_only_touches_the_named_sources(db: Session) -> None:
+    """A census-only run must not erase the landsat ledger it did not re-run."""
+    from sqlalchemy import text
+
+    from app.services.imagery import create_request_tasks, get_or_create_timeline_request
+    from app.services.year_ledger import record_year_outcome
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+    request, _ = get_or_create_timeline_request(db, parcel_id)
+    tasks = create_request_tasks(db, request.id, ["census", "landsat"])
+    by_source = {t.source: t for t in tasks}
+    record_year_outcome(db, by_source["landsat"].id, "landsat", "1993", "failed", "read_timeout")
+    record_year_outcome(
+        db, by_source["census"].id, "census_decennial", "2000", "absent", "api_no_data"
+    )
+
+    create_request_tasks(db, request.id, ["census"])
+
+    rows = db.execute(
+        text(
+            "SELECT y.source, y.group_key FROM timeline_task_years y"
+            " JOIN timeline_request_tasks t ON t.id = y.task_id"
+            " WHERE t.timeline_request_id = :rid"
+        ),
+        {"rid": request.id.hex},
+    ).all()
+    assert [(r.source, r.group_key) for r in rows] == [("landsat", "1993")]
+
+
+# ── Request status aggregation ───────────────────────────────────────────────
+
+
+def test_aggregate_request_status_partial() -> None:
+    """Crawford County 6563dedf: naip and sentinel2 failed, the rest did not.
+
+    Delete the ``partial`` branch of ``aggregate_request_status`` and this
+    reads ``complete`` — which is exactly what production said while the
+    parcel served zero NAIP and zero Sentinel-2 rows.
+    """
+    from app.services.imagery import aggregate_request_status
+
+    status, failed = aggregate_request_status(
+        [
+            ("census", "complete"),
+            ("landsat", "complete"),
+            ("naip", "failed"),
+            ("property", "skipped"),
+            ("sentinel2", "failed"),
+            ("usgs_topo", "complete"),
+        ]
+    )
+    assert status == "partial"
+    assert failed == ["naip", "sentinel2"]
+
+
+def test_aggregate_request_status_complete_and_failed() -> None:
+    from app.services.imagery import aggregate_request_status
+
+    assert aggregate_request_status([("naip", "complete"), ("property", "skipped")]) == (
+        "complete",
+        [],
+    )
+    assert aggregate_request_status([("naip", "failed"), ("census", "failed")]) == (
+        "failed",
+        ["naip", "census"],
+    )
+    assert aggregate_request_status([]) == ("complete", [])

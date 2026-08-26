@@ -25,6 +25,7 @@ import type {
   PropertyEventType,
   TimelineRequest,
 } from "../types";
+import { isTimelineDelivered } from "../utils/timelineStatus";
 
 // ── Source badge colours ───────────────────────────────────────────────────────
 
@@ -125,7 +126,7 @@ export function Timeline({
   } = useAppStore();
 
   const eventsEnabled =
-    timelineStatus?.status === "complete" ||
+    isTimelineDelivered(timelineStatus?.status) ||
     (timelineRequestId == null && snapshots.length > 0);
   const { data: propertyEvents } = usePropertyEventsQuery(
     parcelId,

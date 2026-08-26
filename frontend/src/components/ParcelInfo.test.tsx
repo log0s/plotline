@@ -60,3 +60,29 @@ describe("ParcelInfo property task states", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+// M3: 'partial' is terminal and serving. Crawford County 6563dedf finished
+// with naip and sentinel2 failed and four sources fine; the panel must show
+// those two as unavailable and must NOT put "Timeline failed" over the rest.
+describe("ParcelInfo partial timeline", () => {
+  const partial = {
+    ...timelinePropertyFailed,
+    status: "partial",
+    error_message: null,
+  };
+
+  it("does not render a partial timeline as failed", async () => {
+    await renderPanel(partial);
+
+    expect(screen.queryByText(/timeline failed/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/property data unavailable — we'll retry/i),
+    ).toBeInTheDocument();
+  });
+
+  it("enables demographics for a partial timeline", async () => {
+    await renderPanel(partial);
+
+    expect(getDemographics).toHaveBeenCalled();
+  });
+});

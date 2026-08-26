@@ -28,6 +28,10 @@ import {
 } from "../hooks/queries";
 import { useAppStore } from "../store";
 import type { ImagerySnapshot } from "../types";
+import {
+  isTimelineDelivered,
+  isTimelineTerminal,
+} from "../utils/timelineStatus";
 
 export default function ExplorePage() {
   const { parcelId } = useParams<{ parcelId: string }>();
@@ -57,8 +61,7 @@ export default function ExplorePage() {
   const timelineActive =
     timelineRequestId != null &&
     !timelineRequestQuery.isError &&
-    timelineRequestQuery.data?.status !== "complete" &&
-    timelineRequestQuery.data?.status !== "failed";
+    !isTimelineTerminal(timelineRequestQuery.data?.status);
   const imageryQuery = useImageryQuery(parcelId, timelineActive);
 
   // Deep-link / backfill recovery: if parcel was reached without a fresh
@@ -87,7 +90,7 @@ export default function ExplorePage() {
   ]);
 
   useEffect(() => {
-    if (timelineRequestQuery.data?.status !== "complete") return;
+    if (!isTimelineDelivered(timelineRequestQuery.data?.status)) return;
     const t = setTimeout(() => void imageryQuery.refetch(), 500);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run when status transitions, not on every refetch identity change

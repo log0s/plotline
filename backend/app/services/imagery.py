@@ -22,6 +22,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import TextClause
 
 from app.config import get_settings
 from app.models.parcels import Parcel, TimelineRequest, TimelineRequestTask
@@ -67,18 +68,96 @@ class ImagerySnapshotRow:
 
 _INFLIGHT_STATUSES = ("queued", "processing")
 
+# 'partial' is terminal and serving — a timeline with a gap in it, not an
+# error — so it is reusable exactly where 'complete' is.
+_REUSABLE_STATUSES = (*_INFLIGHT_STATUSES, "complete", "partial")
+
 # Longer than the task's 35-minute hard time limit — an in-flight request
 # that hasn't been touched for this long was lost (worker killed before
 # acking, broker outage at dispatch, ...) and may be taken over.
 _STALE_INFLIGHT = timedelta(minutes=45)
 
+# The declared scope of a run that is meant to cover everything. The worker
+# still intersects this with what the parcel is eligible for; see
+# TimelineRequest.FULL_SCOPE.
+FULL_SCOPE: tuple[str, ...] = TimelineRequest.FULL_SCOPE
+
+
+def normalize_sources(sources: Iterable[str] | None) -> list[str]:
+    """Canonicalise a declared scope: deduplicated, sorted, validated.
+
+    ``None`` means full scope. Sorting and deduplicating here — at the one
+    write site — is what makes ``cardinality(sources) = 6`` a sound test for
+    "full scope"; the CHECK constraint can rule out unknown sources but not
+    a repeated one.
+    """
+    if sources is None:
+        return list(FULL_SCOPE)
+    unique = sorted(set(sources))
+    unknown = [s for s in unique if s not in FULL_SCOPE]
+    if unknown:
+        raise ValueError(f"Unknown timeline source(s): {', '.join(unknown)}")
+    if not unique:
+        raise ValueError("A timeline request must declare at least one source")
+    return unique
+
+
+def full_scope_clause(db: Session) -> TextClause:
+    """SQL for "this request declared every source".
+
+    Two spellings because ``sources`` is ``TEXT[]`` on PostgreSQL and a JSON
+    array on SQLite (the test database has no array type). Both count
+    elements exactly; neither needs the array's contents, because
+    ``normalize_sources`` has already ruled out duplicates and unknowns.
+
+    The column is table-qualified so the clause can be reused in a query that
+    joins ``timeline_requests`` to a subquery over it — which is what
+    ``requeue_empty_property.py``'s latest-request join is. It therefore
+    assumes the table is not aliased; nothing in the tree aliases it.
+    """
+    counter = "json_array_length" if db.get_bind().dialect.name == "sqlite" else "cardinality"
+    return sa_text(f"{counter}(timeline_requests.sources) = {len(FULL_SCOPE)}")
+
 
 def _find_reusable_request(db: Session, parcel_id: uuid.UUID) -> TimelineRequest | None:
+    """The parcel's current request: the latest **full-scope** one.
+
+    Scoped requests are deliberately invisible here. A census-only backfill
+    that became the parcel's current request would be inspected by
+    ``maybe_refetch_for_backfill`` as if it were a full run — it has no
+    ``usgs_topo`` task row, so the topo trigger would fire and the next page
+    view would dispatch the whole pipeline again, forever (INVESTIGATION
+    §2.2a, trigger 6). Filtering on declared scope is what closes that, and
+    it is why the scope is declared rather than derived.
+    """
     return (
         db.execute(
             select(TimelineRequest)
             .where(TimelineRequest.parcel_id == parcel_id)
-            .where(TimelineRequest.status.in_((*_INFLIGHT_STATUSES, "complete")))
+            .where(TimelineRequest.status.in_(_REUSABLE_STATUSES))
+            .where(full_scope_clause(db))
+            .order_by(TimelineRequest.created_at.desc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+
+
+def _find_inflight_request(db: Session, parcel_id: uuid.UUID) -> TimelineRequest | None:
+    """The parcel's in-flight request, whatever scope it declared.
+
+    Separate from ``_find_reusable_request`` because
+    ``uq_timeline_requests_parcel_inflight`` does not care about scope: a
+    scoped backfill occupies the parcel's one in-flight slot just as a full
+    run does, and the loser of that race has to be able to see it. Filtering
+    this by scope would turn a lost race into a re-raised IntegrityError.
+    """
+    return (
+        db.execute(
+            select(TimelineRequest)
+            .where(TimelineRequest.parcel_id == parcel_id)
+            .where(TimelineRequest.status.in_(_INFLIGHT_STATUSES))
             .order_by(TimelineRequest.created_at.desc())
             .limit(1)
         )
@@ -104,22 +183,30 @@ def _is_stale_inflight(request: TimelineRequest) -> bool:
 def _create_queued_request(
     db: Session,
     parcel_id: uuid.UUID,
+    *,
+    sources: Iterable[str] | None = None,
+    origin: str = "user",
 ) -> tuple[TimelineRequest, bool]:
     """Insert a queued request; on losing the one-in-flight-per-parcel race,
     return the winning request instead. Returns (request, created).
 
+    ``sources`` is the declared scope — ``None`` means every source, which is
+    what every user-originated run declares. ``origin`` says who asked and is
+    what the admission reserve reads.
+
     Raises ``AdmissionRefused`` when the kill switch is on or the in-flight
     queue is at its cap — every new pipeline run passes through here.
     """
-    ensure_admission(db, get_settings(), what="timeline_request")
-    request = TimelineRequest(parcel_id=parcel_id, status="queued")
+    declared = normalize_sources(sources)
+    ensure_admission(db, get_settings(), what="timeline_request", origin=origin)
+    request = TimelineRequest(parcel_id=parcel_id, status="queued", sources=declared, origin=origin)
     db.add(request)
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        racing = _find_reusable_request(db, parcel_id)
-        if racing is not None and racing.status in _INFLIGHT_STATUSES:
+        racing = _find_inflight_request(db, parcel_id)
+        if racing is not None:
             logger.info(
                 "Lost request-creation race; reusing in-flight request",
                 extra={"parcel_id": str(parcel_id), "request_id": str(racing.id)},
@@ -129,7 +216,12 @@ def _create_queued_request(
     db.refresh(request)
     logger.info(
         "Created new timeline request",
-        extra={"parcel_id": str(parcel_id), "request_id": str(request.id)},
+        extra={
+            "parcel_id": str(parcel_id),
+            "request_id": str(request.id),
+            "origin": origin,
+            "sources": declared,
+        },
     )
     return request, True
 
@@ -139,6 +231,8 @@ def create_queued_request_waiting(
     parcel_id: uuid.UUID,
     *,
     deadline: float,
+    sources: Iterable[str] | None = None,
+    origin: str = "heal",
     poll_seconds: float = WAIT_POLL_SECONDS,
     sleeper: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
@@ -154,10 +248,14 @@ def create_queued_request_waiting(
     A sweep that raises here abandons every parcel behind the refusal, which
     is how the 2026-08-25 S2-year sweep reached 30 of 184 parcels
     (``docs/audits/2026-08-s2-year/HEAL-SCORECARD.md`` §2).
+
+    ``origin`` defaults to ``heal`` rather than ``user``: every caller of this
+    function is a script, and the wait loop below is the whole reason a heal
+    can be made to yield the reserve without abandoning its tail.
     """
     while True:
         try:
-            return _create_queued_request(db, parcel_id)
+            return _create_queued_request(db, parcel_id, sources=sources, origin=origin)
         except AdmissionRefused as exc:
             if exc.reason != "queue_full":
                 raise
@@ -165,6 +263,7 @@ def create_queued_request_waiting(
                 db,
                 get_settings(),
                 deadline=deadline,
+                origin=origin,
                 poll_seconds=poll_seconds,
                 sleeper=sleeper,
                 clock=clock,
@@ -337,11 +436,43 @@ def update_timeline_request_status(
 ) -> None:
     """Update the parent timeline request status."""
     request.status = status
-    if status in ("complete", "failed"):
+    if status in _TERMINAL_REQUEST_STATUSES:
         request.completed_at = datetime.now(tz=UTC)
     if error_message:
         request.error_message = redact(error_message)
     db.commit()
+
+
+def aggregate_request_status(tasks: Iterable[tuple[str, str]]) -> tuple[str, list[str]]:
+    """Fold ``(source, task_status)`` pairs into the request's own status.
+
+    Returns the status and the sources that failed.
+
+    * ``complete`` — no task failed.
+    * ``partial``  — at least one task failed and at least one did not. This
+      is the state Crawford County parcel ``6563dedf`` was in while its
+      request read ``complete``: the NAIP and Sentinel-2 tasks both failed,
+      33 years were lost, zero aerial imagery was served, and nothing
+      self-running could see any of it. ``partial`` is terminal and serving —
+      a timeline with a hole in it, not an error, and readers must not render
+      it as one.
+    * ``failed``   — every task failed.
+
+    A request with no task rows stays ``complete``: the old behaviour, and
+    the only honest reading of "nothing was attempted and nothing broke".
+    ``skipped`` is not a failure — a county with no property adapter has
+    always kept its request complete, and a scoped request's absent sources
+    have no row here at all.
+    """
+    pairs = list(tasks)
+    if not pairs:
+        return "complete", []
+    failed = [source for source, status in pairs if status == "failed"]
+    if len(failed) == len(pairs):
+        return "failed", failed
+    if failed:
+        return "partial", failed
+    return "complete", []
 
 
 def maybe_refetch_for_backfill(
@@ -452,7 +583,7 @@ def maybe_refetch_for_backfill(
             return None
 
     try:
-        new_req, created = _create_queued_request(db, parcel.id)
+        new_req, created = _create_queued_request(db, parcel.id, origin="backfill")
     except AdmissionRefused as exc:
         # A backfill is optional work on a parcel that already renders;
         # refusing it must not surface as an error on that parcel's page.
@@ -473,7 +604,7 @@ def maybe_refetch_for_backfill(
 
 # ── Stranded-work janitor ─────────────────────────────────────────────────────
 
-_TERMINAL_REQUEST_STATUSES = ("complete", "failed")
+_TERMINAL_REQUEST_STATUSES = ("complete", "partial", "failed")
 _STRANDED_ERROR = "Stranded: worker died mid-task (janitor)"
 
 

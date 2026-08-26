@@ -47,36 +47,51 @@ from app.services.county_adapters import get_adapter_for_county
 
 def find_candidates(county_filter: str | None) -> list[tuple[uuid.UUID, str]]:
     """Return (parcel_id, county) for parcels whose latest request recorded
-    property as complete-with-0."""
-    latest = (
-        select(
-            TimelineRequest.parcel_id.label("parcel_id"),
-            func.max(TimelineRequest.created_at).label("created_at"),
-        )
-        .group_by(TimelineRequest.parcel_id)
-        .subquery()
-    )
+    property as complete-with-0.
 
-    stmt = (
-        select(Parcel.id, Parcel.county)
-        .join(latest, latest.c.parcel_id == Parcel.id)
-        .join(
-            TimelineRequest,
-            (TimelineRequest.parcel_id == latest.c.parcel_id)
-            & (TimelineRequest.created_at == latest.c.created_at),
-        )
-        .join(
-            TimelineRequestTask,
-            TimelineRequestTask.timeline_request_id == TimelineRequest.id,
-        )
-        .where(TimelineRequest.status == "complete")
-        .where(TimelineRequestTask.source == "property")
-        .where(TimelineRequestTask.status == "complete")
-        .where(TimelineRequestTask.items_found == 0)
-        .where(Parcel.county.isnot(None))
-    )
-
+    "Latest" means latest **full-scope** request, in both halves of the join.
+    Property has no ledger source of its own (§6.1: its axis is the feed, not
+    a period, so nothing writes ``timeline_task_years`` rows for it), so this
+    script's only record of what ran is the task row — and once scoped
+    requests exist, a landsat-only backfill would become the parcel's latest
+    request, carry no property task, and drop the parcel out of this query
+    silently. Filtering to full scope keeps "latest request" meaning "latest
+    request that ran property".
+    """
     with SessionLocal() as db:
+        full_scope = imagery_service.full_scope_clause(db)
+        latest = (
+            select(
+                TimelineRequest.parcel_id.label("parcel_id"),
+                func.max(TimelineRequest.created_at).label("created_at"),
+            )
+            .where(full_scope)
+            .group_by(TimelineRequest.parcel_id)
+            .subquery()
+        )
+
+        stmt = (
+            select(Parcel.id, Parcel.county)
+            .join(latest, latest.c.parcel_id == Parcel.id)
+            .join(
+                TimelineRequest,
+                (TimelineRequest.parcel_id == latest.c.parcel_id)
+                & (TimelineRequest.created_at == latest.c.created_at),
+            )
+            .join(
+                TimelineRequestTask,
+                TimelineRequestTask.timeline_request_id == TimelineRequest.id,
+            )
+            .where(full_scope)
+            # 'partial' is terminal and serving, exactly like 'complete': a run
+            # whose landsat task failed still ran property, and its
+            # complete-with-zero property task is this script's subject.
+            .where(TimelineRequest.status.in_(("complete", "partial")))
+            .where(TimelineRequestTask.source == "property")
+            .where(TimelineRequestTask.status == "complete")
+            .where(TimelineRequestTask.items_found == 0)
+            .where(Parcel.county.isnot(None))
+        )
         rows = db.execute(stmt).all()
 
     candidates: list[tuple[uuid.UUID, str]] = []

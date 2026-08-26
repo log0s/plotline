@@ -73,7 +73,11 @@ export interface TimelineRequestTask {
 export interface TimelineRequest {
   id: string;
   parcel_id: string | null;
-  status: "queued" | "processing" | "complete" | "failed";
+  // "partial" is terminal and serving: every source finished, at least one
+  // failed and at least one did not. Not an error state — the timeline
+  // renders, with a gap where the failed source would have been. Treat it
+  // wherever "complete" is treated, never wherever "failed" is.
+  status: "queued" | "processing" | "complete" | "partial" | "failed";
   tasks: TimelineRequestTask[];
   created_at: string;
   completed_at: string | null;

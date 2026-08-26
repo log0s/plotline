@@ -13,6 +13,7 @@ import type {
   TimelineRequest,
   TimelineRequestTask,
 } from "../types";
+import { isTimelineDelivered } from "../utils/timelineStatus";
 
 function TaskRow({ task }: { task: TimelineRequestTask }) {
   const label = SOURCE_LABELS[task.source] ?? task.source;
@@ -282,7 +283,7 @@ export function ParcelInfo({
           <DemographicsPanel
             parcelId={parcel.parcel_id}
             enabled={
-              timelineStatus?.status === "complete" ||
+              isTimelineDelivered(timelineStatus?.status) ||
               (timelineRequestId == null && snapshots.length > 0)
             }
             censusStatus={taskStatus("census")}

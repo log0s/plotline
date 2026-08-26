@@ -90,6 +90,13 @@ class Settings(BaseSettings):
     # today's drain rate — past that, queueing is a worse answer than a
     # polite refusal.
     max_inflight_timeline_requests: int = 30
+    # Slots the cap holds back from non-user work. A ledger-driven backfill
+    # can find work on most of the fleet, and at the gate a backfill request
+    # and a first-time visitor's geocode were indistinguishable until
+    # TimelineRequest.origin existed — but only the geocode's refusal is a
+    # 503 someone is looking at. backfill/heal are refused at
+    # (cap - reserve); user requests still get the whole cap.
+    user_admission_reserve: int = 5
 
     # ── Planetary Computer SAS signing ────────────────────────────────────────
     # The signing endpoint limits request *rate*, not volume. Unbounded

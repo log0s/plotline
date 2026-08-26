@@ -15,6 +15,7 @@ import httpx
 import pytest
 from celery.exceptions import SoftTimeLimitExceeded  # noqa: I001
 
+from app.models.parcels import TimelineRequest
 from app.services import usgs_topo as topo_service
 
 # ── _search_stac_with_retry ──────────────────────────────────────────────────
@@ -1139,6 +1140,8 @@ async def test_run_timeline_all_sources_failed_marks_request_failed() -> None:
     mock_request.id = req_id
     mock_request.parcel_id = parcel_id
     mock_request.status = "queued"
+    mock_request.origin = "user"
+    mock_request.sources = list(TimelineRequest.FULL_SCOPE)
 
     mock_task_row = MagicMock()
     mock_task_row.status = "failed"
@@ -1445,3 +1448,185 @@ def test_sentinel2_selection_scope_is_year() -> None:
 
     s2 = next(c for c in _SOURCES if c["source"] == "sentinel2")
     assert s2["selection_scope"] == "year"
+
+
+# ── Declared scope reaches both the task rows and the fan-out ────────────────
+
+
+def _orchestration_mocks(sources: list[str]) -> tuple[uuid.UUID, MagicMock, MagicMock]:
+    """A mocked session whose request row declares ``sources``.
+
+    Mirrors ``test_run_timeline_all_sources_failed_marks_request_failed``'s
+    harness: the SELECTs come back request, request, parcel, then request +
+    task rows.
+    """
+    req_id = uuid.uuid4()
+    parcel_id = uuid.uuid4()
+
+    parcel = MagicMock()
+    parcel.id = parcel_id
+    parcel.latitude = 39.7
+    parcel.longitude = -104.9
+    parcel.census_tract_id = "08031006202"
+    parcel.county = "Denver"
+    parcel.normalized_address = "123 MAIN ST"
+    parcel.address = "123 Main St"
+
+    request = MagicMock()
+    request.id = req_id
+    request.parcel_id = parcel_id
+    request.status = "queued"
+    request.origin = "backfill"
+    request.sources = sources
+
+    task_row = MagicMock()
+    task_row.status = "complete"
+    task_row.source = sources[0]
+
+    db = MagicMock()
+    db.__enter__ = MagicMock(return_value=db)
+    db.__exit__ = MagicMock(return_value=False)
+
+    calls = [0]
+
+    def execute(_query: object) -> MagicMock:
+        result = MagicMock()
+        calls[0] += 1
+        if calls[0] == 3:
+            result.scalars.return_value.first.return_value = parcel
+        else:
+            result.scalars.return_value.first.return_value = request
+            result.scalars.return_value.all.return_value = [task_row]
+        return result
+
+    db.execute = MagicMock(side_effect=execute)
+    return req_id, db, request
+
+
+@pytest.mark.asyncio
+async def test_census_only_request_runs_no_imagery_and_no_reconciliation() -> None:
+    """A scoped run creates task rows *and* coroutines for its sources only.
+
+    Scoping one and not the other creates fewer task rows while still running
+    every fetch, and ``_set_task_status`` then logs "No task row found for
+    source" rather than failing (INVESTIGATION §1.3). The reconciliation
+    assertion is the consequence that matters:
+    ``reconcile_source_snapshots`` is reachable only from the imagery and
+    topo coroutines, so a census-only scope cannot delete a snapshot.
+
+    Delete the ``if source_cfg["source"] not in scoped`` guard and
+    ``_fetch_source`` is called three times.
+    """
+    from app.tasks.timeline import _run_timeline_inner
+
+    req_id, db, _ = _orchestration_mocks(["census"])
+
+    settings = MagicMock()
+    settings.census_api_key = None
+    settings.census_api_timeout = 10
+    settings.socrata_app_token = None
+
+    with (
+        patch("app.db.SessionLocal", return_value=db),
+        patch("app.config.get_settings", return_value=settings),
+        patch("app.tasks.timeline.stac_service.point_to_bbox", return_value=(-105, 39, -104, 40)),
+        patch("app.tasks.timeline._fetch_source", new_callable=AsyncMock) as fetch_source,
+        patch("app.tasks.timeline._fetch_usgs_topo", new_callable=AsyncMock) as fetch_topo,
+        patch("app.tasks.timeline._fetch_census", new_callable=AsyncMock, return_value=9) as census,
+        patch("app.tasks.timeline._fetch_property", new_callable=AsyncMock) as prop,
+        patch("app.tasks.timeline.imagery_service.update_timeline_request_status"),
+        patch("app.tasks.timeline.imagery_service.reconcile_source_snapshots") as reconcile,
+        patch("app.tasks.timeline.imagery_service.create_request_tasks") as create_tasks,
+    ):
+        await _run_timeline_inner(str(req_id))
+
+    assert create_tasks.call_args.kwargs["sources"] == ["census"]
+    census.assert_awaited_once()
+    fetch_source.assert_not_called()
+    fetch_topo.assert_not_called()
+    prop.assert_not_called()
+    reconcile.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_declared_scope_never_outruns_parcel_eligibility() -> None:
+    """Declared intent is intersected with fact, not trusted over it.
+
+    A full-scope request on a parcel with no county still runs no property
+    task — the behaviour before the column existed.
+    """
+    from app.tasks.timeline import _run_timeline_inner
+
+    req_id, db, _ = _orchestration_mocks(list(TimelineRequest.FULL_SCOPE))
+    settings = MagicMock()
+    settings.census_api_key = None
+    settings.census_api_timeout = 10
+    settings.socrata_app_token = None
+
+    with (
+        patch("app.db.SessionLocal", return_value=db),
+        patch("app.config.get_settings", return_value=settings),
+        patch("app.tasks.timeline.stac_service.point_to_bbox", return_value=(-105, 39, -104, 40)),
+        patch("app.tasks.timeline._fetch_source", new_callable=AsyncMock, return_value=0),
+        patch("app.tasks.timeline._fetch_usgs_topo", new_callable=AsyncMock, return_value=0),
+        patch("app.tasks.timeline._fetch_census", new_callable=AsyncMock, return_value=0),
+        patch("app.tasks.timeline._fetch_property", new_callable=AsyncMock, return_value=0) as prop,
+        patch("app.tasks.timeline.imagery_service.update_timeline_request_status"),
+        patch("app.tasks.timeline.imagery_service.create_request_tasks") as create_tasks,
+    ):
+        await _run_timeline_inner(str(req_id))
+
+    assert create_tasks.call_args.kwargs["sources"] == sorted(TimelineRequest.FULL_SCOPE)
+    prop.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_one_failed_source_makes_the_request_partial() -> None:
+    """6563dedf's shape: naip and sentinel2 failed under a 'complete' request."""
+    from app.tasks.timeline import _run_timeline_inner
+
+    req_id, db, _ = _orchestration_mocks(list(TimelineRequest.FULL_SCOPE))
+
+    rows = []
+    for source, status in (
+        ("census", "complete"),
+        ("landsat", "complete"),
+        ("naip", "failed"),
+        ("property", "skipped"),
+        ("sentinel2", "failed"),
+        ("usgs_topo", "complete"),
+    ):
+        row = MagicMock()
+        row.source, row.status = source, status
+        rows.append(row)
+
+    original = db.execute.side_effect
+
+    def execute(query: object) -> MagicMock:
+        result = original(query)
+        result.scalars.return_value.all.return_value = rows
+        return result
+
+    db.execute = MagicMock(side_effect=execute)
+
+    settings = MagicMock()
+    settings.census_api_key = None
+    settings.census_api_timeout = 10
+    settings.socrata_app_token = None
+
+    with (
+        patch("app.db.SessionLocal", return_value=db),
+        patch("app.config.get_settings", return_value=settings),
+        patch("app.tasks.timeline.stac_service.point_to_bbox", return_value=(-105, 39, -104, 40)),
+        patch("app.tasks.timeline._fetch_source", new_callable=AsyncMock, return_value=0),
+        patch("app.tasks.timeline._fetch_usgs_topo", new_callable=AsyncMock, return_value=0),
+        patch("app.tasks.timeline._fetch_census", new_callable=AsyncMock, return_value=0),
+        patch("app.tasks.timeline._fetch_property", new_callable=AsyncMock, return_value=0),
+        patch("app.tasks.timeline.imagery_service.update_timeline_request_status") as status,
+        patch("app.tasks.timeline.imagery_service.create_request_tasks"),
+    ):
+        result = await _run_timeline_inner(str(req_id))
+
+    assert [c[0][2] for c in status.call_args_list] == ["processing", "partial"]
+    assert status.call_args.kwargs["error_message"] is None
+    assert result["status"] == "partial"

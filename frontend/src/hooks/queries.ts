@@ -25,6 +25,7 @@ import type {
   PropertyEventsResponse,
   TimelineRequest,
 } from "../types";
+import { isTimelineTerminal } from "../utils/timelineStatus";
 
 const POLL_INTERVAL_MS = 2000;
 // Slower cadence while the status endpoint itself is erroring — a transient
@@ -81,10 +82,6 @@ export function useImageryQuery(
       query.state.status === "error" ? false : timelineActive ? 3000 : false,
     retry: 3,
   });
-}
-
-function isTimelineTerminal(status: TimelineRequest["status"] | undefined) {
-  return status === "complete" || status === "failed";
 }
 
 export function useTimelineRequestQuery(requestId: string | null | undefined) {

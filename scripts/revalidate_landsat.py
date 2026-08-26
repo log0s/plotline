@@ -104,7 +104,11 @@ def swept_since(db: Session, cutoff: datetime) -> set[uuid.UUID]:
     rows = (
         db.execute(
             select(TimelineRequest.parcel_id)
-            .where(TimelineRequest.status == "complete")
+            # Full scope only, and 'partial' counts: this asks "was the whole
+            # pipeline re-run under the new code", which a scoped backfill is
+            # not, and which a run that lost one source still was.
+            .where(imagery_service.full_scope_clause(db))
+            .where(TimelineRequest.status.in_(("complete", "partial")))
             .group_by(TimelineRequest.parcel_id)
             .having(func.max(TimelineRequest.created_at) >= cutoff)
         )
@@ -236,7 +240,7 @@ def main() -> None:
             # so a full queue is a wait rather than an abandoned sweep.
             try:
                 request, created = imagery_service.create_queued_request_waiting(
-                    db, parcel_id, deadline=deadline
+                    db, parcel_id, deadline=deadline, origin="heal"
                 )
             except AdmissionRefused as exc:
                 unreached = list(parcel_ids[index:])

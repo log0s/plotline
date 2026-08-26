@@ -16,6 +16,10 @@ from app.services.admission import AdmissionRefused, ensure_admission, inflight_
 
 
 def _settings(**overrides: object) -> Settings:
+    # The reserve defaults to 0 here so the cap-boundary tests below keep
+    # measuring the cap. Production's default is 5, and the tests that are
+    # about the reserve set it explicitly.
+    overrides.setdefault("user_admission_reserve", 0)
     return Settings(database_url="postgresql://t:t@localhost/t", **overrides)  # type: ignore[arg-type]  # test overrides are Settings fields
 
 
@@ -385,3 +389,55 @@ def test_waiting_create_does_not_wait_out_the_kill_switch(db: Session) -> None:
 
     assert exc_info.value.reason == "kill_switch"
     assert naps == []
+
+
+# ── The user reserve (M3 item 5) ─────────────────────────────────────────────
+
+
+def test_reserve_refuses_a_heal_while_still_admitting_a_user_request(db: Session) -> None:
+    """25 in flight, cap 30, reserve 5: user gets in, heal does not.
+
+    At the gate a first-time visitor's geocode and a six-year-old Landsat gap
+    being retried were byte-identical until ``TimelineRequest.origin`` existed
+    — and only the geocode's refusal is a 503 someone is looking at. Delete
+    the ``origin`` branch from ``effective_cap`` and the heal is admitted.
+    """
+    settings = _settings(max_inflight_timeline_requests=30, user_admission_reserve=5)
+    _fill_queue(db, 25)
+
+    ensure_admission(db, settings, what="timeline_request", origin="user")
+
+    for origin in ("backfill", "heal"):
+        with pytest.raises(AdmissionRefused) as exc_info:
+            ensure_admission(db, settings, what="timeline_request", origin=origin)
+        assert exc_info.value.reason == "queue_full"
+        assert exc_info.value.depth == 25
+
+
+def test_reserve_admits_non_user_work_below_the_reduced_cap(db: Session) -> None:
+    settings = _settings(max_inflight_timeline_requests=30, user_admission_reserve=5)
+    _fill_queue(db, 24)
+
+    ensure_admission(db, settings, what="timeline_request", origin="heal")
+
+
+def test_reserve_at_or_above_the_cap_refuses_rather_than_spins(db: Session) -> None:
+    """A reserve that leaves no slots is a refusal, not an unbounded wait."""
+    from app.services.admission import effective_cap, wait_for_admission_slot
+
+    settings = _settings(max_inflight_timeline_requests=2, user_admission_reserve=9)
+    assert effective_cap(settings, "heal") == 0
+
+    naps: list[float] = []
+    opened = wait_for_admission_slot(
+        db,
+        settings,
+        deadline=1e9,
+        origin="heal",
+        poll_seconds=1.0,
+        sleeper=naps.append,
+        clock=lambda: 0.0,
+    )
+
+    assert opened is False
+    assert naps == [], "waiting on a cap of zero can never succeed"

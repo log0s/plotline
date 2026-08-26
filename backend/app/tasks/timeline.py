@@ -1379,17 +1379,34 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
         # Transition to processing
         imagery_service.update_timeline_request_status(db, request, "processing")
 
-        # Create per-source task rows
-        sources = [s["source"] for s in _SOURCES]
-        sources.append("usgs_topo")
+        # What this parcel is eligible for, intersected with what the request
+        # declared. The declared scope is intent; eligibility is fact, and a
+        # request declaring 'census' on a parcel with no tract still runs no
+        # census task. Both the task rows and the coroutine fan-out below read
+        # `scoped` — scoping only one of them would create fewer rows while
+        # still running every fetch, and _set_task_status would log "No task
+        # row found for source" instead of failing (INVESTIGATION §1.3).
+        eligible = [s["source"] for s in _SOURCES]
+        eligible.append("usgs_topo")
         if tract_fips:
-            sources.append("census")
+            eligible.append("census")
         if county:
-            sources.append("property")
+            eligible.append("property")
+        declared = set(request.sources)
+        scoped = {source for source in eligible if source in declared}
+        logger.info(
+            "Timeline scope resolved",
+            extra={
+                "request_id": timeline_request_id,
+                "origin": request.origin,
+                "declared": sorted(declared),
+                "running": sorted(scoped),
+            },
+        )
         imagery_service.create_request_tasks(
             db,
             timeline_request_id=req_uuid,
-            sources=sources,
+            sources=sorted(scoped),
         )
 
     # Compute bounding boxes:
@@ -1419,6 +1436,8 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
 
     coros: list[tuple[str, Any]] = []
     for source_cfg in _SOURCES:
+        if source_cfg["source"] not in scoped:
+            continue
         coros.append(
             (
                 source_cfg["source"],
@@ -1433,13 +1452,14 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
                 ),
             )
         )
-    coros.append(
-        (
-            "usgs_topo",
-            _fetch_usgs_topo(search_bbox, parcel_id, req_uuid),
+    if "usgs_topo" in scoped:
+        coros.append(
+            (
+                "usgs_topo",
+                _fetch_usgs_topo(search_bbox, parcel_id, req_uuid),
+            )
         )
-    )
-    if tract_fips:
+    if "census" in scoped and tract_fips:
         coros.append(
             (
                 "census",
@@ -1454,7 +1474,7 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
                 ),
             )
         )
-    if county:
+    if "property" in scoped and county:
         coros.append(
             (
                 "property",
@@ -1483,10 +1503,12 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
         else:
             total_items += result
 
-    # Mark request "failed" only if every per-source task ended up "failed";
-    # otherwise "complete". A single success or a "skipped" task (e.g. county
-    # not yet supported) is enough to keep the parent complete — per-task rows
-    # already expose the per-source breakdown via GET /timeline-requests/{id}.
+    # Fold the per-source task rows into the request's status: 'failed' when
+    # every source failed, 'partial' when some did and some did not,
+    # 'complete' otherwise. 'partial' is the state this used to call
+    # 'complete', which is how a parcel could serve zero NAIP and zero
+    # Sentinel-2 under a request that claimed success.
+    status = "complete"
     with SessionLocal() as db:
         from app.models.parcels import TimelineRequestTask
 
@@ -1505,23 +1527,46 @@ async def _run_timeline_inner(timeline_request_id: str) -> dict[str, Any]:
                 .scalars()
                 .all()
             )
-            if task_rows and all(t.status == "failed" for t in task_rows):
-                failed_sources = ", ".join(t.source for t in task_rows)
-                imagery_service.update_timeline_request_status(
-                    db,
-                    request,
-                    "failed",
-                    error_message=f"All sources failed: {failed_sources}",
+            status, failed_sources = imagery_service.aggregate_request_status(
+                (t.source, t.status) for t in task_rows
+            )
+            # No error_message on 'partial'. Both frontend renderers of
+            # request.error_message are gated on status === 'failed'
+            # (ParcelInfo.tsx:239-247, Timeline.tsx:482-491), and a
+            # request-level error string on a request that is serving a
+            # working timeline is one refactor away from becoming a red
+            # banner over it. Which sources failed is on the task rows, which
+            # is where ParcelInfo already reads it from.
+            if status == "partial":
+                logger.warning(
+                    "Timeline request partial — some sources failed",
+                    extra={
+                        "request_id": timeline_request_id,
+                        "parcel_id": str(parcel_id),
+                        "failed_sources": failed_sources,
+                    },
                 )
-            else:
-                imagery_service.update_timeline_request_status(db, request, "complete")
+            imagery_service.update_timeline_request_status(
+                db,
+                request,
+                status,
+                error_message=(
+                    f"All sources failed: {', '.join(failed_sources)}"
+                    if status == "failed"
+                    else None
+                ),
+            )
 
     logger.info(
-        "Timeline request complete",
-        extra={"request_id": timeline_request_id, "total_items": total_items},
+        "Timeline request finished",
+        extra={
+            "request_id": timeline_request_id,
+            "status": status,
+            "total_items": total_items,
+        },
     )
     return {
-        "status": "complete",
+        "status": status,
         "timeline_request_id": timeline_request_id,
         "total_items": total_items,
     }
