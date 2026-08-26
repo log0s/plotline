@@ -1009,6 +1009,43 @@ fix commit will get cited.
   row.** Anyone tempted to should first confirm the anomaly reproduces
   somewhere other than one developer's long-lived volume.
 
+- **The ledger recorded its first production `failed` rows — 34 of them, six
+  hours after the baseline said zero — and today's backfill cannot reach
+  either parcel.** Found 2026-08-26 while gathering prod numbers for the M3
+  design investigation (`../2026-08-m3-design/INVESTIGATION.md` §8.3).
+  `BASELINE-failed.txt` (03:07Z, SHA `3a86dd69`) reads *"No ledger rows
+  match"* and P4 was confirmed at zero `failed` fleet-wide; by ~10:00Z there
+  are 34, all `read_timeout`, on two parcels created the same morning.
+  (1) **`09f35468`** (New York County NY, created 08:04:56Z): `landsat/1994`
+  `failed`/`read_timeout` under a `landsat` task that reads `complete` with
+  `items_found` 42, request `complete`. One silently lost year — the M4 shape
+  exactly. (2) **`6563dedf`** (Crawford County MI, created 09:14:34Z): **16
+  contiguous Landsat years (1984-1999) and all 17 NAIP years (2010-2026)
+  failed**, task rows `naip` **failed** / `sentinel2` **failed** / `landsat`
+  `complete` (27 items) / `usgs_topo` `complete` / `census` `complete` /
+  `property` `skipped`, **request `complete`**, and the parcel serves **27
+  Landsat, 0 NAIP, 0 Sentinel-2** snapshots. **Neither is reachable by any
+  self-running code path.** Walk `maybe_refetch_for_backfill`
+  (`imagery.py:347-471`) against `6563dedf`: the census task exists and is
+  `complete` (no trigger); `get_adapter_for_county('Crawford')` is `None`, so
+  trigger 4 short-circuits and the `skipped` property task is never consulted
+  (no trigger); a `usgs_topo` task row exists, and that check tests row
+  absence only (no trigger). `needs_refetch` stays false on every page view,
+  forever. `revalidate_landsat.py` would not find it by selection either —
+  its predicate is parcels *holding* Landsat rows, and this one holds 27.
+  **Three things this establishes.** (a) The instrument works: before the
+  ledger, `09f35468` was undetectable and `6563dedf` was "a parcel with no
+  NAIP, cause unknown" — the same sentence occurrence (4) took an
+  investigation to answer. (b) The M4 row's "zero `failed` rows fleet-wide"
+  was true as measured at 03:07Z and is **not edited**; this is the later
+  measurement. (c) It is M3's sharpest acceptance case — a live parcel whose
+  page shows no aerial imagery at all, with two `failed` task rows and 33
+  `failed` ledger rows naming exactly which years to re-ask for. **Unfixed,
+  and not requeued** — a requeue is a write and belongs to Ryan. Whether the
+  timeouts were a single upstream burst (both parcels are within 70 minutes of
+  each other) or a per-parcel condition is unestablished; the logs for
+  08:00-09:20Z were not read.
+
 ## Notes for future readers
 
 - **`dd99cee`'s advisory lock silently rolled back every migration that ran
