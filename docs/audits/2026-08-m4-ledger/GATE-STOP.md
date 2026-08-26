@@ -329,3 +329,197 @@ Flagged, not investigated:
 2. **The 23:18Z boot pair and the 00:52Z boot pair are ~94 minutes apart on
    the same SHA.** Not investigated; the 23:18Z pair predates the `0011` image
    and shows no upgrade line, which is consistent with a `0010`-era deploy.
+
+---
+
+# Addendum, 2026-08-26 — the runner is fixed (`edc13db`)
+
+Written after the fix, in the same session as the stop above. Nothing in
+§1–§10 is edited. **Committed, not deployed: production is still at `0010`
+with no `timeline_task_years` as of this writing, so §5's blast radius stands
+in full.** The sweep is still not runnable.
+
+The hotfix was scoped to the migration path. Migration `0011`, the ledger code
+and `scripts/ledger_gaps.py` are untouched — the migration was always correct;
+the runner was not.
+
+## 11. Reproduction, before and after
+
+Same local database, standing at `0010` — the same starting state as
+production. Same command both times.
+
+**Before** (`ce307e35`'s `env.py`):
+
+```
+$ DATABASE_URL=postgresql://plotline:plotline@localhost:5432/plotline \
+    .venv/bin/alembic current
+0010
+$ ... alembic upgrade head
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade 0010 -> 0011, Per-year outcome ledger for timeline fetches.
+exit=0
+$ ... alembic current
+0010
+alembic_version = 0010
+timeline_task_years = None
+```
+
+**After** (`edc13db`):
+
+```
+$ ... alembic upgrade head
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.env] Migration head check: database=['0011'] scripts=['0011']
+exit=0
+$ ... alembic current
+0011 (head)
+alembic_version = 0011
+timeline_task_years = timeline_task_years
+```
+
+The new `alembic.env` line is the readback. It is the only thing in the
+transcript that distinguishes a real success from the one production got, and
+before this commit there was nothing there at all.
+
+## 12. What changed
+
+All in `backend/alembic/env.py`.
+
+**The transaction and the lock (`:141-191`).** The lock statement,
+`context.configure()` and `context.run_migrations()` now run inside one
+explicit `with connection.begin():` (`:179`) that `run_migrations_online`
+owns and commits, and `pg_advisory_lock` becomes `pg_advisory_xact_lock` on
+the same key (`:181`). The paired `pg_advisory_unlock` in the old `finally` is
+gone — the commit releases the lock.
+
+Both halves are load-bearing and they close different holes:
+
+- The **explicit transaction** is what makes anything commit. Alembic still
+  reads `_in_external_transaction` as `True` and still returns a `nullcontext`
+  from `begin_transaction()` — that behaviour is unchanged and correct. The
+  difference is that the external transaction it defers to now exists.
+- The **transaction-scoped lock** makes the release simultaneous with the
+  version bump becoming visible. A session-scoped lock released before the
+  commit would let a second booter acquire it and read a stale
+  `alembic_version`, which is the race M10 added the lock for.
+
+`context.begin_transaction()` is deliberately absent from the new block.
+Inside an owned transaction it can only be a `nullcontext`, and its presence
+is precisely what made the original look like it committed.
+
+**Ordering, verified rather than assumed.** The lock is taken before
+`context.run_migrations()`, which is where alembic reads the current revision:
+`MigrationContext.run_migrations` → `heads = self.get_current_heads()`,
+`alembic/runtime/migration.py:488` (alembic 1.18.4). `context.configure()`
+issues no read of its own. Both facts are now stated in the comment at the
+site.
+
+**The readback (`_verify_at_head`, `:56-95`; called at `:190-191`).** After a
+head-destined upgrade the version is read on a **fresh** connection — the
+engine is `poolclass=pool.NullPool`, so `connect()` opens a new session and
+sees committed state, not the runner's own uncommitted view — and compared to
+`ScriptDirectory.get_heads()`. Both are logged at INFO through the `alembic`
+logger the ini already configures; a mismatch raises. **A boot that logs
+`Migrations complete.` against the wrong head can no longer exit 0.**
+
+**Scoping (`_destination_is_head`, `:37-53`).** `alembic current`, `stamp` and
+`downgrade` run this same `env.py`, and for them a database behind head is the
+expected state, not an error. The first version of the readback was
+unconditional and broke `alembic current` — found by running the commands, not
+by reasoning about them, and recorded here because the reasoning had not
+predicted it. The gate resolves the destination revision
+(`context.get_revision_argument()`, which turns `head` into a concrete
+revision and raises `KeyError` when a command has no destination) and verifies
+only when it is a script head.
+
+`.github/workflows/deploy.yml:56-96`: the `test` job gains a
+`postgis/postgis:16-3.4-alpine` service and `TEST_POSTGRES_URL`. PostGIS
+rather than plain Postgres because migration `0001` creates the extension.
+
+## 13. Tests
+
+`backend/tests/test_migrations_postgres.py`, 3 added, **525 passing** (from
+522). Each test creates a throwaway database, migrates that, and drops it;
+the database `TEST_POSTGRES_URL` names is never migrated or modified, so a
+developer pointing it at their working database loses nothing.
+
+| Test | What it asserts | Result |
+|---|---|---|
+| `test_upgrade_head_commits_the_schema_and_the_version` (`:160`) | after `upgrade head`, `alembic_version == [head]` and `timeline_task_years` exists, read on connections the test owns | pass |
+| `test_concurrent_boots_from_0010_converge_on_head` (`:184`) | two real boots from `0010`, both exit 0, no duplicate DDL, one version row at head | pass |
+| `test_postgres_migration_tests_are_not_silently_skipped` (`:58`) | fails rather than skips when `CI` is set and the URL is not | pass |
+
+**The concurrency test is M10's actual property, and it had never been
+tested.** The contention is forced rather than hoped for: the test holds the
+migration advisory lock on its own connection, starts both
+`python -m alembic upgrade head` subprocesses, polls `pg_locks` until two
+waiters are provably blocked on that key, and only then releases. Without
+that, process startup jitter is an order of magnitude longer than the
+migration and the two would usually never overlap. Two processes rather than
+two threads because `alembic.context` is a process-global proxy — two
+in-process `command.upgrade` calls would contend on alembic's own state rather
+than on the database's.
+
+**Gating, verified three ways:**
+
+| Environment | Result |
+|---|---|
+| `TEST_POSTGRES_URL` set, `CI=true` | `3 passed` |
+| no URL, no `CI` (a local checkout) | `1 passed, 2 skipped` |
+| no URL, `CI=true` | `1 failed` — `TEST_POSTGRES_URL is not set, so the migration tests would skip.` |
+
+### 13.1 Delete-the-fix, both ways
+
+| Reversion | Failure |
+|---|---|
+| **A — the explicit transaction only** (restore `pg_advisory_lock` + `try/finally`, keep the readback) | `RuntimeError: Migrations reported success but the database is not at head: database=[], scripts=['0011']. The upgrade did not commit.` |
+| **B — transaction and readback** (`env.py` exactly as at `HEAD`) | `AssertionError: assert [] == ['0011']` |
+
+Neither fails on a connection error, which is what makes it a test of the
+commit rather than of the harness. The concurrency test fails under both
+reversions too, at its `0010` precondition (`assert [] == ['0010']`) — under
+the old runner even the setup migration does not commit.
+
+## 14. Deviations from the brief
+
+1. **`ScriptDirectory.get_heads()` rather than `get_current_head()`.** The
+   brief named the singular form. `get_current_head()` raises when the tree
+   has multiple heads, which would turn a verification into a crash with a
+   misleading message on a branchy tree; the set comparison says the same
+   thing for a single-head repo and degrades honestly. `_script_head()` in the
+   test still asserts there is exactly one.
+2. **The readback is scoped to head-destined upgrades, not run
+   unconditionally.** The brief says "after `run_migrations()` returns". Run
+   unconditionally it breaks `alembic current` and `alembic downgrade`, both
+   of which execute this `env.py` — observed, not predicted. §12 has the
+   mechanism. Consequence to be aware of: `alembic upgrade <rev>` aimed at a
+   revision that is *not* head is not verified.
+3. **One new lint warning left in place.** `ruff` reports `SIM117` ("use a
+   single `with`") on the nested `connect()` / `begin()` pair. Combining them
+   would put the twenty-line comment explaining why the transaction is
+   explicit above a compound statement and make the two-step structure harder
+   to read. `alembic/` is outside the project's lint scope
+   (`Makefile:54-57` runs `ruff` over `app/ tests/`), and `ruff check app/
+   tests/`, `ruff format --check app/ tests/` and `mypy app/` are all clean.
+   The pre-existing `I001` on `env.py`'s import block is unchanged and was
+   there at `HEAD`.
+
+## 15. UNVERIFIED
+
+- **That the fix works on production.** It is committed and not deployed.
+  Everything in §11–§13 is measured against a local PostGIS 16 container and
+  against `alembic 1.18.4` / `SQLAlchemy 2.0.50`; production runs the same
+  alembic and `SQLAlchemy 2.0.49`. The mechanism does not depend on the patch
+  version, but the claim is inference until a real boot logs its head check.
+- **That the concurrency test would catch a lock regression.** It confirms the
+  lock works; it does not prove it *fails* without one. Removing the lock
+  entirely may well leave the test green — whether two boots collide on
+  duplicate DDL depends on timing the test does not control, and no reversion
+  was run for that half. What the test does close is the reverse direction:
+  the lock as written cannot silently discard the migration any more.
+- **Whether any other local or CI database is stranded at `0010`.** The one
+  used here was, and is now at `0011`. No others were checked.
+- **The `WITH (FORCE)` drop.** Requires PostgreSQL 13+. Both the local
+  container and the CI service are 16; a maintenance URL pointing at anything
+  older would fail on teardown rather than on the assertion.
