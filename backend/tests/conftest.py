@@ -70,11 +70,24 @@ def _create_test_tables() -> None:
         )
         conn.execute(
             text("""
+                -- `sources` is TEXT here and TEXT[] on PostgreSQL: SQLite has
+                -- no array type, so the ORM stores the same list as a JSON
+                -- array (see TimelineRequest.sources' with_variant). Both
+                -- dialects can count its elements, which is the only thing
+                -- the full-scope test reads.
+                -- ck_timeline_requests_sources' `<@` half has no SQLite
+                -- spelling and is not mirrored; the cardinality half is.
                 CREATE TABLE IF NOT EXISTS timeline_requests (
                     id            TEXT PRIMARY KEY,
                     parcel_id     TEXT REFERENCES parcels(id),
                     status        TEXT NOT NULL DEFAULT 'queued'
-                        CHECK (status IN ('queued', 'processing', 'complete', 'failed')),
+                        CHECK (status IN ('queued', 'processing', 'complete',
+                                          'partial', 'failed')),
+                    sources       TEXT NOT NULL
+                        DEFAULT '["census","landsat","naip","property","sentinel2","usgs_topo"]'
+                        CHECK (json_array_length(sources) > 0),
+                    origin        TEXT NOT NULL DEFAULT 'user'
+                        CHECK (origin IN ('user', 'backfill', 'heal')),
                     created_at    TEXT DEFAULT (datetime('now')),
                     updated_at    TEXT DEFAULT (datetime('now')),
                     completed_at  TEXT,

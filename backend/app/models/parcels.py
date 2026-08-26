@@ -92,11 +92,32 @@ class Parcel(Base):
 
 
 class TimelineRequest(Base):
-    """Tracks async jobs that build the historical timeline for a parcel."""
+    """Tracks async jobs that build the historical timeline for a parcel.
+
+    ``sources`` is the run's **declared** scope, not what it turned out to
+    run. A full-scope request names every entry of ``FULL_SCOPE``; the worker
+    intersects that with what the parcel is eligible for (census needs a
+    tract, property needs a county), which is what it did before the column
+    existed. Declaring rather than deriving is what makes "the parcel's
+    current request" a stable test — see ``_find_reusable_request``.
+
+    ``origin`` says who asked. It is the answer to "who may call" for the
+    admission slice: user traffic gets the whole cap, backfill and heal
+    yield a reserve to it.
+    """
 
     __tablename__ = "timeline_requests"
 
-    VALID_STATUSES = ("queued", "processing", "complete", "failed")
+    # 'partial' is terminal and serving: every task finished, at least one
+    # failed, at least one did not. It is not an error state and must not
+    # render as one.
+    VALID_STATUSES = ("queued", "processing", "complete", "partial", "failed")
+    VALID_ORIGINS = ("user", "backfill", "heal")
+
+    # Sorted so the stored array is canonical and ``cardinality`` is the
+    # whole full-scope test. Kept in sync with
+    # ``alembic/versions/0012_request_scope_and_origin.py``.
+    FULL_SCOPE = ("census", "landsat", "naip", "property", "sentinel2", "usgs_topo")
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -114,6 +135,23 @@ class TimelineRequest(Base):
         Text,
         nullable=False,
         server_default="queued",
+    )
+    # ARRAY on PostgreSQL; JSON on SQLite, which has no array type. Both
+    # round-trip a list[str] and both can count its elements
+    # (``cardinality`` / ``json_array_length``), which is all the full-scope
+    # test needs — see ``imagery._full_scope_clause``.
+    sources: Mapped[list[str]] = mapped_column(
+        ARRAY(Text).with_variant(JSON, "sqlite"),
+        nullable=False,
+        # A request constructed without saying otherwise is a full run —
+        # what every request was before this column existed. The scoped
+        # callers pass their list explicitly.
+        default=lambda: list(TimelineRequest.FULL_SCOPE),
+    )
+    origin: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default="user",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -146,8 +184,17 @@ class TimelineRequest(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('queued', 'processing', 'complete', 'failed')",
+            "status IN ('queued', 'processing', 'complete', 'partial', 'failed')",
             name="ck_timeline_requests_status",
+        ),
+        CheckConstraint(
+            "origin IN ('user', 'backfill', 'heal')",
+            name="ck_timeline_requests_origin",
+        ),
+        CheckConstraint(
+            "cardinality(sources) > 0 AND sources <@ ARRAY['census', 'landsat', 'naip',"
+            " 'property', 'sentinel2', 'usgs_topo']::text[]",
+            name="ck_timeline_requests_sources",
         ),
     )
 

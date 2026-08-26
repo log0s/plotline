@@ -265,3 +265,132 @@ def test_concurrent_boots_from_0010_converge_on_head() -> None:
         assert "already exists" not in combined, f"duplicate DDL:\n{combined}"
         assert _versions(url) == [head]
         assert _table_count(url, "timeline_task_years") == 1
+
+
+def _scalar(url: str, sql: str) -> object:
+    engine = create_engine(url, poolclass=NullPool)
+    try:
+        with engine.connect() as connection:
+            return connection.execute(text(sql)).scalar_one()
+    finally:
+        engine.dispose()
+
+
+@requires_postgres
+def test_0012_backfills_scope_origin_and_partial() -> None:
+    """0012's three backfills, against rows that predate it.
+
+    The fixture is production's shape in miniature: one request whose tasks
+    all completed, one with a failed task beside completed ones (Crawford
+    County ``6563dedf``), and one where every task failed. Only the middle
+    one may flip.
+    """
+    with _temp_database() as url:
+        with _database_url(url):
+            command.upgrade(_alembic_config(), "0011")
+
+        engine = create_engine(url, poolclass=NullPool)
+        try:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO parcels (id, address, latitude, longitude, point)"
+                        " VALUES (gen_random_uuid(), 'x', 39.7, -105.0,"
+                        " ST_SetSRID(ST_MakePoint(-105.0, 39.7), 4326))"
+                    )
+                )
+                parcel = connection.execute(text("SELECT id FROM parcels LIMIT 1")).scalar_one()
+                for label, task_statuses in (
+                    ("clean", ["complete", "complete", "skipped"]),
+                    ("crawford", ["complete", "failed", "failed"]),
+                    ("dead", ["failed", "failed"]),
+                ):
+                    request = connection.execute(
+                        text(
+                            "INSERT INTO timeline_requests (id, parcel_id, status, error_message)"
+                            " VALUES (gen_random_uuid(), :p, 'complete', :m) RETURNING id"
+                        ),
+                        {"p": parcel, "m": label},
+                    ).scalar_one()
+                    for source, status in zip(
+                        ("naip", "landsat", "sentinel2"), task_statuses, strict=False
+                    ):
+                        connection.execute(
+                            text(
+                                "INSERT INTO timeline_request_tasks"
+                                " (id, timeline_request_id, source, status)"
+                                " VALUES (gen_random_uuid(), :r, :s, :st)"
+                            ),
+                            {"r": request, "s": source, "st": status},
+                        )
+        finally:
+            engine.dispose()
+
+        with _database_url(url):
+            command.upgrade(_alembic_config(), "head")
+
+        assert _scalar(url, "SELECT count(*) FROM timeline_requests WHERE origin = 'user'") == 3
+        assert (
+            _scalar(url, "SELECT count(*) FROM timeline_requests WHERE cardinality(sources) = 6")
+            == 3
+        )
+        assert _scalar(url, "SELECT count(*) FROM timeline_requests WHERE status = 'partial'") == 1
+        assert (
+            _scalar(
+                url,
+                "SELECT error_message FROM timeline_requests WHERE status = 'partial'",
+            )
+            == "crawford"
+        )
+        # 'dead' recorded 'complete' with every task failed — the same rule
+        # aggregate_request_status applies at runtime says 'failed'.
+        # Production has zero of these; the branch exists so the migration
+        # implements the whole definition rather than two thirds of it.
+        assert _scalar(url, "SELECT count(*) FROM timeline_requests WHERE status = 'failed'") == 1
+        assert (
+            _scalar(url, "SELECT error_message FROM timeline_requests WHERE status = 'failed'")
+            == "dead"
+        )
+        assert _scalar(url, "SELECT count(*) FROM timeline_requests WHERE status = 'complete'") == 1
+
+
+@requires_postgres
+def test_0012_rejects_an_unknown_source_and_an_unknown_origin() -> None:
+    """The CHECKs are load-bearing: cardinality only means "full scope" if
+    the array cannot hold a duplicate or an unknown name."""
+    import sqlalchemy.exc
+
+    with _temp_database() as url:
+        with _database_url(url):
+            command.upgrade(_alembic_config(), "head")
+
+        engine = create_engine(url, poolclass=NullPool)
+        try:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO parcels (id, address, latitude, longitude, point)"
+                        " VALUES (gen_random_uuid(), 'x', 39.7, -105.0,"
+                        " ST_SetSRID(ST_MakePoint(-105.0, 39.7), 4326))"
+                    )
+                )
+                parcel = connection.execute(text("SELECT id FROM parcels LIMIT 1")).scalar_one()
+
+            for column, value in (
+                ("sources", "ARRAY['naip', 'landsat_9']::text[]"),
+                ("sources", "ARRAY[]::text[]"),
+                ("origin", "'cron'"),
+            ):
+                other = "origin" if column == "sources" else "sources"
+                other_value = "'user'" if other == "origin" else "ARRAY['naip']::text[]"
+                with pytest.raises(sqlalchemy.exc.IntegrityError), engine.begin() as connection:
+                    connection.execute(
+                        text(
+                            "INSERT INTO timeline_requests"
+                            f" (id, parcel_id, status, {column}, {other})"
+                            f" VALUES (gen_random_uuid(), :p, 'queued', {value}, {other_value})"
+                        ),
+                        {"p": parcel},
+                    )
+        finally:
+            engine.dispose()
