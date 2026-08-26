@@ -57,6 +57,27 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    # The suite builds its own schema as hand-written DDL against in-memory
+    # SQLite, so until this service existed nothing in CI ever executed a
+    # migration — which is how X1 shipped: alembic reported a successful
+    # upgrade, committed nothing, and exited 0. tests/test_migrations_postgres.py
+    # needs a real server, and fails rather than skips when CI does not give it
+    # one. PostGIS rather than plain postgres because migration 0001 creates
+    # the extension.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_USER: plotline
+          POSTGRES_PASSWORD: plotline
+          POSTGRES_DB: plotline
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U plotline -d plotline"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Set up uv
@@ -65,6 +86,10 @@ jobs:
           version: "0.11.x"
           python-version: "3.12"
       - name: Run backend tests
+        env:
+          # A maintenance connection: the migration tests create and drop their
+          # own throwaway databases and never touch this one.
+          TEST_POSTGRES_URL: postgresql://plotline:plotline@localhost:5432/plotline
         run: |
           cd backend
           uv sync --locked --extra dev
