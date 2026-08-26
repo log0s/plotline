@@ -259,7 +259,14 @@ def create_request_tasks(
     Idempotent: with acks_late a killed worker's task is redelivered and the
     orchestrator runs again — a blind insert would duplicate the rows.
     ON CONFLICT resets the existing row to queued instead.
+
+    The reset takes the task's per-year ledger rows with it. Those rows
+    describe the attempt that died; carrying them into the replacement run
+    would leave ``ok`` rows claiming snapshots the retry has not written yet,
+    which is worse than starting the run with no rows at all.
     """
+    from app.services.year_ledger import clear_task_year_outcomes
+
     # Typed bindparams so the UUIDs are rendered the same way the ORM
     # renders them when querying these rows back (matters on SQLite).
     sql = sa_text(
@@ -278,6 +285,7 @@ def create_request_tasks(
         bindparam("timeline_request_id", type_=Uuid()),
     )
     for source in sources:
+        clear_task_year_outcomes(db, timeline_request_id, source)
         db.execute(
             sql,
             {
@@ -644,6 +652,79 @@ SELECTION_SCOPES: dict[str, Callable[[date], tuple[int, ...]]] = {
 }
 
 
+# ── group_key: the one text encoding of a selection period ────────────────────
+
+# One encoding, one place. The ledger (timeline_task_years.group_key), the
+# reconciler, and every selector that buckets by period all speak these
+# strings, so a heal script asking "did landsat 1993 ever succeed" and the
+# code that decided it are comparing the same token. The imagery
+# normalization ADR (docs/adr/0001, rule 2) makes parcel_scenes.group_key the
+# fourth speaker of it.
+#
+# Ordering note: every encoding is prefixed by a four-digit year, so
+# lexicographic order over these keys equals chronological order. Callers
+# that used to sort integer years rely on that; a source predating year 1000
+# would break it.
+_GROUP_KEY_ENCODERS: dict[str, Callable[[tuple[int, ...]], str]] = {
+    "year": lambda parts: f"{parts[0]:04d}",
+    "quarter": lambda parts: f"{parts[0]:04d}Q{parts[1]}",
+    "decade": lambda parts: f"{parts[0]:04d}s",
+}
+
+# A source whose attempted set is not enumerable from configuration records
+# its whole-search outcome here rather than inventing a period range. Today
+# that is usgs_topo, which issues one untimed TNM query and learns which
+# decades exist only from the response (INVESTIGATION section 3e).
+WHOLE_SOURCE_GROUP_KEY = "*"
+
+
+def encode_group_key(scope: str, value: date | int) -> str:
+    """Encode a capture date (or bare year) as this scope's group key.
+
+    ``year`` -> ``"1993"``; ``quarter`` -> ``"1993Q3"``; ``decade`` ->
+    ``"1960s"``. An ``int`` is read as a calendar year, which is what the
+    topo path and the census year lists have in hand — they never build a
+    date just to bucket it.
+    """
+    as_date = date(value, 1, 1) if isinstance(value, int) else value
+    return _GROUP_KEY_ENCODERS[scope](SELECTION_SCOPES[scope](as_date))
+
+
+def decode_group_key(scope: str, key: str) -> tuple[date, date]:
+    """Return the inclusive (start, end) dates the key covers.
+
+    The inverse of :func:`encode_group_key`, and the reason the ledger's key
+    is a targeting instruction rather than a label: a heal that finds
+    ``landsat`` / ``1993`` / ``failed`` can turn it straight into the STAC
+    datetime range that failed. Raises ValueError on a key this scope cannot
+    have produced.
+    """
+    if scope == "year":
+        year = _parse_key_year(key, key)
+        return date(year, 1, 1), date(year, 12, 31)
+    if scope == "quarter":
+        head, sep, tail = key.partition("Q")
+        if not sep or not tail.isdigit() or not 1 <= int(tail) <= 4:
+            raise ValueError(f"Not a quarter group key: {key!r}")
+        year, quarter = _parse_key_year(head, key), int(tail)
+        start = date(year, 3 * (quarter - 1) + 1, 1)
+        end_month = 3 * quarter
+        last_day = 31 if end_month in (3, 12) else 30
+        return start, date(year, end_month, last_day)
+    if scope == "decade":
+        if not key.endswith("s"):
+            raise ValueError(f"Not a decade group key: {key!r}")
+        decade = _parse_key_year(key[:-1], key)
+        return date(decade, 1, 1), date(decade + 9, 12, 31)
+    raise ValueError(f"Unknown selection scope: {scope!r}")
+
+
+def _parse_key_year(text: str, key: str) -> int:
+    if len(text) != 4 or not text.isdigit():
+        raise ValueError(f"Group key carries no four-digit year: {key!r}")
+    return int(text)
+
+
 def reconcile_source_snapshots(
     db: Session,
     parcel_id: uuid.UUID,
@@ -686,13 +767,11 @@ def reconcile_source_snapshots(
     selection, never before — an interruption then leaves duplicates,
     which is recoverable, rather than an empty timeline, which isn't.
     """
-    bucket = SELECTION_SCOPES[scope]
-
     keep: set[str] = set()
-    groups: set[tuple[int, ...]] = set()
+    groups: set[str] = set()
     for stac_item_id, capture_date in selected:
         keep.add(stac_item_id)
-        groups.add(bucket(capture_date))
+        groups.add(encode_group_key(scope, capture_date))
 
     if not keep:
         return 0
@@ -710,7 +789,7 @@ def reconcile_source_snapshots(
         if row.stac_item_id in keep:
             continue
         captured = _capture_date(row.capture_date)
-        if captured is not None and bucket(captured) in groups:
+        if captured is not None and encode_group_key(scope, captured) in groups:
             stale.append(row.id)
 
     if not stale:

@@ -23,6 +23,7 @@ from app.services import imagery as imagery_service
 from app.services import property_events as property_events_service
 from app.services import stac as stac_service
 from app.services import usgs_topo as topo_service
+from app.services import year_ledger
 from app.services.address_normalizer import extract_search_terms, is_address_match
 from app.services.census import (
     ACS5_YEARS,
@@ -139,6 +140,124 @@ async def _search_stac_with_retry(
     raise last_exc
 
 
+# ── Per-year ledger helpers ───────────────────────────────────────────────────
+
+
+def _stac_failure_reason(exc: Exception) -> str:
+    """Map a STAC search exception to a ledger reason.
+
+    A 429 lands in ``other`` with its status in ``detail``: the vocabulary's
+    ``sign_429`` names the signing endpoint, and inventing a ``stac_429``
+    here would put a reason in the table that no reader knows to look for.
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        if status == 403:
+            return "stac_403"
+        if 500 <= status < 600:
+            return "stac_5xx"
+        return "other"
+    if isinstance(exc, httpx.TimeoutException):
+        return "read_timeout"
+    return "connect_error"
+
+
+def _census_failure_reason(exc: Exception) -> str:
+    """Map a CensusApiError to a ledger reason.
+
+    ``CensusFetcher._request`` wraps every ``httpx.HTTPError`` as
+    ``CensusApiError(f"HTTP error: {exc}")``, so the transport type survives
+    only on ``__cause__`` — which the ``raise ... from exc`` there sets. A
+    non-200 status carries no cause and lands in ``other`` with the status
+    already in the message, which becomes the ledger's ``detail``.
+    """
+    cause = exc.__cause__
+    if isinstance(cause, httpx.TimeoutException):
+        return "read_timeout"
+    if isinstance(cause, httpx.TransportError):
+        return "connect_error"
+    return "other"
+
+
+def _range_years(datetime_range: str) -> list[int]:
+    """The calendar years an un-chunked source's single search covered.
+
+    NAIP has no per-year fetch loop, so its attempted set is not observable
+    from the response — but the query's own date range says which years it
+    asked about, and that is what "attempted" means. Returns [] if the range
+    is not the ``start/end`` shape the config builds.
+    """
+    start, _, end = datetime_range.partition("/")
+    try:
+        first, last = int(start[:4]), int(end[:4])
+    except ValueError:
+        return []
+    if last < first:
+        return []
+    return list(range(first, last + 1))
+
+
+async def _classify_empty_chunk(
+    *,
+    collection: str,
+    bbox: tuple[float, float, float, float],
+    year: int,
+    per_year: int,
+) -> tuple[str, str | None]:
+    """Why did this year's cloud-filtered search come back empty?
+
+    Landsat and Sentinel-2 push ``eo:cloud_cover < 40`` into the STAC query,
+    so a year with nothing but cloudy scenes and a year the satellite never
+    imaged both arrive as an empty list. The O6 check found nine 2015 S2 gaps
+    that all had covering scenes — cloud-filtered, not scene-absent — and
+    those are different answers to "should a heal retry this".
+
+    One extra search per empty year settles it, capped at a single item.
+    Empty years are rare (fleet Landsat sits at 43 of 43 years for most
+    parcels), so this is a handful of requests per run, not a second pass.
+    A probe that itself fails leaves the year ``indeterminate`` rather than
+    guessing.
+    """
+    try:
+        probe = await _search_stac_with_retry(
+            collection=collection,
+            bbox=bbox,
+            datetime_range=f"{year}-01-01/{year}-12-31",
+            max_items=1,
+            query=None,
+        )
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        return (
+            "indeterminate",
+            "cloud-probe failed at timeline._classify_empty_chunk; "
+            f"cannot tell no_scenes from all_cloud_filtered: {exc}"[:400],
+        )
+    if probe:
+        return "absent", "all_cloud_filtered"
+    return "absent", "no_scenes"
+
+
+def _flush_ledger(
+    ledger: year_ledger.YearOutcomeLog,
+    timeline_request_id: uuid.UUID,
+    source: str,
+) -> None:
+    """Write a staged ledger in its own session.
+
+    For the paths that raise before reaching the persist session — a whole
+    search failing — so the record of what was attempted survives the
+    exception that ends the task.
+    """
+    from app.db import SessionLocal
+
+    with SessionLocal() as db:
+        task_id = year_ledger.get_task_id(db, timeline_request_id, source)
+        if task_id is None:
+            logger.warning("No task row for ledger flush", extra={"source": source})
+            return
+        ledger.flush(db, task_id)
+
+
 # ── Task-row status helper ────────────────────────────────────────────────────
 
 
@@ -227,7 +346,17 @@ async def _search_and_persist_source(
 
     source_name: str = source_cfg["source"]
     collection: str = source_cfg["collection"]
+    scope: str = source_cfg["selection_scope"]
     t0 = time.perf_counter()
+
+    # The per-year ledger for this source. Non-``ok`` outcomes accumulate
+    # here through the async phase and land in the persist session; ``ok``
+    # rows are written inline beside their snapshot so the two commit
+    # together.
+    ledger = year_ledger.YearOutcomeLog(source_name)
+    attempted: list[str] = []
+    raw_by_key: dict[str, int] = {}
+    truncated = False
 
     # Search STAC (async HTTP, outside any DB session).
     # For sources with a wide historical range we chunk by year. We send no
@@ -245,9 +374,11 @@ async def _search_and_persist_source(
         # retries is logged and skipped so the other 40 years still land.
         # If *every* year fails the source as a whole has failed.
         years = range(start_year, end_year + 1)
+        attempted = [imagery_service.encode_group_key(scope, y) for y in years]
         failed_years = 0
         last_exc: Exception | None = None
         for year in years:
+            key = imagery_service.encode_group_key(scope, year)
             try:
                 chunk = await _search_stac_with_retry(
                     collection=collection,
@@ -259,6 +390,10 @@ async def _search_and_persist_source(
             except (httpx.HTTPStatusError, httpx.RequestError) as exc:
                 failed_years += 1
                 last_exc = exc
+                # The completion sweep saw two 403s here. They cost no rows,
+                # because reconciliation leaves absent groups alone — but
+                # nothing recorded that the year was never actually asked.
+                ledger.record(key, "failed", _stac_failure_reason(exc), str(exc))
                 logger.warning(
                     "STAC year chunk failed after retries; skipping",
                     extra={
@@ -269,6 +404,15 @@ async def _search_and_persist_source(
                 )
                 continue
             raw_items.extend(chunk)
+            raw_by_key[key] = len(chunk)
+            if not chunk and source_cfg.get("query"):
+                outcome, reason = await _classify_empty_chunk(
+                    collection=collection,
+                    bbox=search_bbox,
+                    year=year,
+                    per_year=per_year,
+                )
+                ledger.record(key, outcome, reason)
         if len(years) > 0 and failed_years == len(years) and last_exc is not None:
             raise last_exc
     else:
@@ -277,13 +421,31 @@ async def _search_and_persist_source(
             or f"{source_cfg['start_date']}/{date.today().year}-12-31"
         )
         max_items = int(source_cfg["max_items"])
-        raw_items = await _search_stac_with_retry(
-            collection=collection,
-            bbox=search_bbox,
-            datetime_range=datetime_range,
-            max_items=max_items,
-            query=source_cfg.get("query"),
-        )
+        # The query's own date range is the attempted set: NAIP runs no
+        # per-year loop, so nothing else in the response says which years it
+        # asked about (INVESTIGATION UNVERIFIED item 2).
+        attempted = [
+            imagery_service.encode_group_key(scope, y) for y in _range_years(datetime_range)
+        ]
+        try:
+            raw_items = await _search_stac_with_retry(
+                collection=collection,
+                bbox=search_bbox,
+                datetime_range=datetime_range,
+                max_items=max_items,
+                query=source_cfg.get("query"),
+            )
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            # One search covers every year, so one failure loses every year.
+            reason = _stac_failure_reason(exc)
+            for key in attempted:
+                ledger.record(key, "failed", reason, str(exc))
+            _flush_ledger(ledger, timeline_request_id, source_name)
+            raise
+        for item in raw_items:
+            item_key = stac_service.item_group_key(item, scope)
+            if item_key is not None:
+                raw_by_key[item_key] = raw_by_key.get(item_key, 0) + 1
         # Same instrument the TNM and county clients carry: a response
         # holding exactly its cap is indistinguishable from a complete
         # answer, and with no `sortby` the ordering that decides *which*
@@ -295,6 +457,7 @@ async def _search_and_persist_source(
         # and warning there would drown this signal. Pagination is
         # deliberately not built — see T4 in the second audit's STATUS.md.
         if len(raw_items) >= max_items:
+            truncated = True
             logger.warning(
                 "STAC search hit its item cap — results are truncated",
                 extra={
@@ -313,6 +476,32 @@ async def _search_and_persist_source(
     elif lat is not None and lng is not None:
         raw_items = stac_service.filter_items_containing_point(raw_items, lat, lng)
 
+    # Every group this run asked about, classified against what came back.
+    # A group already decided above (chunk failure, cloud probe) keeps that
+    # decision; the rest divide into "the search covered this period and
+    # returned nothing", "it returned items but none of them covers the
+    # address", and — when the pool was capped — "cannot tell".
+    surviving = {
+        item_key
+        for item in raw_items
+        if (item_key := stac_service.item_group_key(item, scope)) is not None
+    }
+    for key in attempted:
+        if key in ledger:
+            continue
+        if raw_by_key.get(key, 0) == 0:
+            if truncated:
+                ledger.record(
+                    key,
+                    "indeterminate",
+                    f"{source_name} search hit its item cap at "
+                    "timeline._search_and_persist_source; an absent year may be truncation",
+                )
+            else:
+                ledger.record(key, "absent", "no_scenes")
+        elif key not in surviving:
+            ledger.record(key, "absent", "no_covering_item")
+
     # Select representative items. NAIP selector accepts the viewport for
     # greedy multi-tile coverage; other selectors ignore it.
     if source_cfg.get("use_viewport_filter"):
@@ -328,6 +517,15 @@ async def _search_and_persist_source(
                 selected_groups, lat, lng
             )
             for group in uncovered:
+                tile_ids = [str(i.get("id")) for i in group]
+                suppressed_key = stac_service.item_group_key(group[0], scope)
+                if suppressed_key is not None:
+                    ledger.record(
+                        suppressed_key,
+                        "suppressed",
+                        "naip_no_point_coverage",
+                        f"selected tiles do not contain the parcel: {', '.join(tile_ids)}",
+                    )
                 logger.warning(
                     "Suppressing imagery year with no covering tile",
                     extra={
@@ -335,7 +533,7 @@ async def _search_and_persist_source(
                         "source": source_name,
                         "year": stac_service.extract_capture_date(group[0]).year,
                         "reason": "no selected tile's footprint contains the parcel",
-                        "tile_ids": [str(i.get("id")) for i in group],
+                        "tile_ids": tile_ids,
                     },
                 )
     else:
@@ -345,16 +543,30 @@ async def _search_and_persist_source(
     # have broken assets that cause tile-serving 502s, and an S2 year can
     # land on an unservable granule the same way.  Drop bad items and swap in
     # the next-best candidate from the same year.
+    walk_notes: dict[str, year_ledger.GroupNote] = {}
     if collection == "landsat-c2-l2":
         selected_groups = await stac_service.validate_landsat_selection(
             selected_groups,
             raw_items,
+            walk_notes,
         )
     elif collection == "sentinel-2-l2a":
         selected_groups = await stac_service.validate_sentinel_selection(
             selected_groups,
             raw_items,
+            walk_notes,
         )
+
+    # A period the walk dropped is a failure with a reason, not an absence:
+    # the scenes were there and could not be served. A period the walk
+    # rescued is an ``ok`` whose detail names the swap — the persist loop
+    # below writes it, so it commits with the snapshot.
+    fallback_details: dict[str, str | None] = {}
+    for key, note in walk_notes.items():
+        if note.outcome == "ok":
+            fallback_details[key] = note.detail
+        else:
+            ledger.record(key, note.outcome, note.reason, note.detail)
 
     elapsed = time.perf_counter() - t0
     logger.info(
@@ -372,13 +584,32 @@ async def _search_and_persist_source(
     # additional_cog_urls for mosaic components.
     items_saved = 0
     selected_refs: list[tuple[str, date]] = []
+    persisted: set[str] = set()
     with SessionLocal() as db:
+        task_id = year_ledger.get_task_id(db, timeline_request_id, source_name)
+        if task_id is not None:
+            ledger.flush(db, task_id, commit=False)
         for group in selected_groups:
             if not group:
                 continue
             primary = group[0]
+            group_key = stac_service.item_group_key(primary, scope)
             primary_cog_url = stac_service.extract_cog_url(primary, collection)
             if not primary_cog_url:
+                # Was a silent `continue`. A selected group with no COG asset
+                # is a candidate deliberately not served, which is a
+                # different answer from "the year was empty".
+                if task_id is not None and group_key is not None:
+                    year_ledger.record_year_outcome(
+                        db,
+                        task_id,
+                        source_name,
+                        group_key,
+                        "suppressed",
+                        "no_cog_url",
+                        f"selected item {primary.get('id')} carries no COG asset",
+                        commit=False,
+                    )
                 continue
 
             additional_urls: list[str] = []
@@ -397,6 +628,20 @@ async def _search_and_persist_source(
             )
             bbox_wkt = stac_service.extract_bbox_wkt(primary)
 
+            # Written before the upsert, uncommitted: the upsert commits for
+            # itself, so the ledger row and the snapshot it describes land in
+            # one transaction. An ``ok`` committed first would be a claim
+            # about a row that might never arrive.
+            if task_id is not None and group_key is not None:
+                year_ledger.record_year_outcome(
+                    db,
+                    task_id,
+                    source_name,
+                    group_key,
+                    "ok",
+                    detail=fallback_details.get(group_key),
+                    commit=False,
+                )
             imagery_service.upsert_imagery_snapshot(
                 db,
                 parcel_id=parcel_id,
@@ -413,6 +658,8 @@ async def _search_and_persist_source(
             )
             items_saved += 1
             selected_refs.append((str(primary["id"]), capture_date))
+            if group_key is not None:
+                persisted.add(group_key)
 
         # Now that the fresh selection is persisted, drop the scenes it
         # replaced — a re-validated Landsat year picks a different item id,
@@ -432,6 +679,26 @@ async def _search_and_persist_source(
             selected_refs,
             scope=source_cfg["selection_scope"],
         )
+
+        # Anything attempted that reached here with no verdict is a
+        # confession, not a silence: some path between search and persist
+        # dropped the group without saying so. Every one of these is a
+        # follow-up, and the ledger is where they become countable.
+        if task_id is not None:
+            for key in attempted:
+                if key in ledger or key in persisted:
+                    continue
+                year_ledger.record_year_outcome(
+                    db,
+                    task_id,
+                    source_name,
+                    key,
+                    "indeterminate",
+                    f"{source_name}: attempted group reached the end of "
+                    "timeline._search_and_persist_source with no outcome",
+                    commit=False,
+                )
+        db.commit()
 
         # Use actual DB count — covers items from prior runs too
         total_items = imagery_service.count_imagery_snapshots(db, parcel_id, source_name)
@@ -475,8 +742,40 @@ async def _search_and_persist_topo(
 
     source_name = "usgs_topo"
 
-    raw_items = await topo_service.search_usgs_topo(search_bbox)
+    # Topo has no per-decade fetch loop and no configured decade range: one
+    # untimed TNM query returns whatever exists, and which decades were
+    # "attempted" is only knowable from the response. So the whole-search
+    # outcome is recorded under the whole-source key and the per-decade rows
+    # cover only the decades the response actually held. That asymmetry is
+    # the source's, not the ledger's — see INVESTIGATION section 3e.
+    ledger = year_ledger.YearOutcomeLog(source_name)
+    whole = imagery_service.WHOLE_SOURCE_GROUP_KEY
+
+    try:
+        search = await topo_service.search_usgs_topo_products(search_bbox)
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        ledger.record(whole, "failed", _stac_failure_reason(exc), str(exc))
+        _flush_ledger(ledger, timeline_request_id, source_name)
+        raise
+    except ValueError as exc:
+        # A non-JSON body from TNM. Distinct from a transport failure, and
+        # the only shape left that reaches here.
+        ledger.record(whole, "failed", "other", str(exc))
+        _flush_ledger(ledger, timeline_request_id, source_name)
+        raise
+
+    raw_items = search.items
     selected = topo_service.select_topo_items(raw_items)
+
+    if search.truncated:
+        ledger.record(
+            whole,
+            "indeterminate",
+            "TNM response hit its row cap at usgs_topo.search_usgs_topo_products; "
+            "a decade absent from the response may be truncation",
+        )
+    elif not raw_items:
+        ledger.record(whole, "absent", "no_scenes")
 
     logger.info(
         "USGS topo search complete",
@@ -486,9 +785,30 @@ async def _search_and_persist_topo(
     items_saved = 0
     selected_refs: list[tuple[str, date]] = []
     with SessionLocal() as db:
+        task_id = year_ledger.get_task_id(db, timeline_request_id, source_name)
+        if task_id is not None:
+            ledger.flush(db, task_id, commit=False)
         for item in selected:
+            year = topo_service.extract_publication_date(item)
+            decade_key = (
+                imagery_service.encode_group_key("decade", year) if year is not None else None
+            )
             cog_url = topo_service.extract_geotiff_url(item)
             if not cog_url:
+                # Latent: search_usgs_topo_products already filters to
+                # GeoTIFF-carrying products, so a row here means an upstream
+                # shape defeated that filter — which is the finding.
+                if task_id is not None and decade_key is not None:
+                    year_ledger.record_year_outcome(
+                        db,
+                        task_id,
+                        source_name,
+                        decade_key,
+                        "suppressed",
+                        "topo_no_geotiff_url",
+                        f"product {item.get('sourceId')} carries no GeoTIFF url",
+                        commit=False,
+                    )
                 continue
 
             publication_date = topo_service.extract_publication_date(item)
@@ -498,6 +818,23 @@ async def _search_and_persist_topo(
             # id-less case below does — one dropped sheet is a gap, not a
             # failure, so the task still completes.
             if publication_date is None:
+                # Latent too: select_topo_items already drops items whose
+                # year will not parse, so this guard is unreachable via that
+                # path. There is no decade to key a ledger row on either —
+                # that is the whole reason the sheet is dropped — so it is
+                # recorded against the whole-source key.
+                if task_id is not None:
+                    year_ledger.record_year_outcome(
+                        db,
+                        task_id,
+                        source_name,
+                        whole,
+                        "suppressed",
+                        "topo_unparseable_date",
+                        f"product {item.get('sourceId')} has publicationDate "
+                        f"{item.get('publicationDate')!r}",
+                        commit=False,
+                    )
                 logger.warning(
                     "Skipping topo product with unparseable publicationDate",
                     extra={
@@ -515,12 +852,29 @@ async def _search_and_persist_topo(
             # where there should be several. Skip them, as the property path
             # already does for records with no id.
             if not source_id:
+                # This one is live — the id-less product is the door topo
+                # actually loses sheets through.
+                if task_id is not None and decade_key is not None:
+                    year_ledger.record_year_outcome(
+                        db,
+                        task_id,
+                        source_name,
+                        decade_key,
+                        "suppressed",
+                        "topo_no_source_id",
+                        f"product at {cog_url} carries no sourceId",
+                        commit=False,
+                    )
                 logger.warning(
                     "Skipping topo product with no sourceId",
                     extra={"parcel_id": str(parcel_id), "cog_url": cog_url},
                 )
                 continue
 
+            if task_id is not None and decade_key is not None:
+                year_ledger.record_year_outcome(
+                    db, task_id, source_name, decade_key, "ok", commit=False
+                )
             imagery_service.upsert_imagery_snapshot(
                 db,
                 parcel_id=parcel_id,
@@ -548,6 +902,7 @@ async def _search_and_persist_topo(
             selected_refs,
             scope="decade",
         )
+        db.commit()
 
         total_items = imagery_service.count_imagery_snapshots(db, parcel_id, source_name)
 
@@ -664,15 +1019,38 @@ async def _fetch_census_years(
     items_saved = 0
     failed_requests = 0
 
+    # One 'census' task row covers both datasets, so the ledger's `source`
+    # carries which one — 'census_decennial' / 'census_acs5'. That is safe
+    # only while the two year lists are disjoint: the unique key is
+    # (task_id, group_key), so a year appearing in both lists would collide
+    # and the second write would overwrite the first. DECENNIAL_YEARS and
+    # ACS5_YEARS have no member in common today; adding one means the census
+    # group_key has to carry the dataset instead.
+    ledger = year_ledger.YearOutcomeLog("census")
+    task_id: uuid.UUID | None = None
+    with SessionLocal() as db:
+        task_id = year_ledger.get_task_id(db, timeline_request_id, "census")
+
     try:
         # Fetch decennial data
         for year in DECENNIAL_YEARS:
             year_tract = await tracts.tract_for("decennial", year)
             state_fips, county_fips, tract_code = parse_tract_fips(year_tract)
+            key = imagery_service.encode_group_key("year", year)
             try:
                 data = await fetcher.fetch_decennial(year, state_fips, county_fips, tract_code)
                 if data:
                     with SessionLocal() as db:
+                        if task_id is not None:
+                            year_ledger.record_year_outcome(
+                                db,
+                                task_id,
+                                "census_decennial",
+                                key,
+                                "ok",
+                                detail=f"tract {year_tract}",
+                                commit=False,
+                            )
                         demographics_service.upsert_census_snapshot(
                             db,
                             parcel_id=parcel_id,
@@ -684,8 +1062,28 @@ async def _fetch_census_years(
                         )
                         items_saved += 1
                     logger.info("Census decennial saved", extra={"year": year, "tract": year_tract})
+                else:
+                    # The silent skip. `{}` arrives from a 204/404, a year
+                    # with no decennial config, and every requested variable
+                    # being dropped as unrecognised for the vintage — all
+                    # collapsed before the loop sees them. No counter, no log
+                    # at this level: the ledger is the only record it happened.
+                    ledger.record(
+                        key,
+                        "absent",
+                        "api_no_data",
+                        f"empty response for tract {year_tract}",
+                        source="census_decennial",
+                    )
             except CensusApiError as exc:
                 failed_requests += 1
+                ledger.record(
+                    key,
+                    "failed",
+                    _census_failure_reason(exc),
+                    str(exc),
+                    source="census_decennial",
+                )
                 logger.warning("Census decennial failed", extra={"year": year}, exc_info=exc)
                 if isinstance(exc, CensusMissingKeyError):
                     raise
@@ -696,10 +1094,21 @@ async def _fetch_census_years(
         for year in ACS5_YEARS:
             year_tract = await tracts.tract_for("acs5", year)
             state_fips, county_fips, tract_code = parse_tract_fips(year_tract)
+            key = imagery_service.encode_group_key("year", year)
             try:
                 data = await fetcher.fetch_acs5(year, state_fips, county_fips, tract_code)
                 if data:
                     with SessionLocal() as db:
+                        if task_id is not None:
+                            year_ledger.record_year_outcome(
+                                db,
+                                task_id,
+                                "census_acs5",
+                                key,
+                                "ok",
+                                detail=f"tract {year_tract}",
+                                commit=False,
+                            )
                         demographics_service.upsert_census_snapshot(
                             db,
                             parcel_id=parcel_id,
@@ -711,8 +1120,23 @@ async def _fetch_census_years(
                         )
                         items_saved += 1
                     logger.info("Census ACS5 saved", extra={"year": year, "tract": year_tract})
+                else:
+                    ledger.record(
+                        key,
+                        "absent",
+                        "api_no_data",
+                        f"empty response for tract {year_tract}",
+                        source="census_acs5",
+                    )
             except CensusApiError as exc:
                 failed_requests += 1
+                ledger.record(
+                    key,
+                    "failed",
+                    _census_failure_reason(exc),
+                    str(exc),
+                    source="census_acs5",
+                )
                 logger.warning("Census ACS5 failed", extra={"year": year}, exc_info=exc)
                 if isinstance(exc, CensusMissingKeyError):
                     raise
@@ -720,6 +1144,9 @@ async def _fetch_census_years(
 
     finally:
         await fetcher.close()
+        if task_id is not None and len(ledger):
+            with SessionLocal() as db:
+                ledger.flush(db, task_id)
 
     # Every single request erroring is an outage, not "tract has no data" —
     # marking it complete-with-0 would permanently mask the gap because

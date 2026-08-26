@@ -853,9 +853,9 @@ async def test_validate_landsat_selection_swaps_fallback() -> None:
 
     async def mock_validate(item):
         call_count[0] += 1
-        return item["id"] != "bad"
+        return None if item["id"] != "bad" else "validation_failed"
 
-    with patch("app.services.stac.validate_landsat_item", side_effect=mock_validate):
+    with patch("app.services.stac.check_landsat_item", side_effect=mock_validate):
         result = await validate_landsat_selection(selected_groups, raw_items)
 
     assert len(result) == 1
@@ -878,9 +878,9 @@ async def test_validate_landsat_selection_drops_year_with_no_valid() -> None:
     raw_items = [bad_item]
 
     async def always_invalid(item):
-        return False
+        return "validation_failed"
 
-    with patch("app.services.stac.validate_landsat_item", side_effect=always_invalid):
+    with patch("app.services.stac.check_landsat_item", side_effect=always_invalid):
         result = await validate_landsat_selection(selected_groups, raw_items)
 
     assert len(result) == 0
@@ -909,9 +909,9 @@ async def test_validate_sentinel_selection_swaps_same_year_fallback() -> None:
     good = _s2_item("good", "2020-08-01T00:00:00Z", 10.0)
 
     async def mock_validate(item):
-        return item["id"] != "bad"
+        return None if item["id"] != "bad" else "validation_failed"
 
-    with patch("app.services.stac.validate_sentinel_item", side_effect=mock_validate):
+    with patch("app.services.stac.check_sentinel_item", side_effect=mock_validate):
         result = await validate_sentinel_selection([[bad]], [bad, good])
 
     assert [g[0]["id"] for g in result] == ["good"]
@@ -932,9 +932,9 @@ async def test_validate_sentinel_selection_reaches_across_quarters() -> None:
     other_quarter = _s2_item("q4", "2020-11-01T00:00:00Z", 1.0)
 
     async def mock_validate(item):
-        return item["id"] != "bad"
+        return None if item["id"] != "bad" else "validation_failed"
 
-    with patch("app.services.stac.validate_sentinel_item", side_effect=mock_validate):
+    with patch("app.services.stac.check_sentinel_item", side_effect=mock_validate):
         result = await validate_sentinel_selection([[bad]], [bad, other_quarter])
 
     assert [g[0]["id"] for g in result] == ["q4"]
@@ -949,9 +949,9 @@ async def test_validate_sentinel_selection_ignores_other_years() -> None:
     other_year = _s2_item("y2021", "2021-11-01T00:00:00Z", 1.0)
 
     async def mock_validate(item):
-        return item["id"] != "bad"
+        return None if item["id"] != "bad" else "validation_failed"
 
-    with patch("app.services.stac.validate_sentinel_item", side_effect=mock_validate):
+    with patch("app.services.stac.check_sentinel_item", side_effect=mock_validate):
         result = await validate_sentinel_selection([[bad]], [bad, other_year])
 
     assert result == []
@@ -964,9 +964,9 @@ async def test_validate_sentinel_selection_drops_year_with_no_valid() -> None:
     bad = _s2_item("bad", "2020-07-01T00:00:00Z", 5.0)
 
     async def always_invalid(item):
-        return False
+        return "validation_failed"
 
-    with patch("app.services.stac.validate_sentinel_item", side_effect=always_invalid):
+    with patch("app.services.stac.check_sentinel_item", side_effect=always_invalid):
         result = await validate_sentinel_selection([[bad]], [bad])
 
     assert result == []
@@ -979,9 +979,9 @@ async def test_validate_sentinel_selection_tolerates_empty_group() -> None:
     good = _s2_item("good", "2020-07-01T00:00:00Z", 5.0)
 
     async def always_valid(item):
-        return True
+        return None
 
-    with patch("app.services.stac.validate_sentinel_item", side_effect=always_valid):
+    with patch("app.services.stac.check_sentinel_item", side_effect=always_valid):
         result = await validate_sentinel_selection([[], [good]], [good])
 
     assert [g[0]["id"] for g in result] == ["good"]
@@ -1101,10 +1101,10 @@ async def test_validate_landsat_selection_tolerates_empty_group() -> None:
 
     selected_groups: list[list[dict[str, object]]] = [[], [good_item]]
 
-    async def mock_validate(item: dict[str, object]) -> bool:
-        return True
+    async def mock_validate(item: dict[str, object]) -> str | None:
+        return None
 
-    with patch("app.services.stac.validate_landsat_item", side_effect=mock_validate):
+    with patch("app.services.stac.check_landsat_item", side_effect=mock_validate):
         result = await validate_landsat_selection(selected_groups, [good_item])
 
     assert len(result) == 1

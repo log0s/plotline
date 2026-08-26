@@ -23,6 +23,9 @@ import httpx
 from shapely.geometry import Point
 from shapely.ops import transform
 
+from app.services.imagery import encode_group_key
+from app.services.year_ledger import GroupNote
+
 logger = logging.getLogger(__name__)
 
 STAC_API = "https://planetarycomputer.microsoft.com/api/stac/v1"
@@ -782,11 +785,15 @@ def select_naip_items(
     ``coverage_target`` fraction of the viewport is covered.
     """
     target_doy = 196
-    by_year: dict[int, list[dict[str, object]]] = defaultdict(list)
+    # Keyed by the shared group_key encoding, not a bare int: this is the
+    # same token the ledger and the reconciler use for a NAIP year. Sorting
+    # is unaffected — the keys are four-digit years, so lexicographic order
+    # is chronological order.
+    by_year: dict[str, list[dict[str, object]]] = defaultdict(list)
     for item in items:
         if not _has_capture_date(item):
             continue
-        by_year[_capture_date(item).year].append(item)
+        by_year[encode_group_key("year", _capture_date(item))].append(item)
 
     groups: list[list[dict[str, object]]] = []
 
@@ -911,11 +918,11 @@ def select_landsat_items(items: list[dict[str, object]]) -> list[list[dict[str, 
     def is_le07(item: dict[str, object]) -> bool:
         return str(item.get("id", "")).startswith("LE07")
 
-    by_year: dict[int, list[dict[str, object]]] = defaultdict(list)
+    by_year: dict[str, list[dict[str, object]]] = defaultdict(list)
     for item in items:
         if not _has_capture_date(item):
             continue
-        by_year[_capture_date(item).year].append(item)
+        by_year[encode_group_key("year", _capture_date(item))].append(item)
 
     selected: list[dict[str, object]] = []
     for year_items in by_year.values():
@@ -945,11 +952,11 @@ def select_sentinel_items(items: list[dict[str, object]]) -> list[list[dict[str,
     Returns single-item groups for shape consistency with NAIP multi-tile
     groups.
     """
-    by_year: dict[int, list[dict[str, object]]] = defaultdict(list)
+    by_year: dict[str, list[dict[str, object]]] = defaultdict(list)
     for item in items:
         if not _has_capture_date(item):
             continue
-        by_year[_capture_date(item).year].append(item)
+        by_year[encode_group_key("year", _capture_date(item))].append(item)
 
     selected = [min(year_items, key=_cloud_cover) for year_items in by_year.values()]
     selected.sort(key=_capture_date)
@@ -1035,8 +1042,48 @@ def extract_capture_date(item: dict[str, object]) -> date:
     return _capture_date(item)
 
 
-async def _validate_asset(item: dict[str, object], asset_key: str, source: str) -> bool:
-    """Sign and HEAD one asset to verify the item is actually servable."""
+def item_group_key(item: dict[str, object], scope: str) -> str | None:
+    """The item's ``group_key`` under this scope, or None if it carries no date.
+
+    The ledger's bridge from a STAC item to the token the table stores. An
+    item with ``"datetime": null`` belongs to no period — the selectors drop
+    it for the same reason.
+    """
+    if not _has_capture_date(item):
+        return None
+    return encode_group_key(scope, _capture_date(item))
+
+
+def signing_failure_reason(exc: Exception) -> str:
+    """Map a signing-endpoint exception to a ledger reason.
+
+    Distinguishes "this scene is broken" from "the signing endpoint is
+    unhealthy" — the two the bare ``False`` used to collapse (N1). ``_sas_get``
+    retries only 429, so a 503 on the signing endpoint is terminal on the
+    first attempt and the walk then re-signs every candidate against the same
+    unhealthy endpoint; ``sign_5xx`` across a whole year is that signature.
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        if status == 429:
+            return "sign_429"
+        if 500 <= status < 600:
+            return "sign_5xx"
+        return "other"
+    if isinstance(exc, httpx.TimeoutException):
+        return "read_timeout"
+    return "connect_error"
+
+
+async def _validate_asset(item: dict[str, object], asset_key: str, source: str) -> str | None:
+    """Sign and HEAD one asset. Returns None if servable, else a ledger reason.
+
+    The reason is the point: ``_validate_asset`` used to answer ``False`` to
+    a missing asset key, a non-allowlisted host, a signing failure, an HTTP
+    >= 400 from the HEAD and a network error alike, so a broken scene and an
+    unhealthy signing endpoint were the same value (N1). They are different
+    answers to "should a heal retry this".
+    """
     assets: dict[str, dict[str, object]] = item.get("assets", {})  # type: ignore[assignment]  # STAC item "assets" is a dict of asset objects
     asset = assets.get(asset_key)
     if not asset or not asset.get("href"):
@@ -1046,7 +1093,7 @@ async def _validate_asset(item: dict[str, object], asset_key: str, source: str) 
             asset_key,
             extra={"item_id": item.get("id")},
         )
-        return False
+        return "validation_failed"
 
     href = str(asset["href"])
     if not is_allowed_upstream_url(href):
@@ -1056,7 +1103,7 @@ async def _validate_asset(item: dict[str, object], asset_key: str, source: str) 
             asset_key,
             extra={"item_id": item.get("id"), "href": href[:200]},
         )
-        return False
+        return "validation_failed"
     try:
         signed = await sign_pc_url(href, wait_budget=SIGN_WAIT_BATCH)
     except (httpx.HTTPStatusError, httpx.RequestError) as exc:
@@ -1066,7 +1113,7 @@ async def _validate_asset(item: dict[str, object], asset_key: str, source: str) 
             asset_key,
             extra={"item_id": item.get("id"), "error": str(exc)},
         )
-        return False
+        return signing_failure_reason(exc)
 
     try:
         resp = await _get_search_client().head(signed, follow_redirects=True)
@@ -1077,7 +1124,7 @@ async def _validate_asset(item: dict[str, object], asset_key: str, source: str) 
                 asset_key,
                 extra={"item_id": item.get("id"), "status": resp.status_code},
             )
-            return False
+            return "validation_failed"
     except httpx.RequestError as exc:
         logger.info(
             "%s %s asset HEAD failed",
@@ -1085,13 +1132,13 @@ async def _validate_asset(item: dict[str, object], asset_key: str, source: str) 
             asset_key,
             extra={"item_id": item.get("id"), "error": str(exc)},
         )
-        return False
+        return "read_timeout" if isinstance(exc, httpx.TimeoutException) else "connect_error"
 
-    return True
+    return None
 
 
-async def validate_landsat_item(item: dict[str, object]) -> bool:
-    """Sign and HEAD the red band asset to verify the item is accessible.
+async def check_landsat_item(item: dict[str, object]) -> str | None:
+    """Sign and HEAD the red band asset. None if servable, else the reason.
 
     Older Landsat scenes (1984–1990s) sometimes have broken or expired
     assets on Planetary Computer.  A single-band canary check is enough
@@ -1100,18 +1147,29 @@ async def validate_landsat_item(item: dict[str, object]) -> bool:
     return await _validate_asset(item, "red", "Landsat")
 
 
-async def validate_sentinel_item(item: dict[str, object]) -> bool:
+async def check_sentinel_item(item: dict[str, object]) -> str | None:
     """Sign and HEAD the visual (TCI) asset — the only one S2 tiles read."""
     return await _validate_asset(item, "visual", "Sentinel-2")
+
+
+async def validate_landsat_item(item: dict[str, object]) -> bool:
+    """Boolean face of :func:`check_landsat_item`."""
+    return await check_landsat_item(item) is None
+
+
+async def validate_sentinel_item(item: dict[str, object]) -> bool:
+    """Boolean face of :func:`check_sentinel_item`."""
+    return await check_sentinel_item(item) is None
 
 
 async def _validate_selection(
     selected_groups: list[list[dict[str, object]]],
     raw_items: list[dict[str, object]],
     *,
-    period: Callable[[date], object],
-    validate: Callable[[dict[str, object]], Awaitable[bool]],
+    period: Callable[[date], str],
+    validate: Callable[[dict[str, object]], Awaitable[str | None]],
     source: str,
+    notes: dict[str, GroupNote] | None = None,
 ) -> list[list[dict[str, object]]]:
     """Validate each selected item, swapping in same-period fallbacks.
 
@@ -1120,10 +1178,20 @@ async def _validate_selection(
     by cloud cover) until a valid one is found.  Periods with no valid
     candidate are dropped entirely — better a gap than a 502.
 
-    ``period`` is whatever grouping the source selects on: the calendar
-    year for both Landsat and Sentinel-2, matching their selectors.
+    ``period`` maps a capture date to the shared ``group_key`` encoding, so
+    the keys here are the keys the ledger stores. It is the calendar year for
+    both Landsat and Sentinel-2, matching their selectors.
+
+    ``notes``, when supplied, is filled with one :class:`GroupNote` per period
+    this walk had an opinion about: ``failed`` with the last candidate's
+    reason for a dropped period, ``ok`` with a detail naming the swap for a
+    period served by a fallback. Periods whose first choice validated get no
+    note — nothing happened to them worth recording beyond the ``ok`` the
+    persist step writes. It is an out-parameter rather than a second return
+    value so the boolean-shaped callers of the two public wrappers keep
+    working unchanged.
     """
-    by_period: dict[object, list[dict[str, object]]] = defaultdict(list)
+    by_period: dict[str, list[dict[str, object]]] = defaultdict(list)
     for item in raw_items:
         if not _has_capture_date(item):
             continue
@@ -1142,9 +1210,9 @@ async def _validate_selection(
     valid_flags = await asyncio.gather(*(validate(g[0]) for g in non_empty))
 
     validated: list[list[dict[str, object]]] = []
-    for group, is_valid in zip(non_empty, valid_flags, strict=True):
+    for group, first_reason in zip(non_empty, valid_flags, strict=True):
         item = group[0]
-        if is_valid:
+        if first_reason is None:
             validated.append(group)
             continue
 
@@ -1153,29 +1221,48 @@ async def _validate_selection(
         logger.warning(
             "%s item failed validation; trying fallbacks",
             source,
-            extra={"period": str(key), "item_id": selected_id},
+            extra={"period": key, "item_id": selected_id, "reason": first_reason},
         )
 
+        # The reason recorded for a dropped period is the *last* candidate's,
+        # not the first's: the walk re-signs every candidate against the same
+        # endpoint, so when signing is what is broken the last answer is the
+        # one that describes the walk as a whole.
+        last_reason = first_reason
         found = False
         for candidate in by_period.get(key, []):
             if candidate.get("id") == selected_id:
                 continue
-            if await validate(candidate):
+            candidate_reason = await validate(candidate)
+            if candidate_reason is None:
                 logger.info(
                     "%s fallback found",
                     source,
                     extra={
-                        "period": str(key),
+                        "period": key,
                         "original_id": selected_id,
                         "fallback_id": candidate.get("id"),
                     },
                 )
                 validated.append([candidate])
+                if notes is not None:
+                    notes[key] = GroupNote(
+                        "ok",
+                        None,
+                        f"served by validation fallback: {selected_id} -> {candidate.get('id')}",
+                    )
                 found = True
                 break
+            last_reason = candidate_reason
 
         if not found:
             logger.warning("No valid %s item for %s; skipping", source, key)
+            if notes is not None:
+                notes[key] = GroupNote(
+                    "failed",
+                    last_reason,
+                    f"no servable {source} item for {key}; last failure: {last_reason}",
+                )
 
     return validated
 
@@ -1183,20 +1270,23 @@ async def _validate_selection(
 async def validate_landsat_selection(
     selected_groups: list[list[dict[str, object]]],
     raw_items: list[dict[str, object]],
+    notes: dict[str, GroupNote] | None = None,
 ) -> list[list[dict[str, object]]]:
     """Validate selected Landsat items and swap in same-year fallbacks."""
     return await _validate_selection(
         selected_groups,
         raw_items,
-        period=lambda d: d.year,
-        validate=validate_landsat_item,
+        period=lambda d: encode_group_key("year", d),
+        validate=check_landsat_item,
         source="Landsat",
+        notes=notes,
     )
 
 
 async def validate_sentinel_selection(
     selected_groups: list[list[dict[str, object]]],
     raw_items: list[dict[str, object]],
+    notes: dict[str, GroupNote] | None = None,
 ) -> list[list[dict[str, object]]]:
     """Validate selected Sentinel-2 items and swap in same-year fallbacks.
 
@@ -1212,9 +1302,10 @@ async def validate_sentinel_selection(
     return await _validate_selection(
         selected_groups,
         raw_items,
-        period=lambda d: d.year,
-        validate=validate_sentinel_item,
+        period=lambda d: encode_group_key("year", d),
+        validate=check_sentinel_item,
         source="Sentinel-2",
+        notes=notes,
     )
 
 

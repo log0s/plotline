@@ -238,6 +238,42 @@ def db() -> Generator[Session, None, None]:
     connection.close()
 
 
+# Tables the committing fixture below truncates, children first.
+_LEDGER_TEST_TABLES = (
+    "timeline_task_years",
+    "imagery_snapshots",
+    "census_snapshots",
+    "timeline_request_tasks",
+    "timeline_requests",
+    "parcels",
+)
+
+
+@pytest.fixture
+def committing_db() -> Generator[sessionmaker[Session], None, None]:
+    """A sessionmaker the code under test can open and commit through.
+
+    The ``db`` fixture wraps each test in a transaction it rolls back, which
+    the per-year ledger tests cannot use: the fetch loops open their own
+    ``SessionLocal()`` and the upserts commit for themselves — that commit is
+    the thing under test, since an ``ok`` ledger row is supposed to land in
+    the same transaction as its snapshot. So this hands out real sessions and
+    cleans up by deleting afterwards.
+    """
+    _truncate_ledger_tables()
+    try:
+        yield _TestSessionLocal
+    finally:
+        _truncate_ledger_tables()
+
+
+def _truncate_ledger_tables() -> None:
+    with _test_engine.connect() as conn:
+        for table in _LEDGER_TEST_TABLES:
+            conn.execute(text(f"DELETE FROM {table}"))  # noqa: S608  # fixed table names
+        conn.commit()
+
+
 @pytest.fixture
 def client(db: Session) -> Generator[TestClient, None, None]:
     """FastAPI TestClient with overridden DB and settings dependencies."""

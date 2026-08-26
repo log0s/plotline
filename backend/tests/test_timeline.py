@@ -15,6 +15,8 @@ import httpx
 import pytest
 from celery.exceptions import SoftTimeLimitExceeded  # noqa: I001
 
+from app.services import usgs_topo as topo_service
+
 # ── _search_stac_with_retry ──────────────────────────────────────────────────
 
 
@@ -296,14 +298,20 @@ async def test_fetch_source_chunk_by_year_skips_failed_years() -> None:
         patch(
             "app.tasks.timeline.stac_service.validate_landsat_selection",
             new_callable=AsyncMock,
-            side_effect=lambda groups, raw: groups,
+            side_effect=lambda groups, raw, notes=None: groups,
         ),
         patch(
             "app.tasks.timeline.stac_service.extract_cog_url",
             return_value="https://example.com/cog.tif",
         ),
         patch("app.tasks.timeline.stac_service.extract_thumbnail_url", return_value=None),
-        patch("app.tasks.timeline.stac_service.extract_capture_date"),
+        # A real date, not a bare MagicMock: the group_key encoding formats
+        # it, so a mock leaks into f-strings the ledger and the reconciler
+        # both build.
+        patch(
+            "app.tasks.timeline.stac_service.extract_capture_date",
+            return_value=date(2021, 7, 1),
+        ),
         patch("app.tasks.timeline.stac_service.extract_bbox_wkt", return_value=None),
         patch("app.tasks.timeline.imagery_service.upsert_imagery_snapshot", return_value=True),
         patch("app.tasks.timeline.imagery_service.update_request_task"),
@@ -351,7 +359,7 @@ async def _run_fetch_source(source_cfg: dict, mock_search) -> None:
         patch(
             "app.tasks.timeline.stac_service.validate_landsat_selection",
             new_callable=AsyncMock,
-            side_effect=lambda groups, raw: groups,
+            side_effect=lambda groups, raw, notes=None: groups,
         ),
         patch("app.tasks.timeline.imagery_service.reconcile_source_snapshots"),
         patch("app.tasks.timeline.imagery_service.count_imagery_snapshots", return_value=0),
@@ -1097,7 +1105,7 @@ async def test_fetch_usgs_topo_error_marks_failed() -> None:
     with (
         patch("app.db.SessionLocal", return_value=mock_db),
         patch(
-            "app.tasks.timeline.topo_service.search_usgs_topo",
+            "app.tasks.timeline.topo_service.search_usgs_topo_products",
             new_callable=AsyncMock,
             side_effect=RuntimeError("TNM down"),
         ),
@@ -1195,9 +1203,9 @@ async def test_fetch_usgs_topo_skips_products_without_source_id() -> None:
     with (
         patch("app.db.SessionLocal", return_value=mock_db),
         patch(
-            "app.tasks.timeline.topo_service.search_usgs_topo",
+            "app.tasks.timeline.topo_service.search_usgs_topo_products",
             new_callable=AsyncMock,
-            return_value=items,
+            return_value=topo_service.TopoSearchResult(items=items, truncated=False),
         ),
         patch("app.tasks.timeline.topo_service.select_topo_items", return_value=items),
         patch(
@@ -1258,9 +1266,9 @@ async def test_fetch_usgs_topo_skips_products_with_unparseable_date(
     with (
         patch("app.db.SessionLocal", return_value=mock_db),
         patch(
-            "app.tasks.timeline.topo_service.search_usgs_topo",
+            "app.tasks.timeline.topo_service.search_usgs_topo_products",
             new_callable=AsyncMock,
-            return_value=items,
+            return_value=topo_service.TopoSearchResult(items=items, truncated=False),
         ),
         patch("app.tasks.timeline.topo_service.select_topo_items", return_value=items),
         patch(

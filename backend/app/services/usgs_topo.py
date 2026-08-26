@@ -10,9 +10,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date
 
 import httpx
+
+from app.services.imagery import encode_group_key
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +62,21 @@ async def close_client() -> None:
         await client.aclose()
 
 
+@dataclass(frozen=True)
+class TopoSearchResult:
+    """A TNM search, plus whether its response was capped.
+
+    ``truncated`` is the caller's only way to see the cap: the warning below
+    is a log line, and the returned list is already filtered to
+    GeoTIFF-carrying products, so its length says nothing about the raw
+    response. The ledger needs it — a decade absent from a capped response is
+    indeterminate, not absent.
+    """
+
+    items: list[dict[str, object]]
+    truncated: bool
+
+
 async def search_usgs_topo(
     bbox: tuple[float, float, float, float],
     max_items: int = 100,
@@ -68,6 +86,14 @@ async def search_usgs_topo(
     Returns raw product dicts from the TNM API, filtered to those with
     available GeoTIFF downloads.
     """
+    return (await search_usgs_topo_products(bbox, max_items)).items
+
+
+async def search_usgs_topo_products(
+    bbox: tuple[float, float, float, float],
+    max_items: int = 100,
+) -> TopoSearchResult:
+    """``search_usgs_topo`` plus the truncation flag."""
     params: dict[str, str | int] = {
         "datasets": "Historical Topographic Maps",
         "bbox": f"{bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]}",
@@ -81,12 +107,13 @@ async def search_usgs_topo(
     data = resp.json()
 
     items: list[dict[str, object]] = data.get("items", [])
+    truncated = len(items) >= max_items
     # Same instrument the county clients carry (arcgis/ckan/socrata): a
     # response holding exactly its cap is indistinguishable from a complete
     # answer, and TNM's ordering is unspecified, so a truncated pool could
     # silently drop whole decades. Pagination is deliberately not built —
     # see the L6 accept and counties item 13 in the second audit's STATUS.md.
-    if len(items) >= max_items:
+    if truncated:
         logger.warning(
             "TNM query hit its row cap — results are truncated",
             extra={
@@ -96,11 +123,14 @@ async def search_usgs_topo(
             },
         )
 
-    return [
-        item
-        for item in items
-        if isinstance((urls := item.get("urls")), dict) and urls.get("GeoTIFF")
-    ]
+    return TopoSearchResult(
+        items=[
+            item
+            for item in items
+            if isinstance((urls := item.get("urls")), dict) and urls.get("GeoTIFF")
+        ],
+        truncated=truncated,
+    )
 
 
 def select_topo_items(items: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -109,13 +139,15 @@ def select_topo_items(items: list[dict[str, object]]) -> list[dict[str, object]]
     Within each decade, prefers 7.5-minute quads (most detail) over coarser
     sheets, and within the same extent picks the earliest publication year.
     """
-    by_decade: dict[int, list[dict[str, object]]] = defaultdict(list)
+    # Keyed by the shared group_key encoding ("1960s"), not a bare int, so
+    # the ledger row for a decade and the sheet chosen for it carry the same
+    # token. Sorting is unaffected — the keys are four-digit-year prefixed.
+    by_decade: dict[str, list[dict[str, object]]] = defaultdict(list)
     for item in items:
         year = _publication_year(item)
         if year is None:
             continue
-        decade = (year // 10) * 10
-        by_decade[decade].append(item)
+        by_decade[encode_group_key("decade", year)].append(item)
 
     selected: list[dict[str, object]] = []
     for decade in sorted(by_decade.keys()):
