@@ -390,7 +390,7 @@ make.
 
 `backend/tests/test_timeline.py`.
 
-**Added — `test_fetch_census_uses_county_tract_for_pre_planning_region_years`.**
+**Added — `test_fetch_census_uses_county_tract_before_planning_regions`.**
 Racebrook's shape exactly: stored tract `09170157100`, lat/lon 41.2690529 /
 -72.9999675, and a fake `lookup_tract_at_vintage` keyed on vintage the way the
 live geocoder is (§2.3) — `Census2010_Current`, `Census2020_Current`,
@@ -402,12 +402,21 @@ asserts the *county* code each year was requested with:
 - decennial 1990, 2000 → `170`, the stored tract, with the §4.2/§4.3 reasons in
   the docstring so the assertion is not mistaken for an endorsement.
 
-**Delete-the-fix:** reverting `census.py` to the four-entry map fails it with
-`decennial 2020 asked county 170, expected 009` (and the same for acs5
-2009/2021) — the three pre-boundary requests the fix exists for. Run and
+**Delete-the-fix:** reverting `census.py` to the four-entry map (`git stash
+push backend/app/services/census.py`, tests untouched) fails it —
+
+```
+>           assert asked[("acs5", year)] == "009", f"acs5 {year}"
+E           AssertionError: acs5 2009
+E           assert '170' == '009'
+1 failed, 35 deselected
+```
+
+— on the first of the three pre-boundary requests the fix exists for; acs5
+2021 and decennial 2020 are the same assertion two and five lines down. Run and
 observed, not asserted from reading.
 
-**Updated — `test_fetch_census_uses_vintage_tract_for_older_years`** (the
+**Updated — `test_fetch_census_uses_ancestor_tract_for_older_vintages`** (the
 Denver 41.11 → 41.07 case). Its `lookup_tract_at_vintage` mock returned one
 value for every vintage, which no longer expresses anything now that four
 vintages are in play; it is keyed by vintage, `await_count` moves 1 → 4, and
@@ -459,7 +468,28 @@ b5a306a path it was written for.
 
 ## 8. Test and lint results
 
-Recorded at the fix commit; see §6 for what was run and what the reversion did.
+Docker is not running on this workstation, so the suite ran under
+`backend/.venv` rather than `make test`'s `docker compose exec api pytest`.
+Same interpreter version (3.12) and same `tests/conftest.py` SQLite harness.
+
+```
+$ .venv/bin/python -m pytest tests/ -q
+524 passed, 2 skipped, 2 warnings in 6.88s
+
+$ .venv/bin/python -m ruff check app/ tests/
+All checks passed!
+
+$ .venv/bin/python -m ruff format --check app/ tests/
+72 files already formatted
+
+$ .venv/bin/python -m mypy app/
+Success: no issues found in 47 source files
+```
+
+523 before this batch, 524 after: one test added, one rewritten in place
+(measured — the pre-batch count is from the same suite with both changed files
+stashed).
+The delete-the-fix run is quoted in §6.
 
 ---
 

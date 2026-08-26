@@ -558,7 +558,9 @@ async def test_fetch_census_uses_ancestor_tract_for_older_vintages() -> None:
         patch(
             "app.tasks.timeline.geocoder_service.lookup_tract_at_vintage",
             new_callable=AsyncMock,
-            return_value="08031004107",
+            side_effect=lambda lat, lon, vintage, settings: (
+                "08031004107" if vintage == "Census2010_Current" else "08031004111"
+            ),
         ) as mock_lookup,
     ):
         await _fetch_census(
@@ -569,9 +571,14 @@ async def test_fetch_census_uses_ancestor_tract_for_older_vintages() -> None:
             longitude=-104.891,
         )
 
-    # One geocoder call for the one older vintage in play, not one per year.
-    assert mock_lookup.await_count == 1
-    assert mock_lookup.await_args.args[2] == "Census2010_Current"
+    # One geocoder call per distinct vintage in play, not one per year.
+    assert mock_lookup.await_count == 4
+    assert {c.args[2] for c in mock_lookup.await_args_list} == {
+        "Census2010_Current",
+        "Census2020_Current",
+        "ACS2021_Current",
+        "ACS2023_Current",
+    }
 
     stored = {
         (c.kwargs["dataset"], c.kwargs["year"]): c.kwargs["tract_fips"]
@@ -580,16 +587,108 @@ async def test_fetch_census_uses_ancestor_tract_for_older_vintages() -> None:
     assert stored[("acs5", 2018)] == "08031004107"
     assert stored[("decennial", 2010)] == "08031004107"
 
-    # Years already on 2020 geography keep the parcel's stored tract.
+    # Years on 2020 geography resolve to the same tract the parcel stores.
     assert stored[("acs5", 2023)] == "08031004111"
     assert stored[("decennial", 2020)] == "08031004111"
 
-    # ACS 2009 is 2000 geography, which the geocoder no longer serves; it stays
-    # on the stored tract rather than silently borrowing the 2010 ancestor.
-    assert stored[("acs5", 2009)] == "08031004111"
+    # ACS 2009 is 2000 geography, which the geocoder does not serve, so it asks
+    # the nearest vintage that exists. For Denver 41.11 that buys nothing —
+    # 004107 is absent from 2009/acs/acs5, measured in
+    # docs/audits/2026-08-racebrook/REPORT.md §4.4 — but it is never worse than
+    # the 2020 tract, and it is what recovers a year whose tract never moved
+    # and whose county-equivalent did.
+    assert stored[("acs5", 2009)] == "08031004107"
 
     acs_tracts = {c.args[3] for c in mock_fetcher.fetch_acs5.await_args_list}
     assert acs_tracts == {"004107", "004111"}
+
+
+@pytest.mark.asyncio
+async def test_fetch_census_uses_county_tract_before_planning_regions() -> None:
+    """A county-equivalent change costs years the same way a redistricting does.
+
+    Racebrook Road, Orange CT (`2f1b332e`). Tract 1571 never moved; Connecticut
+    replaced its counties with planning regions for data tabulated in 2022, so
+    the same tract is 09009157100 through ACS 2021 and 09170157100 from ACS
+    2022. The parcel stores the current — planning-region — FIPS, and asking
+    the API for it in a pre-2022 vintage returns an empty response, which is
+    what cost this parcel acs5 2009, acs5 2021 and decennial 2020.
+
+    The vintage-keyed geocoder answers below are the live ones, measured in
+    docs/audits/2026-08-racebrook/REPORT.md §2.3.
+    """
+    from app.tasks.timeline import _fetch_census
+
+    parcel_id = uuid.uuid4()
+    req_id = uuid.uuid4()
+
+    county_era = {"Census2010_Current", "Census2020_Current", "ACS2021_Current"}
+
+    mock_task_row = MagicMock()
+    mock_db = MagicMock()
+    mock_db.__enter__ = MagicMock(return_value=mock_db)
+    mock_db.__exit__ = MagicMock(return_value=False)
+    mock_db.execute.return_value.scalars.return_value.first.return_value = mock_task_row
+
+    mock_fetcher = AsyncMock()
+    mock_fetcher.fetch_decennial = AsyncMock(return_value={"total_population": 2604})
+    mock_fetcher.fetch_acs5 = AsyncMock(return_value={"total_population": 2453})
+    mock_fetcher.close = AsyncMock()
+
+    with (
+        patch("app.db.SessionLocal", return_value=mock_db),
+        patch("app.tasks.timeline.CensusFetcher", return_value=mock_fetcher),
+        patch("app.tasks.timeline.demographics_service.upsert_census_snapshot") as mock_upsert,
+        patch("app.tasks.timeline.imagery_service.update_request_task"),
+        patch("app.tasks.timeline.asyncio.sleep", new_callable=AsyncMock),
+        patch(
+            "app.tasks.timeline.geocoder_service.lookup_tract_at_vintage",
+            new_callable=AsyncMock,
+            side_effect=lambda lat, lon, vintage, settings: (
+                "09009157100" if vintage in county_era else "09170157100"
+            ),
+        ),
+    ):
+        await _fetch_census(
+            parcel_id,
+            req_id,
+            "09170157100",
+            latitude=41.2690529,
+            longitude=-72.9999675,
+        )
+
+    asked = {("acs5", c.args[0]): c.args[2] for c in mock_fetcher.fetch_acs5.await_args_list} | {
+        ("decennial", c.args[0]): c.args[2] for c in mock_fetcher.fetch_decennial.await_args_list
+    }
+
+    # Every vintage published before the change is asked under New Haven
+    # County. 2012/2015/2018 and decennial 2010 already were; 2009, 2021 and
+    # decennial 2020 are what this fix adds.
+    for year in (2009, 2012, 2015, 2018, 2021):
+        assert asked[("acs5", year)] == "009", f"acs5 {year}"
+    for year in (2010, 2020):
+        assert asked[("decennial", year)] == "009", f"decennial {year}"
+
+    # ACS 2022+ is the only family published under the planning regions.
+    assert asked[("acs5", 2023)] == "170"
+
+    # Decennial 1990 and 2000 keep the stored tract: their geography predates
+    # every vintage the geocoder serves. Neither returns data under either
+    # FIPS, for reasons that have nothing to do with the county code —
+    # REPORT.md §4.2 (2000 addresses CT tracts as `1571`) and §4.3 (there is no
+    # 1990 decennial dataset on api.census.gov). Asserted so that a later
+    # change to those years is a deliberate one.
+    for year in (1990, 2000):
+        assert asked[("decennial", year)] == "170", f"decennial {year}"
+
+    # The tract each row is labelled with follows the tract it was fetched from.
+    stored = {
+        (c.kwargs["dataset"], c.kwargs["year"]): c.kwargs["tract_fips"]
+        for c in mock_upsert.call_args_list
+    }
+    assert stored[("acs5", 2021)] == "09009157100"
+    assert stored[("decennial", 2020)] == "09009157100"
+    assert stored[("acs5", 2023)] == "09170157100"
 
 
 @pytest.mark.asyncio

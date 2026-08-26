@@ -76,18 +76,43 @@ ACS5_YEARS = [2009, 2012, 2015, 2018, 2021, 2023]
 
 # Census geocoder vintage each (dataset, year) is published on.
 #
-# A parcel's stored tract is resolved at the current vintage, which is 2020
-# geography.  Asking for a 2020 tract in a year published on 2010 geography
-# returns a 404 for any tract created in the 2020 redistricting, silently
-# costing that year.  Years absent from this map are fetched against the
-# stored tract: 2021/2023 and decennial 2020 already are 2020 geography, and
-# ACS 2009 (2000 geography) and decennial 1990/2000 have no vintage the
-# geocoder still serves — Census2010_Current is its oldest.
+# A parcel's stored tract is resolved at the current vintage, so asking for it
+# in a year published on older geography silently costs that year.  Two
+# independent things move underneath a tract FIPS, and a year is only safe if
+# the vintage is named for both:
+#
+#   - the tract itself, redrawn every decade (a tract created in the 2020
+#     redistricting does not exist in 2010 data);
+#   - its county-equivalent parent.  Connecticut replaced its eight counties
+#     with nine planning regions "for purposes of collecting, tabulating, and
+#     disseminating statistical data in 2022"
+#     (www2.census.gov/geo/pdfs/reference/ct_county_equiv_change.pdf), so
+#     Orange CT is 09009157100 through ACS 2021 and 09170157100 from ACS 2022
+#     — the same tract 1571, a different parent.  ACS 5-year 2022+ is the only
+#     family that uses the planning-region codes; every decennial vintage,
+#     2020 included, still answers under the county codes.
+#
+# So every year the geocoder can serve names its vintage, rather than only the
+# years that happened to be failing when the map was written.  Years absent
+# from the map fall back to the stored tract: decennial 1990 and 2000 are 2000
+# geography or older, which no vintage serves — Census2010_Current is the
+# geocoder's oldest.  (Neither would return data anyway; see
+# docs/audits/2026-08-racebrook/REPORT.md §4.2, §4.3.)
+#
+# ACS 2009 is 2000 tract geography too, and is mapped to Census2010_Current
+# regardless: it is the nearest vintage that exists, it carries the county-era
+# parent that 2009 is published under, and where the tract itself was
+# redistricted in 2010 the answer is the same 204 the stored tract already
+# gets — never worse, sometimes a recovered year.
 _GEOGRAPHY_VINTAGES: dict[tuple[str, int], str] = {
-    ("decennial", 2010): "Census2010_Current",
+    ("acs5", 2009): "Census2010_Current",
     ("acs5", 2012): "Census2010_Current",
     ("acs5", 2015): "Census2010_Current",
     ("acs5", 2018): "Census2010_Current",
+    ("acs5", 2021): "ACS2021_Current",
+    ("acs5", 2023): "ACS2023_Current",
+    ("decennial", 2010): "Census2010_Current",
+    ("decennial", 2020): "Census2020_Current",
 }
 
 
