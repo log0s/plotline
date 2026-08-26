@@ -17,20 +17,84 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      api: ${{ steps.filter.outputs.api }}
-      worker: ${{ steps.filter.outputs.worker }}
-      titiler: ${{ steps.filter.outputs.titiler }}
-      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.resolve.outputs.backend }}
+      api: ${{ steps.resolve.outputs.api }}
+      worker: ${{ steps.resolve.outputs.worker }}
+      titiler: ${{ steps.resolve.outputs.titiler }}
+      frontend: ${{ steps.resolve.outputs.frontend }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      # Only meaningful for a push diff; on dispatch it is skipped and the
-      # outputs come back empty, so the deploy jobs fall through to their
-      # workflow_dispatch condition.
+        with:
+          # Full history: the deployed SHA below can be arbitrarily far
+          # behind HEAD (a queue outage can collapse many pushes), and a
+          # shallow clone would make it unreachable for `git diff`/merge-base.
+          fetch-depth: 0
+      # A push diffed against its own parent only sees that one push's
+      # commits. When a run never happens (queue outage, cancelled run) the
+      # next push's parent-diff still skips whatever the missed push touched.
+      # /api/v1/health reports the SHA actually running in prod, so diffing
+      # against that instead answers "does prod match main" rather than
+      # "did this push touch the backend."
+      - name: Determine diff base (deployed SHA, falling back to parent commit)
+        id: base
+        if: github.event_name == 'push'
+        run: |
+          set +e
+          deployed=$(curl -sf --max-time 10 https://log0s-plotline-api.fly.dev/api/v1/health | jq -r '.version.sha // empty')
+          curl_status=$?
+          set -e
+
+          base=""
+          reason=""
+          if [ "$curl_status" -ne 0 ] || [ -z "$deployed" ]; then
+            reason="health check unreachable or returned no sha"
+          elif ! git cat-file -e "${deployed}^{commit}" 2>/dev/null; then
+            reason="deployed sha $deployed not found in this clone's history"
+          elif ! git merge-base --is-ancestor "$deployed" "${{ github.sha }}"; then
+            reason="deployed sha $deployed is not an ancestor of HEAD (rollback?)"
+          else
+            base="$deployed"
+          fi
+
+          # Fall back to the previous behaviour (parent commit) rather than
+          # silently treating the push as having no changes.
+          if [ -z "$base" ]; then
+            echo "::warning::${reason}; falling back to parent commit ${{ github.event.before }}"
+            fallback="${{ github.event.before }}"
+            if [ -n "$fallback" ] && [ "$fallback" != "0000000000000000000000000000000000000000" ] \
+               && git cat-file -e "${fallback}^{commit}" 2>/dev/null; then
+              base="$fallback"
+            else
+              echo "::warning::parent commit also unavailable; treating everything as changed"
+            fi
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Log diff base for this run
+        if: github.event_name == 'push'
+        run: |
+          {
+            echo "### Change detection"
+            echo "- base: \`${{ steps.base.outputs.sha || '(none — everything counts as changed)' }}\`"
+            echo "- head: \`${{ github.sha }}\`"
+            echo "- changed paths:"
+            echo '```'
+            if [ -n "${{ steps.base.outputs.sha }}" ]; then
+              git diff --name-only "${{ steps.base.outputs.sha }}" "${{ github.sha }}"
+            else
+              echo "(base unknown — all deploy/test jobs run)"
+            fi
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Only meaningful for a push diff with a resolved base; on dispatch, or
+      # when no base could be resolved, it is skipped and `resolve` below
+      # marks every output true.
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && steps.base.outputs.sha != ''
         with:
+          base: ${{ steps.base.outputs.sha }}
           # scripts/ is copied into the image by Dockerfile.fly, so a
           # scripts-only change must rebuild or it never reaches prod.
           filters: |
@@ -52,6 +116,21 @@ jobs:
               - 'fly.titiler.toml'
             frontend:
               - 'frontend/**'
+
+      - name: Resolve outputs
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ -z "${{ steps.base.outputs.sha }}" ]; then
+            for k in backend api worker titiler frontend; do
+              echo "$k=true" >> "$GITHUB_OUTPUT"
+            done
+          else
+            echo "backend=${{ steps.filter.outputs.backend }}" >> "$GITHUB_OUTPUT"
+            echo "api=${{ steps.filter.outputs.api }}" >> "$GITHUB_OUTPUT"
+            echo "worker=${{ steps.filter.outputs.worker }}" >> "$GITHUB_OUTPUT"
+            echo "titiler=${{ steps.filter.outputs.titiler }}" >> "$GITHUB_OUTPUT"
+            echo "frontend=${{ steps.filter.outputs.frontend }}" >> "$GITHUB_OUTPUT"
+          fi
 
   test:
     needs: changes
