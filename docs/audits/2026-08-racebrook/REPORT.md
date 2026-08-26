@@ -515,3 +515,89 @@ The delete-the-fix run is quoted in §6.
   this codebase queries.
 - **The requeue outcome.** `PREDICTION.md` is written before the run, per the
   norms; nothing in this report claims a production result for the fix.
+
+---
+
+## 10. Requeue and score, 2026-08-26 (addendum)
+
+`PREDICTION.md` scored against the production run. Gate, before-state,
+run, and after-state below; every predicted clause confirmed, no
+deviations, no anomalies.
+
+**Gate.** `fly image show` on both `log0s-plotline-api` and
+`plotline-worker` reported `GH_SHA=43308335e366fed355eaa5b2d7c6a264303c475c`
+(`git rev-parse 4330833` → same value); `/api/v1/health` reported the same
+SHA, `built: 2026-08-26T03:56:02Z`. Zero `timeline_requests` rows `queued`
+or `processing` before the run.
+
+**Before-state, `2f1b332e`, captured 2026-08-26T03:59Z:**
+
+| | |
+|---|---|
+| `census_snapshots` | 5 rows: acs5 2012/2015/2018 and decennial 2010 at `09009157100`, acs5 2023 at `09170157100` |
+| `imagery_snapshots` | 68 rows — 43 `landsat`, 12 `sentinel2`, 6 `naip`, 7 `usgs_topo` |
+| census ledger (prior request) | acs5 2009, acs5 2021, decennial 2020 each `absent`/`api_no_data`, detail `empty response for tract 09170157100`; decennial 1990/2000 the same; the other four `ok` |
+
+**Run.** `scripts/requeue_parcels.py --require-sha 43308335e366fed355eaa5b2d7c6a264303c475c 2f1b332e-…`,
+one invocation, exit 0. `Deploy gate passed`. Request `c8e28d15-b2dc-4538-82e5-3f10b0e61acc`
+created 03:59:46.385Z, dispatched immediately (no admission wait — queue
+depth 0), reached `complete` at 04:00:24.723Z (38s).
+
+**P1 — confirmed exactly.** `census_snapshots` went 5 → 8. The three new
+rows, all `09009157100`:
+
+| dataset | year | total_population | total_housing_units |
+|---|---|---|---|
+| acs5 | 2009 | 2757 | 1154 |
+| acs5 | 2021 | 2453 | 1144 |
+| decennial | 2020 | 2604 | 1169 |
+
+All three match the predicted figures exactly. The five pre-existing rows
+are unchanged (same `tract_fips`, same values, same `created_at`).
+
+**P2 — confirmed.** Decennial 1990 and 2000 stay absent; the parcel holds
+at 8 rows, not 10.
+
+**P3 — confirmed row for row.** The new request's census ledger:
+
+| source | group_key | outcome | detail |
+|---|---|---|---|
+| census_acs5 | 2009 | `ok` | tract 09009157100 |
+| census_acs5 | 2012 | `ok` | tract 09009157100 |
+| census_acs5 | 2015 | `ok` | tract 09009157100 |
+| census_acs5 | 2018 | `ok` | tract 09009157100 |
+| census_acs5 | 2021 | `ok` | tract 09009157100 |
+| census_acs5 | 2023 | `ok` | tract 09170157100 |
+| census_decennial | 1990 | `absent` (`api_no_data`) | empty response for tract 09170157100 |
+| census_decennial | 2000 | `absent` (`api_no_data`) | empty response for tract 09170157100 |
+| census_decennial | 2010 | `ok` | tract 09009157100 |
+| census_decennial | 2020 | `ok` | tract 09009157100 |
+
+Eight `ok`, two `absent`, zero `failed`, zero `indeterminate` — matches the
+prediction exactly, including the 1990/2000 detail strings still naming the
+stored tract `09170157100`.
+
+**P4 — confirmed.** `imagery_snapshots` after the run: 43/12/6/7 by source,
+68 rows total, and the sorted set of 68 row ids is byte-identical to the
+before-state set. Zero churn.
+
+**P5 — confirmed.** Four `Resolved tract for vintage` lines for this
+request in the worker log, no more, zero `Vintage tract lookup failed`
+warnings:
+
+```
+2026-08-26T03:59:56.356Z vintage=Census2010_Current tract=09009157100 stored_tract=09170157100
+2026-08-26T03:59:57.729Z vintage=Census2020_Current tract=09009157100 stored_tract=09170157100
+2026-08-26T04:00:07.615Z vintage=ACS2021_Current    tract=09009157100 stored_tract=09170157100
+2026-08-26T04:00:09.461Z vintage=ACS2023_Current    tract=09170157100 stored_tract=09170157100
+```
+
+**P6 — confirmed.** `parcels.census_tract_id` is still `09170157100`,
+`parcels.county` is still `"South Central Connecticut"`.
+
+**Anomalies: none.** No census row appeared outside the predicted three, no
+existing row's `tract_fips` changed (the relabel path in `386f3e3` did not
+fire), and the run produced no imagery or ledger surprises.
+
+**Verdict: all six predictions confirmed, zero deviations.** M4 occurrence
+(4) is resolved; see `STATUS.md`.
