@@ -1097,33 +1097,31 @@ async def test_fetch_property_zero_rows_marks_task_complete() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_property_partial_failure_still_completes() -> None:
+async def test_fetch_property_partial_failure_keeps_records_and_marks_partial() -> None:
     """One dead dataset among several shouldn't discard the records the
-    others returned."""
-    from app.services.county_adapters import PropertyEventData, SourceFetchResult
+    others returned — and must not claim they are the whole answer.
+
+    This test used to assert ``complete``, which is the Z3 defect written
+    down as an expectation: a 429-exhausted permit layer on Denver left a
+    task that read like a clean run over a thinner history. Delete-the-fix:
+    revert ``status = "partial" if queries_failed else "complete"`` in
+    ``_fetch_and_persist_property`` to an unconditional ``"complete"`` and
+    the status assertion below fails.
+    """
+    from app.services.arcgis import ArcGISError
+    from app.services.county_adapters import DenverAdapter
     from app.tasks.timeline import _fetch_property
 
-    event = PropertyEventData(
-        event_type="permit_building",
-        event_date=None,
-        sale_price=None,
-        permit_type="Building",
-        permit_description=None,
-        permit_valuation=None,
-        description="Building permit",
-        source="denver_permits",
-        source_record_id="permit-1",
-        raw_data={},
-        situs_address=None,
-    )
+    # The real Denver adapter, so this exercises the actual two-permit-layer
+    # fan-out rather than a hand-made rollup: the commercial layer 429s past
+    # its retry budget (Z1's terminal ArcGISError), the residential one
+    # answers with one permit.
+    adapter = DenverAdapter()
 
-    mock_adapter = MagicMock()
-    mock_adapter.fetch_sales = AsyncMock(
-        return_value=SourceFetchResult(queries_attempted=1, queries_failed=1)
-    )
-    mock_adapter.fetch_permits = AsyncMock(
-        return_value=SourceFetchResult(events=[event], queries_attempted=1)
-    )
+    async def fake_query(url: str, **kwargs: object) -> list[dict[str, object]]:
+        if url == DenverAdapter.COMMERCIAL_PERMITS_URL:
+            raise ArcGISError("ArcGIS rate-limited; backing off (HTTP 429)")
+        return [{"ADDRESS": "1437 BANNOCK ST", "CLASS": "Building", "PERMIT_NUM": "permit-1"}]
 
     mock_db = MagicMock()
     mock_db.__enter__ = MagicMock(return_value=mock_db)
@@ -1132,7 +1130,8 @@ async def test_fetch_property_partial_failure_still_completes() -> None:
 
     with (
         patch("app.db.SessionLocal", return_value=mock_db),
-        patch("app.tasks.timeline.get_adapter_for_county", return_value=mock_adapter),
+        patch("app.tasks.timeline.get_adapter_for_county", return_value=adapter),
+        patch("app.services.county_adapters.query_feature_service", side_effect=fake_query),
         patch("app.tasks.timeline.property_events_service.upsert_property_event"),
         patch(
             "app.tasks.timeline.property_events_service.count_property_events",
@@ -1149,7 +1148,85 @@ async def test_fetch_property_partial_failure_still_completes() -> None:
 
     assert count == 1
     statuses = [c[0][2] for c in mock_update.call_args_list]
-    assert statuses[-1] == "complete"
+    assert statuses[-1] == "partial"
+    counts = mock_update.call_args_list[-1].kwargs["counts"]
+    assert (counts.queries_run, counts.queries_failed) == (2, 1)
+    # The surviving query's record is still saved and still counted.
+    assert mock_update.call_args_list[-1].kwargs["items_found"] == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_property_records_the_address_matcher_split() -> None:
+    """Z4: rows returned and rows kept are both on the task row.
+
+    "The LIKE pulled records in and the matcher rejected every one" and "the
+    portal returned nothing" were the same database state — ``complete`` with
+    ``items_found`` 0 — and the split lived only in the ``"Property events
+    filtered"`` log line. DC produced the live instance in the 2026-08-27
+    sweep: ``raw_count 1 -> matched 0``.
+
+    Delete-the-fix: drop the ``counts=`` argument from the terminal
+    ``_set_task_status`` call in ``_fetch_and_persist_property`` and the
+    ``rows_returned``/``rows_matched`` assertions fail (``counts`` is absent,
+    so the row would carry NULL — "not recorded" — instead of 1 and 0).
+    """
+    from app.services.county_adapters import PropertyEventData, SourceFetchResult
+    from app.tasks.timeline import _fetch_property
+
+    rejected = PropertyEventData(
+        event_type="sale",
+        event_date=None,
+        sale_price=500000,
+        permit_type=None,
+        permit_description=None,
+        permit_valuation=None,
+        description="Property sale",
+        source="dc_sales",
+        source_record_id="ssl-9",
+        raw_data={},
+        # A different building on the same street — the exact shape the broad
+        # LIKE is built to pull in and the matcher is built to reject.
+        situs_address="1100 MARYLAND AVENUE NE",
+    )
+
+    mock_adapter = MagicMock()
+    mock_adapter.fetch_sales = AsyncMock(
+        return_value=SourceFetchResult(events=[rejected], queries_attempted=1)
+    )
+    mock_adapter.fetch_permits = AsyncMock(return_value=SourceFetchResult(queries_attempted=7))
+
+    mock_db = MagicMock()
+    mock_db.__enter__ = MagicMock(return_value=mock_db)
+    mock_db.__exit__ = MagicMock(return_value=False)
+    mock_db.execute.return_value.scalars.return_value.first.return_value = MagicMock()
+
+    with (
+        patch("app.db.SessionLocal", return_value=mock_db),
+        patch("app.tasks.timeline.get_adapter_for_county", return_value=mock_adapter),
+        patch("app.tasks.timeline.property_events_service.upsert_property_event") as mock_upsert,
+        patch(
+            "app.tasks.timeline.property_events_service.count_property_events",
+            return_value=0,
+        ),
+        patch("app.tasks.timeline.imagery_service.update_request_task") as mock_update,
+    ):
+        count = await _fetch_property(
+            uuid.uuid4(),
+            uuid.uuid4(),
+            "District of Columbia",
+            "100 MARYLAND AVE NE, WASHINGTON, DC, 20002",
+        )
+
+    assert count == 0
+    mock_upsert.assert_not_called()
+    final = mock_update.call_args_list[-1]
+    # Every query answered, so this is a true 'complete' — the counts are
+    # what separate it from a portal that returned nothing.
+    assert final[0][2] == "complete"
+    counts = final.kwargs["counts"]
+    assert (counts.rows_returned, counts.rows_matched) == (1, 0)
+    assert (counts.queries_run, counts.queries_failed) == (8, 0)
+    assert counts.coverage == "covered"
 
 
 # ── _run_timeline_inner orchestration ─────────────────────────────────────────

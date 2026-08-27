@@ -1636,6 +1636,29 @@ def test_aggregate_request_status_complete_and_failed() -> None:
     assert aggregate_request_status([]) == ("complete", [])
 
 
+def test_aggregate_request_status_treats_a_partial_task_as_degraded() -> None:
+    """A property task that lost some of its county queries holes the request.
+
+    Delete-the-fix: drop ``"partial"`` from the ``degraded`` comprehension in
+    ``aggregate_request_status`` and the first assertion reads ``complete`` —
+    a request advertising a full timeline over a history that is missing
+    whatever the 429'd permit layer held.
+
+    The all-failed arm still reads ``failed`` only from genuinely failed
+    tasks: a partial task served data, and demoting the whole request to
+    ``failed`` for it would be the same lie in the other direction.
+    """
+    from app.services.imagery import aggregate_request_status
+
+    assert aggregate_request_status(
+        [("naip", "complete"), ("property", "partial")],
+    ) == ("partial", ["property"])
+    assert aggregate_request_status([("property", "partial")]) == ("partial", ["property"])
+    assert aggregate_request_status(
+        [("naip", "failed"), ("property", "partial")],
+    ) == ("partial", ["naip", "property"])
+
+
 # ── Reconciliation: a suppressed group is the one authority to delete ────────
 
 # e513188c, live on 2026-08-26: the parcel serves a NAIP 2023 card built from

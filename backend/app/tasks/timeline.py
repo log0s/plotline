@@ -291,6 +291,8 @@ def _set_task_status(
     *,
     items_found: int | None = None,
     error_message: str | None = None,
+    counts: imagery_service.TaskCounts | None = None,
+    clear_items_found: bool = False,
 ) -> None:
     """Update a per-source task row in its own short-lived session."""
     from sqlalchemy import select as sa_select
@@ -312,7 +314,13 @@ def _set_task_status(
             logger.warning("No task row found for source", extra={"source": source})
             return
         imagery_service.update_request_task(
-            db, task_row, status, items_found=items_found, error_message=error_message
+            db,
+            task_row,
+            status,
+            items_found=items_found,
+            error_message=error_message,
+            counts=counts,
+            clear_items_found=clear_items_found,
         )
 
 
@@ -1349,6 +1357,13 @@ async def _fetch_and_persist_property(
             "property",
             "failed",
             error_message=f"All {county} County property queries failed",
+            counts=imagery_service.TaskCounts(
+                queries_run=queries_attempted,
+                queries_failed=queries_failed,
+                rows_returned=0,
+                rows_matched=0,
+                coverage="covered",
+            ),
         )
         return 0
 
@@ -1394,11 +1409,34 @@ async def _fetch_and_persist_property(
 
         total_items = property_events_service.count_property_events(db, parcel_id)
 
-    _set_task_status(timeline_request_id, "property", "complete", items_found=total_items)
+    # Z3: 'complete' now means every query answered, zero rows included. A
+    # county with one query (Adams) already failed correctly under H4's rule;
+    # a county with several (Denver's 2 permit layers, DC's 7) used to report
+    # the survivors as if they were the whole answer.
+    status = "partial" if queries_failed else "complete"
+    _set_task_status(
+        timeline_request_id,
+        "property",
+        status,
+        items_found=total_items,
+        error_message=(
+            f"{queries_failed} of {queries_attempted} {county} County property "
+            "queries failed; this history may be incomplete"
+            if status == "partial"
+            else None
+        ),
+        counts=imagery_service.TaskCounts(
+            queries_run=queries_attempted,
+            queries_failed=queries_failed,
+            rows_returned=len(all_events),
+            rows_matched=len(matched_events),
+            coverage="covered",
+        ),
+    )
 
     logger.info(
         "Property history fetch complete",
-        extra={"items_saved": items_saved, "county": county},
+        extra={"items_saved": items_saved, "county": county, "status": status},
     )
     return items_saved
 

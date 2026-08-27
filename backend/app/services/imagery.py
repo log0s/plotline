@@ -36,6 +36,37 @@ from app.services.admission import (
 
 logger = logging.getLogger(__name__)
 
+# A task with a completed_at. 'partial' joins the list at the task level for
+# the same reason it joined at the request level in 0012: it is terminal and
+# serving, not an error, and a task that never gets a completed_at reads as
+# stranded to every sweep.
+_TERMINAL_TASK_STATUSES = ("complete", "partial", "failed", "skipped")
+
+
+# ── Per-source outcome counts ─────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class TaskCounts:
+    """What a source actually asked for and what came back.
+
+    Property-only today. ``rows_returned`` is the number of events the
+    adapters handed the address matcher and ``rows_matched`` the number it
+    kept, so ``rows_returned - rows_matched`` is exactly the matcher's
+    rejection count — the split that used to exist only in the
+    ``"Property events filtered"`` log line (STATUS.md Z4).
+
+    ``coverage`` is ``None`` when a caller is reporting counts without
+    re-stating a coverage verdict; ``update_request_task`` leaves the column
+    alone in that case rather than blanking a verdict written earlier.
+    """
+
+    queries_run: int | None = None
+    queries_failed: int | None = None
+    rows_returned: int | None = None
+    rows_matched: int | None = None
+    coverage: str | None = None
+
 
 # ── Snapshot data class (PostGIS-free, SQLite-compatible) ─────────────────────
 
@@ -419,14 +450,31 @@ def update_request_task(
     status: str,
     items_found: int | None = None,
     error_message: str | None = None,
+    counts: TaskCounts | None = None,
+    clear_items_found: bool = False,
 ) -> None:
-    """Update a task's status fields."""
+    """Update a task's status fields.
+
+    ``items_found`` keeps its "None means don't touch it" contract, so a
+    caller that genuinely means NULL — a not-covered task, which counted
+    nothing because it asked nothing — says so with ``clear_items_found``
+    rather than by passing a value that would read as an answer.
+    """
     task.status = status
-    if items_found is not None:
+    if clear_items_found:
+        task.items_found = None
+    elif items_found is not None:
         task.items_found = items_found
+    if counts is not None:
+        task.queries_run = counts.queries_run
+        task.queries_failed = counts.queries_failed
+        task.rows_returned = counts.rows_returned
+        task.rows_matched = counts.rows_matched
+        if counts.coverage is not None:
+            task.coverage = counts.coverage
     if status == "processing":
         task.started_at = datetime.now(tz=UTC)
-    elif status in ("complete", "failed", "skipped"):
+    elif status in _TERMINAL_TASK_STATUSES:
         task.completed_at = datetime.now(tz=UTC)
     if error_message:
         # Task rows are served to clients by GET /timeline-requests/{id} and
@@ -453,7 +501,8 @@ def update_timeline_request_status(
 def aggregate_request_status(tasks: Iterable[tuple[str, str]]) -> tuple[str, list[str]]:
     """Fold ``(source, task_status)`` pairs into the request's own status.
 
-    Returns the status and the sources that failed.
+    Returns the status and the sources that ended degraded — failed, or
+    ``partial``. On a ``failed`` result the two are the same list.
 
     * ``complete`` — no task failed.
     * ``partial``  — at least one task failed and at least one did not. This
@@ -469,16 +518,25 @@ def aggregate_request_status(tasks: Iterable[tuple[str, str]]) -> tuple[str, lis
     the only honest reading of "nothing was attempted and nothing broke".
     ``skipped`` is not a failure — a county with no property adapter has
     always kept its request complete, and a scoped request's absent sources
-    have no row here at all.
+    have no row here at all. A ``not_covered`` property task is skipped for
+    the same reason: the county was never the authority for that address.
+
+    A ``partial`` task (0014, property only) counts as a failed one *for the
+    partial computation*: it has a known hole, so the request has a known
+    hole and must not read ``complete``. It does not count as failed for the
+    all-failed computation — a task that served some of its queries did serve
+    data, and calling the whole request ``failed`` would be the mirror image
+    of the defect this function exists to fix.
     """
     pairs = list(tasks)
     if not pairs:
         return "complete", []
     failed = [source for source, status in pairs if status == "failed"]
+    degraded = [source for source, status in pairs if status in ("failed", "partial")]
     if len(failed) == len(pairs):
         return "failed", failed
-    if failed:
-        return "partial", failed
+    if degraded:
+        return "partial", degraded
     return "complete", []
 
 
@@ -497,8 +555,8 @@ def maybe_refetch_for_backfill(
       * Census tract FIPS is now available but no census task ran, or the
         previous census task failed (e.g. a Census API outage).
       * The parcel's county now has a property adapter, but the previous
-        run's property task was missing, skipped, or failed (e.g. a county
-        portal outage).
+        run's property task was missing, skipped, partial, or failed (e.g. a
+        county portal outage).
       * No usgs_topo task row exists (source added after initial fetch).
 
     None of the three is subsumed by the ledger, and each for its own
@@ -559,10 +617,13 @@ def maybe_refetch_for_backfill(
                 .scalars()
                 .first()
             )
-            if not prop_task or prop_task.status in ("skipped", "failed"):
+            # 'partial' joins the list because it is exactly the state this
+            # trigger exists for: some county queries failed, so the history
+            # on file is known-thin and a later visit can honestly try again.
+            if not prop_task or prop_task.status in ("skipped", "partial", "failed"):
                 needs_refetch = True
                 logger.info(
-                    "Property task missing/skipped/failed — refetch needed",
+                    "Property task missing/skipped/partial/failed — refetch needed",
                     extra={"parcel_id": str(parcel.id), "county": parcel.county},
                 )
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import uuid
 
 from sqlalchemy import text
 
@@ -66,8 +67,14 @@ def _timeline_request_id(parcel_id: str) -> str:
         if existing:
             return str(existing[0])
 
+        # uuid.UUID, not the str this function is handed: psycopg2 coerces a
+        # string into a UUID column, SQLAlchemy's SQLite variant does not, and
+        # that difference is the only thing that kept this write untested
+        # (Y7 UNVERIFIED register, entry 1).
         request = TimelineRequest(
-            parcel_id=parcel_id, status="queued", deployed_sha=get_settings().git_sha
+            parcel_id=uuid.UUID(parcel_id),
+            status="queued",
+            deployed_sha=get_settings().git_sha,
         )
         db.add(request)
         db.commit()
