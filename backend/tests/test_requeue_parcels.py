@@ -152,6 +152,52 @@ def test_both_flags_refuse(no_http: list[str], capsys: Any) -> None:
 # ── --sources and --from-ledger ──────────────────────────────────────────────
 
 
+def test_sources_rejects_an_unknown_value(
+    monkeypatch: pytest.MonkeyPatch, no_http: list[str], capsys: Any
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "requeue_parcels.py",
+            "--skip-deploy-check",
+            "--sources",
+            "naip,not_a_source",
+            "00000000-0000-0000-0000-000000000000",
+        ],
+    )
+    with pytest.raises(SystemExit) as exc:
+        script.main()
+    assert exc.value.code == 2
+    assert "invalid --sources value(s): not_a_source" in capsys.readouterr().err
+    assert no_http == []
+
+
+@pytest.mark.parametrize(
+    "argv_tail",
+    [
+        ["--sources", "naip", "{pid}"],
+        ["{pid}", "--sources", "naip"],
+    ],
+)
+def test_sources_does_not_swallow_a_trailing_parcel_id(
+    monkeypatch: pytest.MonkeyPatch, capsys: Any, argv_tail: list[str]
+) -> None:
+    """HEAL-1/HEAL-2: with nargs='+', ``--sources naip <id>`` used to consume
+    the id as a second (invalid) source. A single comma-separated flag value
+    can't do that — both token orders must select the same scope."""
+    pid = "11111111-1111-1111-1111-111111111111"
+    monkeypatch.setattr(script, "_known_parcels", lambda ids: set(ids))
+    argv = ["requeue_parcels.py", "--skip-deploy-check", "--dry-run"]
+    argv += [tok.format(pid=pid) for tok in argv_tail]
+    monkeypatch.setattr(sys, "argv", argv)
+
+    script.main()
+
+    out = capsys.readouterr().out
+    assert f"would re-queue: {pid} [naip]" in out
+
+
 def test_sources_speaks_the_ledgers_vocabulary() -> None:
     """``census_decennial`` is a legal --sources value and expands to the two
     census ledger sources only when the operator asked for ``census``."""

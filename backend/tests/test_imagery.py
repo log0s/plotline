@@ -1546,6 +1546,23 @@ def test_losing_the_race_to_a_scoped_request_reuses_it(
     assert request.id == inflight_id
 
 
+def test_create_queued_request_stamps_deployed_sha(db: Session) -> None:
+    """Y7's write side: every request created through the service records
+    the process's own build SHA — the same value /api/v1/health reports. A
+    NULL deployed_sha can only be a pre-0013 row."""
+    from app.config import get_settings
+    from app.services.imagery import _create_queued_request
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id)
+
+    request, created = _create_queued_request(db, parcel_id)
+
+    assert created is True
+    assert request.deployed_sha == get_settings().git_sha
+    assert request.deployed_sha is not None
+
+
 # ── Scoped task creation leaves other sources' ledger history alone ──────────
 
 

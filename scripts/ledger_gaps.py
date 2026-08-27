@@ -34,6 +34,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import text
 
+from app.config import get_settings
 from app.db import SessionLocal
 from app.logging_config import configure_script_logging
 from app.services import ledger as ledger_service
@@ -70,7 +71,14 @@ ACTIONABLE = ("failed", "indeterminate", "suppressed")
 
 @dataclass(frozen=True)
 class LedgerRow:
-    """One (parcel, source, group) triple's latest recorded outcome."""
+    """One (parcel, source, group) triple's latest recorded outcome.
+
+    ``same_sha`` is only meaningful for ``outcome == "absent"``: it marks a
+    group ``requeue_parcels.py --from-ledger`` excludes from
+    ``--include-absent-api`` / ``--include-cloud-filtered`` selection because
+    it was already recorded under the SHA this process is running (Y7) — the
+    exclusion is visible here rather than a silent zero in the heal's dry-run.
+    """
 
     parcel_id: str
     source: str
@@ -81,9 +89,11 @@ class LedgerRow:
     reasons_seen: tuple[str, ...]
     policy: str
     stale: bool
+    same_sha: bool
 
 
 def _fetch(source: str | None, parcel: str | None, outcome: str | None) -> list[LedgerRow]:
+    current_sha = get_settings().git_sha
     with SessionLocal() as db:
         groups = ledger_service.latest_outcomes(db)
         reason_rows = db.execute(text(_REASONS_SQL)).mappings().all()
@@ -114,6 +124,10 @@ def _fetch(source: str | None, parcel: str | None, outcome: str | None) -> list[
                 reasons_seen=tuple(sorted(seen.get(key, ()))),
                 policy=ledger_service.retry_policy(group.outcome, group.reason),
                 stale=ledger_service.is_stale(group),
+                same_sha=(
+                    group.outcome == "absent"
+                    and ledger_service.same_deployed_sha(group, current_sha)
+                ),
             )
         )
     return result
@@ -124,7 +138,17 @@ def _print_table(rows: list[LedgerRow]) -> None:
         print("No ledger rows match.")
         return
 
-    headers = ("parcel", "source", "group", "outcome", "reason", "n", "retry", "reasons seen")
+    headers = (
+        "parcel",
+        "source",
+        "group",
+        "outcome",
+        "reason",
+        "n",
+        "retry",
+        "same_sha",
+        "reasons seen",
+    )
     table = [
         (
             r.parcel_id[:8],
@@ -134,6 +158,7 @@ def _print_table(rows: list[LedgerRow]) -> None:
             r.reason,
             str(r.attempts),
             r.policy,
+            "same" if r.same_sha else "",
             ",".join(r.reasons_seen) if r.outcome in ACTIONABLE else "",
         )
         for r in rows
@@ -196,6 +221,8 @@ def main() -> None:
     )
     parser.add_argument("--limit", type=int, default=None, help="Print at most N rows")
     args = parser.parse_args()
+
+    print(f"Current deployed SHA (this process): {get_settings().git_sha}")
 
     rows = _fetch(args.source, args.parcel, args.outcome)
 

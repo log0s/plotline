@@ -198,8 +198,15 @@ def _create_queued_request(
     queue is at its cap — every new pipeline run passes through here.
     """
     declared = normalize_sources(sources)
-    ensure_admission(db, get_settings(), what="timeline_request", origin=origin)
-    request = TimelineRequest(parcel_id=parcel_id, status="queued", sources=declared, origin=origin)
+    settings = get_settings()
+    ensure_admission(db, settings, what="timeline_request", origin=origin)
+    request = TimelineRequest(
+        parcel_id=parcel_id,
+        status="queued",
+        sources=declared,
+        origin=origin,
+        deployed_sha=settings.git_sha,
+    )
     db.add(request)
     try:
         db.commit()

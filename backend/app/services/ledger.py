@@ -77,6 +77,7 @@ WITH ranked AS (
            y.reason               AS reason,
            y.detail               AS detail,
            r.created_at           AS run_at,
+           r.deployed_sha         AS recorded_sha,
            ROW_NUMBER() OVER (
                PARTITION BY r.parcel_id, y.source, y.group_key
                ORDER BY r.created_at DESC, y.created_at DESC
@@ -88,7 +89,7 @@ WITH ranked AS (
     JOIN timeline_request_tasks t ON t.id = y.task_id
     JOIN timeline_requests r      ON r.id = t.timeline_request_id
 )
-SELECT parcel_id, source, group_key, outcome, reason, detail, run_at, attempts
+SELECT parcel_id, source, group_key, outcome, reason, detail, run_at, recorded_sha, attempts
 FROM ranked
 WHERE rn = 1
 ORDER BY parcel_id, source, group_key
@@ -107,6 +108,10 @@ class LedgerGroup:
     detail: str | None
     run_at: datetime | None
     attempts: int
+    # The deployed_sha of the request that wrote this outcome. Defaults to
+    # None so existing keyword-only LedgerGroup(...) call sites (tests that
+    # predate Y7) do not need updating for a field they have no opinion on.
+    recorded_sha: str | None = None
 
     @property
     def task_source(self) -> str:
@@ -147,6 +152,7 @@ def latest_outcomes(
                 reason=raw["reason"],
                 detail=raw["detail"],
                 run_at=raw["run_at"],
+                recorded_sha=raw["recorded_sha"],
                 attempts=int(raw["attempts"]),
             )
         )
@@ -226,13 +232,36 @@ def is_stale(group: LedgerGroup) -> bool:
     return group.group_key not in attempted_group_keys(group.source)
 
 
+def same_deployed_sha(group: LedgerGroup, current_sha: str | None) -> bool:
+    """Whether ``group`` was recorded under the SHA now running.
+
+    A ``None`` recorded SHA (pre-0013 request) is never "same" — it counts as
+    "changed", which is what lets the first post-deploy run still select
+    every pre-existing absent group once. Once that run creates a new request,
+    the row it writes carries the current SHA, and the next run correctly
+    reads it as unchanged. ``current_sha`` being ``None`` (SHA not baked into
+    this process, e.g. local dev) is likewise never "same" as a recorded SHA,
+    so it never suppresses a group either.
+    """
+    return group.recorded_sha is not None and group.recorded_sha == current_sha
+
+
 def is_retryable(
     group: LedgerGroup,
     *,
     include_cloud_filtered: bool = False,
     include_absent_api: bool = False,
+    current_sha: str | None = None,
 ) -> bool:
-    """Whether this group is worth another attempt under the given flags."""
+    """Whether this group is worth another attempt under the given flags.
+
+    ``current_sha`` gates the two flagged policies on top of the flag itself:
+    an absent/* group recorded under the SHA now running has already been
+    retried since the code last changed, so re-selecting it on every run
+    would just repeat the same failed request forever (Y7). It does nothing
+    for ``RETRY`` / ``RETRY_ONCE`` — those are worth another attempt whether
+    or not the code changed.
+    """
     if is_stale(group):
         return False
     policy = retry_policy(group.outcome, group.reason)
@@ -241,9 +270,9 @@ def is_retryable(
     if policy == RETRY_ONCE:
         return group.attempts <= 1
     if policy == NEEDS_CLOUD_FLAG:
-        return include_cloud_filtered
+        return include_cloud_filtered and not same_deployed_sha(group, current_sha)
     if policy == NEEDS_ABSENT_API_FLAG:
-        return include_absent_api
+        return include_absent_api and not same_deployed_sha(group, current_sha)
     return False
 
 
@@ -254,6 +283,7 @@ def retryable_groups(
     sources: set[str] | None = None,
     include_cloud_filtered: bool = False,
     include_absent_api: bool = False,
+    current_sha: str | None = None,
 ) -> list[LedgerGroup]:
     """``latest_outcomes`` narrowed to what the policy says to retry."""
     return [
@@ -263,6 +293,7 @@ def retryable_groups(
             group,
             include_cloud_filtered=include_cloud_filtered,
             include_absent_api=include_absent_api,
+            current_sha=current_sha,
         )
     ]
 

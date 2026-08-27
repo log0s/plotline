@@ -27,6 +27,7 @@ def _run(
     sources: tuple[str, ...],
     age_hours: float,
     declared: list[str] | None = None,
+    deployed_sha: str | None = None,
 ) -> dict[str, uuid.UUID]:
     """One timeline request with task rows, at a chosen age. Returns task ids."""
     request_id = uuid.uuid4()
@@ -41,6 +42,7 @@ def _run(
                 sources=declared if declared is not None else list(sources),
                 origin="user",
                 created_at=created,
+                deployed_sha=deployed_sha,
             )
         )
         db.commit()
@@ -248,6 +250,101 @@ def test_a_suppressed_group_is_never_retried(committing_db: sessionmaker[Session
 
     with committing_db() as db:
         assert ledger_service.retryable_groups(db, parcel_id=parcel_id) == []
+
+
+# ── Y7: the deployed-SHA gate on the two flagged classes ─────────────────────
+
+
+def test_absent_group_selects_only_when_recorded_under_a_different_sha(
+    committing_db: sessionmaker[Session],
+) -> None:
+    """Two absent/api_no_data groups, one recorded under the SHA now running,
+    one recorded under an older SHA. Only the second is retryable — a group
+    already retried since the last deploy must not be re-selected forever."""
+    parcel_id = _parcel(committing_db)
+    same = _run(
+        committing_db, parcel_id, sources=("census",), age_hours=1, deployed_sha="sha-current"
+    )
+    old = _run(
+        committing_db,
+        parcel_id,
+        sources=("census",),
+        age_hours=2,
+        declared=["census"],
+        deployed_sha="sha-old",
+    )
+    _record(committing_db, same["census"], "census_decennial", "2000", "absent", "api_no_data")
+    _record(committing_db, old["census"], "census_decennial", "2010", "absent", "api_no_data")
+
+    with committing_db() as db:
+        selected = ledger_service.retryable_groups(
+            db, parcel_id=parcel_id, include_absent_api=True, current_sha="sha-current"
+        )
+
+    assert [g.group_key for g in selected] == ["2010"]
+
+
+def test_absent_group_selects_for_every_group_key_without_the_sha_gate(
+    committing_db: sessionmaker[Session],
+) -> None:
+    """Same fixture, no ``current_sha`` given: both select. Confirms the
+    exclusion above comes from the SHA comparison, not from something else
+    about the fixture (e.g. group staleness or the flag itself)."""
+    parcel_id = _parcel(committing_db)
+    same = _run(
+        committing_db, parcel_id, sources=("census",), age_hours=1, deployed_sha="sha-current"
+    )
+    old = _run(
+        committing_db,
+        parcel_id,
+        sources=("census",),
+        age_hours=2,
+        declared=["census"],
+        deployed_sha="sha-old",
+    )
+    _record(committing_db, same["census"], "census_decennial", "2000", "absent", "api_no_data")
+    _record(committing_db, old["census"], "census_decennial", "2010", "absent", "api_no_data")
+
+    with committing_db() as db:
+        selected = ledger_service.retryable_groups(db, parcel_id=parcel_id, include_absent_api=True)
+
+    assert sorted(g.group_key for g in selected) == ["2000", "2010"]
+
+
+def test_a_pre_migration_null_sha_group_selects_once(
+    committing_db: sessionmaker[Session],
+) -> None:
+    """A group recorded before deployed_sha existed (NULL) counts as
+    "changed" — the first post-deploy run still selects it, whatever the
+    current SHA is."""
+    parcel_id = _parcel(committing_db)
+    tasks = _run(committing_db, parcel_id, sources=("census",), age_hours=1, deployed_sha=None)
+    _record(committing_db, tasks["census"], "census_decennial", "2000", "absent", "api_no_data")
+
+    with committing_db() as db:
+        selected = ledger_service.retryable_groups(
+            db, parcel_id=parcel_id, include_absent_api=True, current_sha="sha-current"
+        )
+
+    assert [g.group_key for g in selected] == ["2000"]
+
+
+def test_same_deployed_sha_helper() -> None:
+    assert ledger_service.same_deployed_sha(_group("absent", "api_no_data"), "sha-a") is False
+    recorded = ledger_service.LedgerGroup(
+        parcel_id=uuid.uuid4(),
+        source="census_decennial",
+        group_key="2000",
+        outcome="absent",
+        reason="api_no_data",
+        detail=None,
+        run_at=None,
+        attempts=1,
+        recorded_sha="sha-a",
+    )
+    assert ledger_service.same_deployed_sha(recorded, "sha-a") is True
+    assert ledger_service.same_deployed_sha(recorded, "sha-b") is False
+    assert ledger_service.same_deployed_sha(recorded, None) is False
 
 
 # ── Stale groups: current code no longer attempts them (Y3) ─────────────────

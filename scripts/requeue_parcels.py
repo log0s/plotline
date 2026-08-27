@@ -21,7 +21,10 @@ runs through. Three shapes:
 the request it creates declares the task source that would re-run it
 (``census``). Ledger selection is scope-preserving per parcel: one with only
 failed Landsat years gets a Landsat-only request even in a run that also
-selects a census-only parcel.
+selects a census-only parcel. Multiple sources are one comma-separated flag
+value (``--sources naip,landsat``), not repeated tokens — a variadic flag
+here would consume a trailing positional parcel id as another "source" and
+silently drop it from the run (HEAL-1/HEAL-2).
 
 Two classes of outcome are selectable only behind an explicit flag, because
 retrying them asserts that the *request* changed, not that time passed:
@@ -243,6 +246,7 @@ def select_from_ledger(
     include_cloud_filtered: bool,
     include_absent_api: bool,
     groups: list[str] | None = None,
+    current_sha: str | None = None,
 ) -> dict[uuid.UUID, dict[str, list[ledger_service.LedgerGroup]]]:
     """Parcels the retry policy has work for, and the scope each one needs.
 
@@ -254,6 +258,13 @@ def select_from_ledger(
     time" — not a substitute for it: a group current code no longer attempts
     is already excluded by ``ledger_service.is_stale`` regardless of this
     filter (Y3, ``docs/audits/2026-08-m3/STATUS.md``).
+
+    ``current_sha`` is this process's own build SHA (``settings.git_sha`` —
+    the script runs inside the API/worker image, so it is the same value
+    that image's ``/api/v1/health`` reports). It gates ``--include-absent-api``
+    / ``--include-cloud-filtered`` selection: a group already retried since
+    this SHA was deployed is excluded, so the run after a heal selects zero
+    (Y7).
     """
     wanted = set(parcel_ids) or None
     wanted_groups = set(groups) if groups else None
@@ -263,6 +274,7 @@ def select_from_ledger(
             sources=ledger_filter(sources),
             include_cloud_filtered=include_cloud_filtered,
             include_absent_api=include_absent_api,
+            current_sha=current_sha,
         )
 
     selected: dict[uuid.UUID, dict[str, list[ledger_service.LedgerGroup]]] = {}
@@ -314,11 +326,12 @@ def main() -> None:
     )
     parser.add_argument(
         "--sources",
-        nargs="+",
-        metavar="SOURCE",
-        choices=SELECTABLE_SOURCES,
-        help="Limit the run to these sources, named as the ledger names them "
-        f"({', '.join(SELECTABLE_SOURCES)}). Default: every source.",
+        metavar="SOURCE,SOURCE,...",
+        help="Comma-separated sources to limit the run to, named as the "
+        f"ledger names them ({', '.join(SELECTABLE_SOURCES)}). Default: "
+        "every source. A single flag value rather than nargs='+' so it can "
+        "never swallow the parcel id(s) that follow on the command line "
+        "(HEAL-1/HEAL-2, docs/audits/2026-08-second-audit/STATUS.md).",
     )
     parser.add_argument(
         "--from-ledger",
@@ -384,6 +397,16 @@ def main() -> None:
         if flag and not args.from_ledger:
             parser.error(f"{name} only means something with --from-ledger")
 
+    sources: list[str] | None = None
+    if args.sources:
+        sources = [s.strip() for s in args.sources.split(",") if s.strip()]
+        invalid = [s for s in sources if s not in SELECTABLE_SOURCES]
+        if invalid:
+            parser.error(
+                f"invalid --sources value(s): {', '.join(invalid)} "
+                f"(choose from {', '.join(SELECTABLE_SOURCES)})"
+            )
+
     _check_deploy_gate(args.api_url, args.require_sha, args.skip_deploy_check)
 
     try:
@@ -401,10 +424,11 @@ def main() -> None:
     if args.from_ledger:
         selected = select_from_ledger(
             [pid for pid in parcel_ids if pid in known],
-            args.sources,
+            sources,
             include_cloud_filtered=args.include_cloud_filtered,
             include_absent_api=args.include_absent_api,
             groups=args.groups,
+            current_sha=get_settings().git_sha,
         )
         targets = sorted(selected, key=str)
         scope = {pid: sorted(selected[pid]) for pid in targets}
@@ -413,8 +437,8 @@ def main() -> None:
     else:
         targets = [pid for pid in parcel_ids if pid in known]
         declared = (
-            sorted({ledger_service.task_source_for(s) for s in args.sources})
-            if args.sources
+            sorted({ledger_service.task_source_for(s) for s in sources})
+            if sources
             else None
         )
         scope = dict.fromkeys(targets, declared)

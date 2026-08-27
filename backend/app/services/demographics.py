@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import text as sa_text
@@ -59,6 +60,11 @@ def upsert_census_snapshot(
     tract for the year must relabel the row it refreshes, or the row would
     carry one tract's label over another tract's numbers.
 
+    ``updated_at`` moves on every conflict, including an idempotent re-run
+    that resolves to identical values — a heal is provable by "the row was
+    touched", not by "the row's values differ", since a value that was
+    already correct touching-but-unchanged is still evidence the heal ran.
+
     Returns True if a row was inserted/updated.
     """
     vacancy_rate: float | None = None
@@ -72,6 +78,7 @@ def upsert_census_snapshot(
             vacancy_rate = round((total_housing - occupied) / total_housing, 4)
 
     snap_id = uuid.uuid4()
+    now = datetime.now(tz=UTC).isoformat()
 
     sql = sa_text(
         """
@@ -80,13 +87,13 @@ def upsert_census_snapshot(
              total_population, median_household_income, median_home_value,
              median_year_built, total_housing_units, occupied_housing_units,
              owner_occupied_units, renter_occupied_units, vacancy_rate,
-             median_age, median_gross_rent, raw_data)
+             median_age, median_gross_rent, raw_data, updated_at)
         VALUES
             (:id, :parcel_id, :tract_fips, :dataset, :year,
              :total_population, :median_household_income, :median_home_value,
              :median_year_built, :total_housing_units, :occupied_housing_units,
              :owner_occupied_units, :renter_occupied_units, :vacancy_rate,
-             :median_age, :median_gross_rent, :raw_data)
+             :median_age, :median_gross_rent, :raw_data, :updated_at)
         ON CONFLICT (parcel_id, dataset, year) DO UPDATE SET
             tract_fips = EXCLUDED.tract_fips,
             total_population = EXCLUDED.total_population,
@@ -100,7 +107,8 @@ def upsert_census_snapshot(
             vacancy_rate = EXCLUDED.vacancy_rate,
             median_age = EXCLUDED.median_age,
             median_gross_rent = EXCLUDED.median_gross_rent,
-            raw_data = EXCLUDED.raw_data
+            raw_data = EXCLUDED.raw_data,
+            updated_at = EXCLUDED.updated_at
         """
     )
 
@@ -124,6 +132,7 @@ def upsert_census_snapshot(
         "median_age": data.get("median_age"),
         "median_gross_rent": data.get("median_gross_rent"),
         "raw_data": json.dumps(raw_data) if raw_data else None,
+        "updated_at": now,
     }
 
     db.execute(sql, params)

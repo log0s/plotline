@@ -66,7 +66,9 @@ def _timeline_request_id(parcel_id: str) -> str:
         if existing:
             return str(existing[0])
 
-        request = TimelineRequest(parcel_id=parcel_id, status="queued")
+        request = TimelineRequest(
+            parcel_id=parcel_id, status="queued", deployed_sha=get_settings().git_sha
+        )
         db.add(request)
         db.commit()
         db.refresh(request)

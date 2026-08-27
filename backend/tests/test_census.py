@@ -880,6 +880,87 @@ class TestDemographicsService:
         assert rows[0].tract_fips == "11001980000"
         assert rows[0].total_population == 2750
 
+    def _updated_at(self, db, parcel_id: uuid.UUID) -> str:
+        from sqlalchemy import text
+
+        row = db.execute(
+            text(
+                "SELECT updated_at FROM census_snapshots "
+                "WHERE parcel_id = :pid AND dataset = 'decennial' AND year = 2020"
+            ),
+            {"pid": str(parcel_id)},
+        ).first()
+        assert row is not None
+        return row[0]
+
+    def test_upsert_bumps_updated_at_on_changed_values(self, db) -> None:
+        """Y8: a heal that changes a stored value must be provable — the row's
+        updated_at has to move, not just its values."""
+        from sqlalchemy import text
+
+        parcel_id = str(uuid.uuid4())
+        db.execute(
+            text(
+                "INSERT INTO parcels (id, address, latitude, longitude, point) "
+                "VALUES (:id, 'x', 39.7, -104.9, 'POINT(-104.9 39.7)')"
+            ),
+            {"id": parcel_id},
+        )
+        db.commit()
+        pid = uuid.UUID(parcel_id)
+
+        upsert_census_snapshot(
+            db,
+            parcel_id=pid,
+            tract_fips="08031006202",
+            dataset="decennial",
+            year=2020,
+            data={"total_population": 3000},
+        )
+        first = self._updated_at(db, pid)
+
+        upsert_census_snapshot(
+            db,
+            parcel_id=pid,
+            tract_fips="08031006202",
+            dataset="decennial",
+            year=2020,
+            data={"total_population": 3100},
+        )
+        second = self._updated_at(db, pid)
+
+        assert second != first
+
+    def test_upsert_bumps_updated_at_even_when_values_are_identical(self, db) -> None:
+        """Pinned, not incidental: DO UPDATE always writes updated_at, so an
+        idempotent re-run that resolves to the same numbers still proves it
+        ran — that is the whole point of the column over a value diff."""
+        from sqlalchemy import text
+
+        parcel_id = str(uuid.uuid4())
+        db.execute(
+            text(
+                "INSERT INTO parcels (id, address, latitude, longitude, point) "
+                "VALUES (:id, 'x', 39.7, -104.9, 'POINT(-104.9 39.7)')"
+            ),
+            {"id": parcel_id},
+        )
+        db.commit()
+        pid = uuid.UUID(parcel_id)
+        data = {"total_population": 3000}
+
+        upsert_census_snapshot(
+            db, parcel_id=pid, tract_fips="08031006202", dataset="decennial", year=2020, data=data
+        )
+        first = self._updated_at(db, pid)
+
+        upsert_census_snapshot(
+            db, parcel_id=pid, tract_fips="08031006202", dataset="decennial", year=2020, data=data
+        )
+        second = self._updated_at(db, pid)
+
+        assert second != first
+
 
 # ── Subtitle generation ───────────────────────────────────────────────────────
 
