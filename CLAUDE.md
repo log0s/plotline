@@ -86,6 +86,7 @@ documents what the unstamped era cost. One session writes the repo at a time;
 per-session instructions don't transfer between concurrent sessions. Never push:
 push, deploy, and heal execution belong to Ryan.
 - Dependency changes ship with the lockfile. Any edit to `backend/pyproject.toml` dependencies is committed together with the regenerated `backend/uv.lock` (`uv lock`). Run tests with `uv sync --locked` before reporting results — that is what CI runs, and a stale lockfile fails there even when tests pass locally.
+- `backend/.venv` is container-owned; run backend tests through `docker compose exec -T api …`, not host `uv`.
 
 ## Production access
 

@@ -56,6 +56,14 @@ fixes are capable of.
 ## 2. Imagery ledger — what the next full sweep should show
 
 **P-1. `read_timeout` re-attempt recovery rises above the Crawford rate.**
+
+> **P-1 scores on three verdicts, not two: confirmed / falsified / not
+> exercised.** If the scoring sweep records zero `read_timeout`, `sign_5xx` and
+> `http_5xx` *attempts*, P-1 is **not exercised** — P-4 alone is scored for that
+> sweep, and P-1 stays open, unmoved, until the first sweep or user run that
+> actually meets a transient upstream failure. A quiet sweep is not evidence
+> either way and must never be written up as confirmation.
+
 Crawford's 22/33 = **67%** was measured with *no in-process retry at all*:
 every recovery came from a whole second task run days later. After `70437e6` a
 worker-path timeout is retried up to `pc_signing_attempts` (4) times inside
@@ -67,8 +75,8 @@ rows written per sweep falls relative to the Crawford-era rate.
 *Confounded, and said so up front:* the fleet currently carries one such row.
 A sweep that writes zero new `read_timeout` rows is consistent with the fix
 working and equally consistent with PC simply being healthy that hour. P-1 is
-only decidable if the sweep produces timeouts at all. If it produces none,
-record it as **not decidable**, not as confirmed.
+only decidable if the sweep produces timeouts at all; if it produces none,
+that is the **not exercised** verdict above — not confirmation.
 
 **P-2. `sign_5xx` may appear where nothing appeared before, and that is the fix
 working, not a regression.** Before `70437e6` a 503 on the signing endpoint

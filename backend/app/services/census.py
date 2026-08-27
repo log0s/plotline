@@ -35,7 +35,11 @@ _RETRYABLE_TRANSPORT = (httpx.ReadTimeout, httpx.ConnectError)
 _RETRY_ATTEMPTS = 3
 
 # How far behind schedule one logical request may already be before another
-# attempt is worth starting — sleeping and waiting on api.census.gov alike.
+# attempt is worth starting. Like the SAS budgets in ``stac.py``, this bounds
+# **elapsed** time, not sleep time — sleeping and waiting on api.census.gov
+# alike. The distinction is the whole point here: the failure this retry exists
+# for is `ReadTimeout`, which costs `census_api_timeout` of wall clock and zero
+# sleep, so a sleep-counting budget would never register a single one.
 #
 # Sized against the task that contains it. The census fetch issues at most 9
 # logical requests (3 decennial years + 6 ACS years, sequential, with a 0.5 s

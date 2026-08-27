@@ -212,8 +212,20 @@ _SAS_CACHE_TTL = 1200
 _SAS_TOKEN_MARGIN_S = 300
 
 # How long a caller is willing to be behind schedule before a signing retry is
-# no longer worth starting — sleeping and waiting on the endpoint alike (see
-# ``_sas_get``).
+# no longer worth starting. **This bounds elapsed time, not sleep time** — the
+# wall clock since the first attempt, sleeping and waiting on the endpoint
+# alike (measured with ``time.monotonic()`` in ``_sas_get``).
+#
+# It counted sleep alone until 2026-08-27, and the two were equivalent for as
+# long as only fast 429s were retried: a 429 comes back in milliseconds, so
+# nearly all the elapsed time *was* sleep. N1 made ``ReadTimeout`` retryable
+# and broke the equivalence — a timed-out attempt costs
+# ``_SIGN_CLIENT_TIMEOUT_S`` of wall clock and **zero** sleep, so a
+# sleep-counting budget would have permitted ``pc_signing_attempts`` × 10 s of
+# them and called it 0 s spent. The number did not change; what it measures
+# did, and the meaning is written here rather than only at ``_sas_get``
+# because a budget whose documented meaning does not match its behaviour is
+# the O1 act-two shape.
 #
 # The batch profile is the worker's: validation runs behind no user, and
 # honouring a 60 s Retry-After is exactly right there — waiting beats reading a
@@ -225,7 +237,10 @@ _SAS_TOKEN_MARGIN_S = 300
 # timeout and a 502 with no message. In production on 2026-08-12 a Landsat
 # scrub burst did exactly that: 23 backoffs, one of them 54 s, and a 502 storm
 # while Titiler itself stayed healthy. With a 2 s budget the same 429 raises in
-# ~3 s and the route answers with its curated message instead.
+# ~3 s and the route answers with its curated message instead. The elapsed
+# reading is what extends that guarantee past the 429 case: a hanging signer
+# spends the same 2 s of budget without sleeping once, so the request path
+# gives up after one attempt's timeout — ~12 s — instead of four.
 SIGN_WAIT_BATCH = 60.0
 SIGN_WAIT_REQUEST = 2.0
 
@@ -646,9 +661,10 @@ async def sign_pc_url(url: str, *, wait_budget: float = SIGN_WAIT_BATCH) -> str:
     jittered backoff (see ``_sas_get``). Both live here rather than at the call
     sites so every path that signs — validation, tile serving, thumbnails,
     preview rendering — shares one limiter. ``wait_budget`` is the one thing
-    the call site must choose: pass ``SIGN_WAIT_REQUEST`` from anything
-    serving an HTTP request, ``SIGN_WAIT_BATCH`` (the default) from the
-    worker and offline scripts.
+    the call site must choose, and what it buys is a bound on *elapsed* time —
+    sleeping and waiting on the endpoint alike, not backoff alone. Pass
+    ``SIGN_WAIT_REQUEST`` from anything serving an HTTP request,
+    ``SIGN_WAIT_BATCH`` (the default) from the worker and offline scripts.
     """
     from redis.exceptions import RedisError
 
