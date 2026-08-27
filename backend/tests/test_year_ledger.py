@@ -967,3 +967,44 @@ def test_ledger_gaps_reports_the_latest_outcome_per_group(
     assert rows["1994"].outcome == "failed", "regressed on the later run"
     assert rows["1993"].attempts == 2
     assert set(rows["1993"].reasons_seen) == {"sign_429"}
+
+
+@pytest.mark.asyncio
+async def test_a_source_whose_every_year_failed_still_records_them(
+    committing_db: sessionmaker[Session],
+) -> None:
+    """Delete-the-fix: the ``_flush_ledger`` before ``raise last_exc``.
+
+    Found on 2026-08-26 while gathering M3's Crawford prediction. Parcel
+    ``6563dedf`` holds 16 ``failed`` Landsat years and 17 ``failed`` NAIP
+    years — and **zero** Sentinel-2 rows, though its Sentinel-2 task is
+    ``failed`` and it serves no Sentinel-2 snapshots. The cause is here: a
+    per-year failure stages its row in the ``YearOutcomeLog``, and when
+    *every* year fails the source raises out of this function before any
+    persist session opens, so the whole staged log dies with the exception.
+
+    The instrument was silent exactly where the loss was total. Losing some
+    years was visible; losing all of them was not, which inverts what the
+    ledger exists for and hides the one case a ledger-driven heal most needs
+    to see.
+    """
+    parcel_id, request_id, _ = _seed_request(committing_db, ("sentinel2",))
+
+    async def always_fails(**kwargs: object) -> list[dict[str, object]]:
+        raise httpx.ReadTimeout("read timeout")
+
+    # _fetch_source swallows the exception into a failed task row and
+    # returns 0 — which is exactly why the ledger is the only record left.
+    saved = await _run_source(
+        committing_db,
+        _chunked_cfg("sentinel2", "sentinel-2-l2a", 2015, 2017),
+        parcel_id,
+        request_id,
+        always_fails,
+    )
+    assert saved == 0
+
+    rows = _ledger_rows(committing_db)
+    assert {key for _, key in rows} == {"2015", "2016", "2017"}
+    assert all(r["outcome"] == "failed" for r in rows.values())
+    assert all(r["reason"] == "read_timeout" for r in rows.values())

@@ -418,6 +418,16 @@ async def _search_and_persist_source(
                 )
                 ledger.record(key, outcome, reason)
         if len(years) > 0 and failed_years == len(years) and last_exc is not None:
+            # Flush before raising, exactly as the un-chunked branch does.
+            # Without this the worst case records nothing: every year's
+            # `failed` row is staged in `ledger` and dies with the exception,
+            # so a source that lost *all* of its years leaves an empty ledger
+            # and is invisible to every ledger-driven heal — while a source
+            # that lost some of them is fully visible. Crawford County
+            # 6563dedf is the live instance: 16 Landsat years and 17 NAIP
+            # years recorded `failed/read_timeout`, and Sentinel-2, whose
+            # every year failed, recorded nothing at all.
+            _flush_ledger(ledger, timeline_request_id, source_name)
             raise last_exc
     else:
         datetime_range = (
