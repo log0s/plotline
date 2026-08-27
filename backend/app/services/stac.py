@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
@@ -210,7 +211,9 @@ _SAS_CACHE_TTL = 1200
 # constraint found that needs the ~25 min the fixed 1200 s TTL used to leave.
 _SAS_TOKEN_MARGIN_S = 300
 
-# How long a caller is willing to spend *sleeping* between signing retries.
+# How long a caller is willing to be behind schedule before a signing retry is
+# no longer worth starting — sleeping and waiting on the endpoint alike (see
+# ``_sas_get``).
 #
 # The batch profile is the worker's: validation runs behind no user, and
 # honouring a 60 s Retry-After is exactly right there — waiting beats reading a
@@ -225,6 +228,51 @@ _SAS_TOKEN_MARGIN_S = 300
 # ~3 s and the route answers with its curated message instead.
 SIGN_WAIT_BATCH = 60.0
 SIGN_WAIT_REQUEST = 2.0
+
+# Per-attempt ceiling on the signing endpoint, shared by the client and by the
+# worst-case arithmetic in ``_sas_get``. Named rather than inlined because the
+# two must not drift: the request path's guarantee is "one attempt's timeout
+# plus the wait budget", and that sentence is only true while this is the
+# number the client is built with.
+_SIGN_CLIENT_TIMEOUT_S = 10.0
+
+# The statuses Microsoft's own client retries. Read from
+# ``planetary_computer/sas.py`` (github.com/microsoft/planetary-computer-sdk-
+# for-python, fetched 2026-08-27), which mounts on both schemes:
+#
+#     retry = urllib3.util.retry.Retry(
+#         total=retry_total,                      # default 10
+#         backoff_factor=retry_backoff_factor,    # default 0.8
+#         status_forcelist=[429, 500, 502, 503, 504],
+#     )
+#
+# Plotline keeps its own attempt count and budgets — the SDK's ten attempts
+# have no deadline behind them and a tile request does — but the *set* is the
+# vendor's, so a status Microsoft calls transient is not terminal here (N1).
+# 4xx other than 429 stays terminal: a 403 on a signing call means the asset
+# is not ours to sign, and retrying it burns budget against a settled answer.
+_RETRYABLE_SIGN_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+# Transport failures that mean "the connection broke", not "the answer is no".
+# ``httpx.RequestError`` at large would also cover ``UnsupportedProtocol`` and
+# ``InvalidURL``, which are our bug and would retry forever against it.
+_RETRYABLE_SIGN_TRANSPORT = (
+    httpx.ConnectError,
+    httpx.ReadTimeout,
+    httpx.RemoteProtocolError,
+)
+
+# Upward-only spread on every backoff, so N callers throttled by the same
+# burst do not resume in lockstep and re-create it. Upward-only matters for
+# the ``Retry-After`` case: sleeping longer than the server asked is polite,
+# sleeping less is not.
+_SIGN_JITTER_FRACTION = 0.25
+
+
+def _jittered(delay: float) -> float:
+    """``delay`` spread upward by up to ``_SIGN_JITTER_FRACTION`` of itself."""
+    return delay * (1.0 + random.random() * _SIGN_JITTER_FRACTION)
+
 
 _BLOB_HOST_SUFFIX = ".blob.core.windows.net"
 
@@ -264,7 +312,7 @@ def _get_sign_client() -> httpx.AsyncClient:
     client = _sign_clients.get(loop)
     if client is None or client.is_closed:
         client = httpx.AsyncClient(
-            timeout=10,
+            timeout=_SIGN_CLIENT_TIMEOUT_S,
             limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
         )
         _sign_clients[loop] = client
@@ -322,60 +370,88 @@ async def _sas_get(
     *,
     wait_budget: float,
 ) -> httpx.Response:
-    """GET a SAS API endpoint, retrying 429s within a bounded sleep budget.
+    """GET a SAS API endpoint, retrying transient failures within a budget.
 
-    The signing API rate-limits blanket across the account, so a 429 means
-    "slow down", not "this asset is broken" — retrying here keeps
-    validate_landsat_item from failing an item (and burning its fallbacks
-    against the same limit) over a transient burst.
+    Retryable is ``_RETRYABLE_SIGN_STATUSES`` — Microsoft's own set — plus
+    ``_RETRYABLE_SIGN_TRANSPORT``. The signing API rate-limits blanket across
+    the account, so a 429 means "slow down", not "this asset is broken"; the
+    same is true of a 503 from the token endpoint and of a reset connection,
+    and until N1 those two were terminal on the first attempt. Retrying here
+    keeps validate_landsat_item from failing an item (and burning its
+    fallbacks against the same unhealthy endpoint) over a transient burst.
 
-    ``wait_budget`` caps the *total* time spent sleeping across retries. A
-    backoff that would overshoot it is not taken: the last 429 is raised
-    instead, so a caller with a deadline fails fast enough to say why rather
-    than being killed mid-sleep by its own timeout. See ``SIGN_WAIT_BATCH`` /
-    ``SIGN_WAIT_REQUEST``.
+    ``wait_budget`` bounds the time already spent — sleeping *and* waiting on
+    the endpoint — before a further attempt may start. It used to count sleep
+    alone, which was equivalent while only fast 429s were retried; once a
+    ``ReadTimeout`` is retryable it is not, because a timed-out attempt costs
+    ``_SIGN_CLIENT_TIMEOUT_S`` of wall clock and no sleep at all. Counting
+    elapsed time keeps the request path's worst case at one attempt's timeout
+    plus the budget — 12 s at ``SIGN_WAIT_REQUEST`` — rather than
+    ``pc_signing_attempts`` × 10 s, which would not fit the ~30 s the tile
+    route has end to end. See ``SIGN_WAIT_BATCH`` / ``SIGN_WAIT_REQUEST``.
+
+    Raises the last failure, never an empty or unsigned result: an exhausted
+    retry is a failure, and ``signing_failure_reason`` maps it to the ledger
+    reason (``sign_429`` / ``sign_5xx`` / ``read_timeout`` / ``connect_error``)
+    off exactly this exception.
     """
     from app.config import get_settings
 
     attempts = max(1, get_settings().pc_signing_attempts)
     delay = 1.0
-    spent = 0.0
-    last_exc: httpx.HTTPStatusError | None = None
+    started = time.monotonic()
+    last_exc: Exception | None = None
 
     for attempt in range(attempts):
-        async with _get_sign_semaphore():
-            resp = await _get_sign_client().get(url, params=params)
-            if resp.status_code != 429:
-                resp.raise_for_status()
-                return resp
-            try:
-                resp.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                last_exc = exc
-            retry_after = _retry_after_seconds(resp)
+        retry_after: float | None = None
+        try:
+            async with _get_sign_semaphore():
+                resp = await _get_sign_client().get(url, params=params)
+                if resp.status_code not in _RETRYABLE_SIGN_STATUSES:
+                    resp.raise_for_status()
+                    return resp
+                try:
+                    resp.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    last_exc = exc
+                retry_after = _retry_after_seconds(resp)
+        except _RETRYABLE_SIGN_TRANSPORT as exc:
+            last_exc = exc
 
         if attempt == attempts - 1:
             break
 
         wait = retry_after if retry_after is not None else delay
+        spent = time.monotonic() - started
         if spent + wait > wait_budget:
             logger.info(
-                "SAS rate-limited; backoff exceeds wait budget, giving up",
-                extra={"attempt": attempt + 1, "wait_s": wait, "budget_s": wait_budget},
+                "SAS signing failed; retry exceeds wait budget, giving up",
+                extra={
+                    "attempt": attempt + 1,
+                    "wait_s": wait,
+                    "spent_s": spent,
+                    "budget_s": wait_budget,
+                    "error": str(last_exc),
+                },
             )
             break
+
+        # Jitter after the budget decision, and never past what the budget has
+        # left: a 54 s ``Retry-After`` under the 60 s batch budget is a real
+        # production case, and spreading it upward first would have turned a
+        # wait the budget allows into a give-up.
+        wait = min(_jittered(wait), wait_budget - spent)
 
         # Sleep outside the semaphore: holding a slot while backing off
         # would idle the limiter instead of letting other callers through.
         logger.info(
-            "SAS rate-limited; backing off",
-            extra={"attempt": attempt + 1, "wait_s": wait},
+            "SAS signing failed; backing off",
+            extra={"attempt": attempt + 1, "wait_s": wait, "error": str(last_exc)},
         )
         await asyncio.sleep(wait)
-        spent += wait
         delay *= 2
 
-    assert last_exc is not None  # only reached after a 429 on every attempt
+    assert last_exc is not None  # only reached after a retryable failure
     raise last_exc
 
 
@@ -459,7 +535,7 @@ async def _container_token(account: str, container: str, *, wait_budget: float) 
     ~45 minutes, and one PC collection maps to one container — so a single
     token signs every asset of a collection instead of one signing call per
     URL. This is what keeps the signing endpoint far from its rate limit;
-    the semaphore and the 429 retry above are the belt to this braces.
+    the semaphore and ``_sas_get``'s retry are the belt to this braces.
 
     Concurrent misses coalesce onto one mint. The seam is here, below the
     per-request band gather, because a single request is already concurrent
@@ -566,7 +642,8 @@ async def sign_pc_url(url: str, *, wait_budget: float = SIGN_WAIT_BATCH) -> str:
     endpoint. Both are cached in Redis for ``_SAS_CACHE_TTL``.
 
     Concurrency against the SAS API is capped (see ``_get_sign_semaphore``)
-    and 429s are retried with backoff. Both live here rather than at the call
+    and transient failures — 429, 5xx, dropped connections — are retried with
+    jittered backoff (see ``_sas_get``). Both live here rather than at the call
     sites so every path that signs — validation, tile serving, thumbnails,
     preview rendering — shares one limiter. ``wait_budget`` is the one thing
     the call site must choose: pass ``SIGN_WAIT_REQUEST`` from anything
@@ -1058,10 +1135,13 @@ def signing_failure_reason(exc: Exception) -> str:
     """Map a signing-endpoint exception to a ledger reason.
 
     Distinguishes "this scene is broken" from "the signing endpoint is
-    unhealthy" — the two the bare ``False`` used to collapse (N1). ``_sas_get``
-    retries only 429, so a 503 on the signing endpoint is terminal on the
-    first attempt and the walk then re-signs every candidate against the same
-    unhealthy endpoint; ``sign_5xx`` across a whole year is that signature.
+    unhealthy" — the two the bare ``False`` used to collapse (N1). Since
+    ``_sas_get`` retries ``_RETRYABLE_SIGN_STATUSES`` and the transport
+    errors, a reason here means the endpoint stayed unhealthy for every
+    attempt the budget allowed, not that it blinked once: ``sign_5xx`` across
+    a whole year is a signer that is down, and the walk re-signing every
+    same-period candidate against it is what makes the year's last answer the
+    one worth recording.
     """
     if isinstance(exc, httpx.HTTPStatusError):
         status = exc.response.status_code

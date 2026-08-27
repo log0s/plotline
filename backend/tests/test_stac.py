@@ -1129,6 +1129,34 @@ def _sign_response(status: int, href: str = "", retry_after: str | None = None) 
     return resp
 
 
+def _assert_jittered(actual: list[float], base: list[float]) -> None:
+    """Each slept delay is its base, spread upward by at most the jitter fraction.
+
+    Asserting the range rather than the number is the point: the backoff is
+    deliberately not identical across concurrent callers, and a test that
+    pinned it to the base would pass only by accident of the jitter being
+    upward-only.
+    """
+    from app.services.stac import _SIGN_JITTER_FRACTION
+
+    assert len(actual) == len(base), f"expected {len(base)} sleeps, got {actual}"
+    for got, want in zip(actual, base, strict=True):
+        assert want <= got <= want * (1.0 + _SIGN_JITTER_FRACTION), f"{got} not jittered {want}"
+
+
+def _fake_clock(*monotonic_values: float) -> MagicMock:
+    """Stand in for ``stac``'s ``time`` module with a scripted monotonic clock.
+
+    Patching ``time.monotonic`` globally would also drive asyncio's own loop
+    clock and consume the script from under the code under test; patching the
+    name ``time`` inside ``app.services.stac`` reaches only this module.
+    """
+    fake = MagicMock()
+    fake.monotonic = MagicMock(side_effect=list(monotonic_values))
+    fake.time = MagicMock(return_value=0.0)
+    return fake
+
+
 def _cache_miss_redis() -> AsyncMock:
     redis = AsyncMock()
     redis.get.return_value = None
@@ -1158,8 +1186,8 @@ async def test_sign_pc_url_retries_429_then_succeeds() -> None:
 
     assert result == signed
     assert mock_client.get.await_count == 3
-    # Exponential: 1s then 2s
-    assert [c.args[0] for c in sleep.await_args_list] == [1.0, 2.0]
+    # Exponential: 1s then 2s, each spread upward by the jitter fraction.
+    _assert_jittered([c.args[0] for c in sleep.await_args_list], [1.0, 2.0])
 
 
 @pytest.mark.asyncio
@@ -1179,7 +1207,7 @@ async def test_sign_pc_url_honours_retry_after_header() -> None:
         result = await sign_pc_url("https://example.com/red.tif")
 
     assert result == signed
-    assert sleep.await_args_list[0].args[0] == 7.0
+    _assert_jittered([sleep.await_args_list[0].args[0]], [7.0])
 
 
 @pytest.mark.asyncio
@@ -1290,6 +1318,236 @@ async def test_sign_pc_url_caps_concurrency_at_semaphore_limit() -> None:
     assert peak > 1, "sanity: the gather should actually have run calls in parallel"
 
 
+# ── SAS signing: 5xx and transport retries (N1) ──────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_sign_pc_url_retries_503_then_succeeds() -> None:
+    """A 503 is the signing endpoint being unhealthy, not the asset being broken.
+
+    Microsoft's own SDK retries [429, 500, 502, 503, 504]
+    (``planetary_computer/sas.py``); before N1 a 503 raised on the first
+    attempt, and ``_validate_selection`` read that as "item is broken" and
+    walked every same-year candidate against the same unhealthy endpoint.
+    """
+    signed = "https://example.com/red.tif?sv=signed"
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=[_sign_response(503), _sign_response(200, signed)])
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock) as sleep,
+    ):
+        result = await sign_pc_url("https://example.com/red.tif")
+
+    assert result == signed
+    assert mock_client.get.await_count == 2
+    _assert_jittered([c.args[0] for c in sleep.await_args_list], [1.0])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [500, 502, 503, 504])
+async def test_sign_pc_url_retries_every_status_the_sdk_retries(status: int) -> None:
+    """The retry set is the vendor's, not a single hand-picked status."""
+    signed = "https://example.com/red.tif?sv=signed"
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=[_sign_response(status), _sign_response(200, signed)])
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        assert await sign_pc_url("https://example.com/red.tif") == signed
+    assert mock_client.get.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_persistent_503_raises_naming_the_status() -> None:
+    """An exhausted retry is a failure carrying its last status — never a silent skip.
+
+    The status is what ``signing_failure_reason`` turns into ``sign_5xx``, so
+    the ledger can tell a dead signer from a dead scene.
+    """
+    from app.services.stac import SIGN_WAIT_REQUEST, signing_failure_reason
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=_sign_response(503))
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock),
+        pytest.raises(httpx.HTTPStatusError) as caught,
+    ):
+        await sign_pc_url("https://example.com/red.tif", wait_budget=SIGN_WAIT_REQUEST)
+
+    assert "503" in str(caught.value)
+    assert caught.value.response.status_code == 503
+    assert signing_failure_reason(caught.value) == "sign_5xx"
+    assert mock_client.get.await_count > 1, "the request budget still allows a fast retry"
+
+
+@pytest.mark.asyncio
+async def test_sign_pc_url_does_not_retry_a_403() -> None:
+    """4xx other than 429 is a settled answer; retrying it burns the budget."""
+    from app.services.stac import signing_failure_reason
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=_sign_response(403))
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock) as sleep,
+        pytest.raises(httpx.HTTPStatusError) as caught,
+    ):
+        await sign_pc_url("https://example.com/red.tif")
+
+    assert mock_client.get.await_count == 1
+    assert sleep.await_count == 0
+    assert signing_failure_reason(caught.value) == "other"
+
+
+@pytest.mark.asyncio
+async def test_sign_pc_url_retries_a_dropped_connection() -> None:
+    """A reset connection was never even caught inside the loop before N1."""
+    signed = "https://example.com/red.tif?sv=signed"
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(
+        side_effect=[httpx.ConnectError("reset"), _sign_response(200, signed)]
+    )
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await sign_pc_url("https://example.com/red.tif")
+
+    assert result == signed
+    assert mock_client.get.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_sign_pc_url_does_not_retry_a_malformed_url_error() -> None:
+    """``UnsupportedProtocol`` is our bug — retrying it would loop against it."""
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=httpx.UnsupportedProtocol("no scheme"))
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock),
+        pytest.raises(httpx.UnsupportedProtocol),
+    ):
+        await sign_pc_url("https://example.com/red.tif")
+
+    assert mock_client.get.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_timed_out_attempt_spends_the_request_budget() -> None:
+    """The request path gives up after one timed-out attempt, not four.
+
+    The wait budget bounds elapsed time, not sleep alone. A ``ReadTimeout``
+    costs ``_SIGN_CLIENT_TIMEOUT_S`` of wall clock and no sleep at all, so
+    counting sleep would let four attempts run 40 s on a route whose
+    end-to-end budget is ~30 s. Worst case after N1 is one attempt's timeout
+    plus ``SIGN_WAIT_REQUEST``.
+    """
+    from app.services.stac import _SIGN_CLIENT_TIMEOUT_S, SIGN_WAIT_REQUEST, signing_failure_reason
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=httpx.ReadTimeout("timed out"))
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.time", _fake_clock(0.0, _SIGN_CLIENT_TIMEOUT_S)),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock) as sleep,
+        pytest.raises(httpx.ReadTimeout) as caught,
+    ):
+        await sign_pc_url("https://example.com/red.tif", wait_budget=SIGN_WAIT_REQUEST)
+
+    assert mock_client.get.await_count == 1, "10 s already spent overshoots the 2 s budget"
+    assert sleep.await_count == 0
+    assert signing_failure_reason(caught.value) == "read_timeout"
+
+
+@pytest.mark.asyncio
+async def test_batch_budget_still_retries_a_timed_out_attempt() -> None:
+    """The worker has 60 s of budget, so a timeout there is worth another try.
+
+    This is the Crawford shape: 33 ``read_timeout`` rows, 22 of which a
+    re-attempt recovered. Before N1 not one of them was retried in-process.
+    """
+    from app.services.stac import _SIGN_CLIENT_TIMEOUT_S, SIGN_WAIT_BATCH
+
+    signed = "https://example.com/red.tif?sv=signed"
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(
+        side_effect=[httpx.ReadTimeout("timed out"), _sign_response(200, signed)]
+    )
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.time", _fake_clock(0.0, _SIGN_CLIENT_TIMEOUT_S)),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await sign_pc_url("https://example.com/red.tif", wait_budget=SIGN_WAIT_BATCH)
+
+    assert result == signed
+    assert mock_client.get.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_signing_failure_reason_splits_429_from_5xx() -> None:
+    """The ledger's reason follows the *last* status, which is what a heal reads."""
+    from app.services.stac import signing_failure_reason
+
+    assert signing_failure_reason(_status_error(429)) == "sign_429"
+    assert signing_failure_reason(_status_error(500)) == "sign_5xx"
+    assert signing_failure_reason(_status_error(502)) == "sign_5xx"
+    assert signing_failure_reason(_status_error(503)) == "sign_5xx"
+    assert signing_failure_reason(_status_error(504)) == "sign_5xx"
+    assert signing_failure_reason(_status_error(403)) == "other"
+    assert signing_failure_reason(httpx.ReadTimeout("t")) == "read_timeout"
+    assert signing_failure_reason(httpx.ConnectError("c")) == "connect_error"
+
+
+def _status_error(status: int) -> httpx.HTTPStatusError:
+    resp = MagicMock()
+    resp.status_code = status
+    return httpx.HTTPStatusError(f"{status}", request=MagicMock(), response=resp)
+
+
+@pytest.mark.asyncio
+async def test_validation_records_sign_5xx_for_a_dead_signer() -> None:
+    """A signer that stays down costs the year a ``sign_5xx``, never a bare skip."""
+    from app.services.stac import check_landsat_item
+
+    item = {
+        "id": "LC08_TEST",
+        "assets": {
+            "red": {"href": "https://landsateuwest.blob.core.windows.net/landsat-c2/red.TIF"}
+        },
+    }
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=_token_response(503))
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        reason = await check_landsat_item(item)
+
+    assert reason == "sign_5xx"
+
+
 # ── SAS signing: wait budgets by context ─────────────────────────────────────
 
 
@@ -1357,7 +1615,7 @@ async def test_request_context_still_takes_a_short_retry() -> None:
         )
 
     assert result.endswith("?sv=tok")
-    assert [c.args[0] for c in sleep.await_args_list] == [1.0]
+    _assert_jittered([c.args[0] for c in sleep.await_args_list], [1.0])
 
 
 @pytest.mark.asyncio
@@ -1379,7 +1637,7 @@ async def test_batch_context_still_honours_a_long_retry_after() -> None:
         result = await sign_pc_url("https://example.com/red.tif", wait_budget=SIGN_WAIT_BATCH)
 
     assert result == signed
-    assert [c.args[0] for c in sleep.await_args_list] == [54.0]
+    _assert_jittered([c.args[0] for c in sleep.await_args_list], [54.0])
 
 
 # ── SAS signing: container tokens ────────────────────────────────────────────
@@ -1573,11 +1831,18 @@ async def test_single_flight_is_per_container() -> None:
 
 @pytest.mark.asyncio
 async def test_failed_mint_does_not_wedge_the_container() -> None:
-    """A mint that raises propagates to every follower and clears the flight."""
+    """A mint that raises propagates to every follower and clears the flight.
+
+    The signer stays down for every attempt the retry policy allows — since
+    N1 a single ``ConnectError`` is retried, so one would no longer fail the
+    mint at all.
+    """
+    from app.config import get_settings
+
     client = AsyncMock()
     client.get = AsyncMock(
         side_effect=[
-            httpx.ConnectError("signer down"),
+            *[httpx.ConnectError("signer down")] * get_settings().pc_signing_attempts,
             _token_response(200, "se=2026-08-12T21:02:06Z&sr=c&sig=abc"),
         ]
     )
@@ -1586,6 +1851,7 @@ async def test_failed_mint_does_not_wedge_the_container() -> None:
     with (
         patch("app.services.stac._get_sign_client", return_value=client),
         patch("app.db.get_async_redis", return_value=_cache_miss_redis()),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock),
     ):
         results = await asyncio.gather(
             *(sign_pc_url(href.format(band=b)) for b in ("red", "green")),

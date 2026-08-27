@@ -493,10 +493,12 @@ async def _proxy_cog_tile(
             # Never fall back to the unsigned href: Planetary Computer's blob
             # storage is private, so an unsigned read is rejected with a 409
             # that Titiler surfaces as a 500 and the user sees as a broken
-            # tile. sign_pc_url has already retried 429s within the request
-            # wait budget, so a failure here is terminal for this request —
-            # 502 it while the client is still listening, and let it retry the
-            # tile against a signer that may have recovered.
+            # tile. sign_pc_url has already retried 429s, 5xx and dropped
+            # connections within the request wait budget — worst case one
+            # attempt's 10 s timeout plus SIGN_WAIT_REQUEST, so ~12 s ahead of
+            # the Titiler call below — so a failure here is terminal for this
+            # request: 502 it while the client is still listening, and let it
+            # retry the tile against a signer that may have recovered.
             logger.warning(
                 "Tile signing failed after retries",
                 extra={"snapshot_id": str(snap.id), "source": snap.source, "error": str(exc)},
