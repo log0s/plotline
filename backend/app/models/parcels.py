@@ -214,7 +214,11 @@ class TimelineRequestTask(Base):
     __tablename__ = "timeline_request_tasks"
 
     VALID_SOURCES = ("naip", "landsat", "sentinel2", "census", "property", "usgs_topo")
-    VALID_STATUSES = ("queued", "processing", "complete", "failed", "skipped")
+    # 'partial' at this level means the same thing it means at the request
+    # level: terminal and serving, with a known hole. A property task earns it
+    # when some of its county queries failed and some did not (STATUS.md Z3).
+    VALID_STATUSES = ("queued", "processing", "complete", "partial", "failed", "skipped")
+    VALID_COVERAGE = ("covered", "not_covered", "no_adapter")
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -234,7 +238,18 @@ class TimelineRequestTask(Base):
         nullable=False,
         server_default="queued",
     )
-    items_found: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # Nullable since 0014: a task that ran zero queries because the address is
+    # outside the adapter's jurisdiction has no honest count, and 0 is the
+    # conflation this column's readers keep tripping over.
+    items_found: Mapped[int | None] = mapped_column(Integer, nullable=True, server_default="0")
+    # Property-only, NULL everywhere else and for every pre-0014 row. The
+    # rollup the adapters already computed, now recorded: rejected-by-matcher
+    # is rows_returned - rows_matched (STATUS.md Z4).
+    queries_run: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    queries_failed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rows_returned: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rows_matched: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    coverage: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
@@ -254,11 +269,15 @@ class TimelineRequestTask(Base):
     __table_args__ = (
         CheckConstraint(
             "source IN ('naip', 'landsat', 'sentinel2', 'census', 'property', 'usgs_topo')",
-            name="ck_trt_source",
+            name="ck_timeline_request_tasks_source",
         ),
         CheckConstraint(
-            "status IN ('queued', 'processing', 'complete', 'failed', 'skipped')",
-            name="ck_trt_status",
+            "status IN ('queued', 'processing', 'complete', 'partial', 'failed', 'skipped')",
+            name="ck_timeline_request_tasks_status",
+        ),
+        CheckConstraint(
+            "coverage IS NULL OR coverage IN ('covered', 'not_covered', 'no_adapter')",
+            name="ck_timeline_request_tasks_coverage",
         ),
         UniqueConstraint(
             "timeline_request_id",

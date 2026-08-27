@@ -19,7 +19,10 @@ class TimelineRequestTaskResponse(BaseModel):
 
     source: str
     status: str
-    items_found: int
+    # NULL since migration 0014 — a task that ran no queries because the
+    # address is outside the adapter's jurisdiction has no count to report,
+    # and readers must render that as "not asked", not as zero.
+    items_found: int | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
     error_message: str | None = None

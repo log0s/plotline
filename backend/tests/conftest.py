@@ -113,8 +113,15 @@ def _create_test_tables() -> None:
                                           'census', 'property', 'usgs_topo')),
                     status               TEXT NOT NULL DEFAULT 'queued'
                         CHECK (status IN ('queued', 'processing', 'complete',
-                                          'failed', 'skipped')),
-                    items_found          INTEGER NOT NULL DEFAULT 0,
+                                          'partial', 'failed', 'skipped')),
+                    items_found          INTEGER DEFAULT 0,
+                    queries_run          INTEGER,
+                    queries_failed       INTEGER,
+                    rows_returned        INTEGER,
+                    rows_matched         INTEGER,
+                    coverage             TEXT
+                        CHECK (coverage IS NULL OR
+                               coverage IN ('covered', 'not_covered', 'no_adapter')),
                     started_at           TEXT,
                     completed_at         TEXT,
                     error_message        TEXT,
