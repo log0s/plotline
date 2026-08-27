@@ -70,13 +70,13 @@ async def query_socrata(
         except httpx.RequestError as exc:
             raise SocrataError(f"Request error: {exc}") from exc
 
-        if resp.status_code == 404:
-            logger.warning(
-                "Socrata dataset not found (404)",
-                extra={"domain": domain, "resource": resource_id},
-            )
-            return []
-
+        # A 404 raises like any other non-200. It used to return `[]`, which
+        # made a retired or renamed dataset — the 4x4 resource ids in
+        # `county_adapters.py` are the only thing between us and one — read as
+        # "this address has no sales", and the property task then completed
+        # with zero. Property has no per-year ledger (m3-design §6), so the
+        # task status is the whole record: an adapter that cannot tell the two
+        # apart leaves nothing behind that a later reader could correct.
         if resp.status_code != 200:
             logger.error(
                 "Socrata error response",

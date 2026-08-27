@@ -383,6 +383,43 @@ async def test_every_query_429_fails_the_property_task() -> None:
 
 
 @pytest.mark.asyncio
+async def test_socrata_404_raises_rather_than_returning_zero_rows() -> None:
+    """Delete-the-fix: restore `if resp.status_code == 404: return []`.
+
+    A retired or renamed 4x4 resource id then reads as "this address has no
+    records" — the complete-with-zero shape, on a path with no ledger to
+    correct it later.
+    """
+    from app.services.socrata import SocrataError, query_socrata
+
+    resp = MagicMock()
+    resp.status_code = 404
+    resp.text = "Not found"
+
+    with (
+        patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=resp),
+        pytest.raises(SocrataError, match="404"),
+    ):
+        await query_socrata("data.cityofnewyork.us", "ipu4-2q9a")
+
+
+@pytest.mark.asyncio
+async def test_nyc_404_yields_a_failed_query_not_items_found_zero() -> None:
+    """The NYC permits dataset 404ing must reach the rollup as a failure."""
+    adapter = NewYorkCountyAdapter()
+    resp = MagicMock()
+    resp.status_code = 404
+    resp.text = "Not found"
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=resp):
+        result = await adapter.fetch_permits("350", "5TH AVE")
+
+    assert result.queries_attempted == 1
+    assert result.queries_failed == 1
+    assert result.all_queries_failed, "an outage, not an address with no permits"
+
+
+@pytest.mark.asyncio
 async def test_socrata_html_body_raises_socrata_error() -> None:
     from app.services.socrata import SocrataError, query_socrata
 
