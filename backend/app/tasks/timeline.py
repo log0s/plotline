@@ -183,6 +183,25 @@ def _census_failure_reason(exc: Exception) -> str:
     return "other"
 
 
+def _geocoder_failure_reason(exc: Exception) -> str:
+    """Map a `GeocoderUnavailableError` from a vintage tract lookup to a ledger reason.
+
+    `lookup_tract_at_vintage` (Z6) wraps every failure as
+    `GeocoderUnavailableError`, keeping the original error on `__cause__`: a
+    terminal status (4xx, or a 5xx after retries) as `httpx.HTTPStatusError`,
+    a retry-exhausted transport failure as the `httpx.RequestError` itself.
+    Mirrors `_census_failure_reason`.
+    """
+    cause = exc.__cause__
+    if isinstance(cause, httpx.HTTPStatusError):
+        return f"http_{cause.response.status_code}"
+    if isinstance(cause, httpx.TimeoutException):
+        return "read_timeout"
+    if isinstance(cause, httpx.TransportError):
+        return "connect_error"
+    return "other"
+
+
 def _range_years(datetime_range: str) -> list[int]:
     """The calendar years an un-chunked source's single search covered.
 
@@ -984,9 +1003,13 @@ class _VintageTracts:
     """Resolves and caches the tract containing a point, per geography vintage.
 
     One geocoder call per distinct vintage per parcel.  A vintage that yields
-    no tract, or a geocoder outage, falls back to the stored tract — the same
-    request the code made before per-vintage resolution existed, so the worst
-    case is today's behaviour rather than a lost year.
+    no tract falls back to the stored tract — the design gap where the
+    geocoder's oldest vintage predates the geography a year like decennial
+    2000 was published on (Racebrook, `4ce1822`). A geocoder outage does
+    *not* fall back (Z6): `GeocoderError` propagates out of `tract_for`, and
+    the caller records `failed` for that year and skips the fetch rather than
+    writing demographics under a tract the vintage never resolved — a missing
+    row the ledger can retry beats a wrong row it can't see.
     """
 
     def __init__(
@@ -1009,17 +1032,9 @@ class _VintageTracts:
 
         from app.config import get_settings
 
-        try:
-            resolved = await geocoder_service.lookup_tract_at_vintage(
-                self._lat, self._lon, vintage, get_settings()
-            )
-        except GeocoderError as exc:
-            logger.warning(
-                "Vintage tract lookup failed, using stored tract",
-                extra={"vintage": vintage, "tract": self._stored},
-                exc_info=exc,
-            )
-            resolved = None
+        resolved = await geocoder_service.lookup_tract_at_vintage(
+            self._lat, self._lon, vintage, get_settings()
+        )
 
         tract = resolved or self._stored
         self._cache[vintage] = tract
@@ -1061,9 +1076,27 @@ async def _fetch_census_years(
     try:
         # Fetch decennial data
         for year in DECENNIAL_YEARS:
-            year_tract = await tracts.tract_for("decennial", year)
-            state_fips, county_fips, tract_code = parse_tract_fips(year_tract)
             key = imagery_service.encode_group_key("year", year)
+            try:
+                year_tract = await tracts.tract_for("decennial", year)
+            except GeocoderError as exc:
+                failed_requests += 1
+                ledger.record(
+                    key,
+                    "failed",
+                    _geocoder_failure_reason(exc),
+                    f"vintage tract lookup ({geography_vintage('decennial', year)}) via "
+                    f"geocoder.lookup_tract_at_vintage failed: {exc}",
+                    source="census_decennial",
+                )
+                logger.warning(
+                    "Vintage tract lookup failed, skipping year",
+                    extra={"year": year, "dataset": "decennial"},
+                    exc_info=exc,
+                )
+                await asyncio.sleep(0.5)
+                continue
+            state_fips, county_fips, tract_code = parse_tract_fips(year_tract)
             try:
                 data = await fetcher.fetch_decennial(year, state_fips, county_fips, tract_code)
                 if data:
@@ -1121,9 +1154,27 @@ async def _fetch_census_years(
 
         # Fetch ACS 5-year data
         for year in ACS5_YEARS:
-            year_tract = await tracts.tract_for("acs5", year)
-            state_fips, county_fips, tract_code = parse_tract_fips(year_tract)
             key = imagery_service.encode_group_key("year", year)
+            try:
+                year_tract = await tracts.tract_for("acs5", year)
+            except GeocoderError as exc:
+                failed_requests += 1
+                ledger.record(
+                    key,
+                    "failed",
+                    _geocoder_failure_reason(exc),
+                    f"vintage tract lookup ({geography_vintage('acs5', year)}) via "
+                    f"geocoder.lookup_tract_at_vintage failed: {exc}",
+                    source="census_acs5",
+                )
+                logger.warning(
+                    "Vintage tract lookup failed, skipping year",
+                    extra={"year": year, "dataset": "acs5"},
+                    exc_info=exc,
+                )
+                await asyncio.sleep(0.5)
+                continue
+            state_fips, county_fips, tract_code = parse_tract_fips(year_tract)
             try:
                 data = await fetcher.fetch_acs5(year, state_fips, county_fips, tract_code)
                 if data:

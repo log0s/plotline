@@ -930,3 +930,104 @@ async def test_lookup_tract_at_vintage_returns_none_without_tract() -> None:
         )
 
     assert tract is None
+
+
+@pytest.mark.asyncio
+async def test_lookup_tract_at_vintage_retries_timeout_then_succeeds() -> None:
+    """Z6: a ReadTimeout must not be terminal on the first attempt.
+
+    Before the fix, only `httpx.TimeoutException` retried at all, and
+    `ConnectError`/5xx raised immediately — but this pins that the timeout
+    path itself resolves once the upstream recovers, on the retry policy that
+    now also covers those other two.
+    """
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import lookup_tract_at_vintage
+
+    settings = get_settings()
+
+    mock_response = {
+        "result": {
+            "geographies": {"Census Tracts": [{"STATE": "08", "COUNTY": "031", "TRACT": "004107"}]}
+        }
+    }
+
+    with (
+        respx.mock,
+        patch("app.services.geocoder.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        route = respx.get("https://geocoding.geo.census.gov/geocoder/geographies/coordinates").mock(
+            side_effect=[
+                httpx.ReadTimeout("timed out"),
+                httpx.Response(200, json=mock_response),
+            ]
+        )
+        tract = await lookup_tract_at_vintage(
+            39.78518536945, -104.891391524528, "Census2010_Current", settings
+        )
+
+    assert tract == "08031004107"
+    assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_lookup_tract_at_vintage_exhausts_retries_on_repeated_timeout() -> None:
+    """Three ReadTimeouts exhaust the retry budget and raise, carrying the
+    ReadTimeout on `__cause__` so the caller's ledger reason is `read_timeout`
+    (Z6 — the sweep's one transient failure, `docs/audits/2026-08-ops-batch/
+    SWEEP-SCORECARD.md` §9.1)."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import GeocoderUnavailableError, lookup_tract_at_vintage
+
+    settings = get_settings()
+
+    with (
+        respx.mock,
+        patch("app.services.geocoder.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        route = respx.get("https://geocoding.geo.census.gov/geocoder/geographies/coordinates").mock(
+            side_effect=httpx.ReadTimeout("timed out")
+        )
+
+        with pytest.raises(GeocoderUnavailableError) as exc_info:
+            await lookup_tract_at_vintage(
+                39.78518536945, -104.891391524528, "Census2010_Current", settings
+            )
+
+    assert route.call_count == 3
+    assert isinstance(exc_info.value.__cause__, httpx.ReadTimeout)
+
+
+@pytest.mark.asyncio
+async def test_lookup_tract_at_vintage_404_is_terminal_no_retry() -> None:
+    """A 404 is a settled answer, not an outage — one attempt, no retry."""
+    import httpx
+    import respx
+
+    from app.config import get_settings
+    from app.services.geocoder import GeocoderUnavailableError, lookup_tract_at_vintage
+
+    settings = get_settings()
+
+    with (
+        respx.mock,
+        patch("app.services.geocoder.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        route = respx.get("https://geocoding.geo.census.gov/geocoder/geographies/coordinates").mock(
+            return_value=httpx.Response(404)
+        )
+
+        with pytest.raises(GeocoderUnavailableError) as exc_info:
+            await lookup_tract_at_vintage(
+                39.78518536945, -104.891391524528, "Census2010_Current", settings
+            )
+
+    assert route.call_count == 1
+    assert isinstance(exc_info.value.__cause__, httpx.HTTPStatusError)
+    assert exc_info.value.__cause__.response.status_code == 404

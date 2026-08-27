@@ -697,8 +697,21 @@ async def test_fetch_census_uses_county_tract_before_planning_regions() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_census_falls_back_when_vintage_lookup_fails() -> None:
-    """A geocoder outage must cost the ancestor tract, not the whole fetch."""
+async def test_fetch_census_skips_year_when_vintage_lookup_fails() -> None:
+    """Z6: an exhausted geocoder retry must cost the year, not silently substitute
+    the stored tract.
+
+    Before the fix, `_VintageTracts.tract_for` caught every `GeocoderError` and
+    fell back to the stored tract, so a transient failure wrote demographics
+    under a tract the vintage never resolved and the ledger recorded `ok` — a
+    wrong row nobody could see. Now the failure propagates: the year is
+    recorded `failed` and no census row is written for it. Decennial 2000 has
+    no geocoder vintage at all (`geography_vintage` returns `None`), so it
+    never calls the geocoder and is unaffected — the one case that still uses
+    the stored tract, per design (Racebrook, `4ce1822`).
+    """
+    from app.services import imagery as imagery_service
+    from app.services import year_ledger
     from app.services.geocoder import GeocoderUnavailableError
     from app.tasks.timeline import _fetch_census
 
@@ -716,6 +729,10 @@ async def test_fetch_census_falls_back_when_vintage_lookup_fails() -> None:
     mock_fetcher.fetch_acs5 = AsyncMock(return_value={"total_population": 5500})
     mock_fetcher.close = AsyncMock()
 
+    read_timeout = httpx.ReadTimeout("timed out")
+    lookup_error = GeocoderUnavailableError("Vintage tract lookup error: ReadTimeout")
+    lookup_error.__cause__ = read_timeout
+
     with (
         patch("app.db.SessionLocal", return_value=mock_db),
         patch("app.tasks.timeline.CensusFetcher", return_value=mock_fetcher),
@@ -725,8 +742,14 @@ async def test_fetch_census_falls_back_when_vintage_lookup_fails() -> None:
         patch(
             "app.tasks.timeline.geocoder_service.lookup_tract_at_vintage",
             new_callable=AsyncMock,
-            side_effect=GeocoderUnavailableError("down"),
+            side_effect=lookup_error,
         ),
+        patch.object(
+            year_ledger.YearOutcomeLog,
+            "record",
+            autospec=True,
+            side_effect=year_ledger.YearOutcomeLog.record,
+        ) as mock_record,
     ):
         count = await _fetch_census(
             parcel_id,
@@ -736,9 +759,25 @@ async def test_fetch_census_falls_back_when_vintage_lookup_fails() -> None:
             longitude=-104.891,
         )
 
-    assert count > 0
-    assert "complete" in [c[0][2] for c in mock_update.call_args_list]
+    # Only decennial 2000 (no geocoder vintage) still resolves and is saved.
+    assert count == 1
+    assert mock_fetcher.fetch_decennial.await_count == 1
+    assert mock_fetcher.fetch_decennial.await_args_list[0].args[0] == 2000
+    assert mock_fetcher.fetch_acs5.await_count == 0
     assert {c.kwargs["tract_fips"] for c in mock_upsert.call_args_list} == {"08031004111"}
+    assert "complete" in [c[0][2] for c in mock_update.call_args_list]
+
+    failed_calls = [c for c in mock_record.call_args_list if c.args[2] == "failed"]
+    assert len(failed_calls) == 8  # every year with a geocoder vintage
+    decennial_2010 = next(
+        c
+        for c in failed_calls
+        if c.args[1] == imagery_service.encode_group_key("year", 2010)
+        and c.kwargs["source"] == "census_decennial"
+    )
+    assert decennial_2010.args[3] == "read_timeout"
+    assert "Census2010_Current" in decennial_2010.args[4]
+    assert "lookup_tract_at_vintage" in decennial_2010.args[4]
 
 
 # ── _fetch_property ───────────────────────────────────────────────────────────

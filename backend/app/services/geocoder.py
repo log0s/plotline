@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,6 +31,44 @@ _VINTAGE = "Current_Current"
 
 # Maximum number of attempts before giving up.
 _MAX_ATTEMPTS = 3
+
+# Retry policy for `lookup_tract_at_vintage`, mirroring census.py's N2 policy
+# (commit 8a86fad): a status worth asking again about is a 5xx, not a 4xx — a
+# 404 is a settled "no such resource," not an outage. Deliberately narrower
+# than `httpx.HTTPError`: an `InvalidURL` is our bug, not the upstream's.
+_VINTAGE_RETRYABLE_STATUSES = frozenset({500, 502, 503, 504})
+_VINTAGE_RETRYABLE_TRANSPORT = (httpx.ReadTimeout, httpx.ConnectError)
+_VINTAGE_RETRY_ATTEMPTS = 3
+
+# Two full `census_geocoder_timeout` (20 s, config.py:60) attempts plus
+# jittered backoff must fit before a third attempt starts: 2*20s +
+# jittered(1.0) + jittered(2.0) <= 43.75s worst case. Scales census.py's own
+# budget arithmetic (there: 2*30s+backoff <= ~64s < 65s budget) down to this
+# client's shorter timeout. This lookup runs once per distinct vintage per
+# parcel (cached in `_VintageTracts`, tasks/timeline.py) inside the same
+# census task N2 already budgets for.
+_VINTAGE_RETRY_BUDGET_S = 45.0
+
+# Upward-only spread, so a fleet-wide sweep's parallel workers do not resume
+# in lockstep after the same outage.
+_VINTAGE_RETRY_JITTER_FRACTION = 0.25
+
+
+def _vintage_jittered(delay: float) -> float:
+    """``delay`` spread upward by up to ``_VINTAGE_RETRY_JITTER_FRACTION`` of itself."""
+    return delay * (1.0 + random.random() * _VINTAGE_RETRY_JITTER_FRACTION)
+
+
+def _vintage_retry_after_seconds(resp: httpx.Response) -> float | None:
+    """Parse a Retry-After header (delta-seconds form) into seconds."""
+    raw = resp.headers.get("retry-after")
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return None
+
 
 # Coordinates the autocomplete endpoint has handed out, keyed by the pair
 # itself. POST /geocode may only fall back to client-supplied lat/lon when
@@ -372,6 +412,93 @@ async def reverse_geocode(
         ) from last_exc
 
 
+async def _vintage_get_with_retry(
+    client: httpx.AsyncClient, url: str, params: dict[str, str]
+) -> httpx.Response:
+    """GET the vintage tract lookup, retrying transient failures within a budget.
+
+    Z6: this call used to retry only `httpx.TimeoutException`, on a flat 1 s
+    sleep — `ConnectError` and a 5xx raised on the first attempt with no retry
+    at all, which is what let one `ConnectError` degrade a sweep parcel to its
+    stored tract (STATUS.md Z6). Mirrors census.py's N2 policy (`8a86fad`):
+    `ReadTimeout`, `ConnectError` and `{500, 502, 503, 504}` retry up to three
+    times with jittered backoff honouring `Retry-After`; a 4xx (or any other
+    `HTTPError`) is terminal on the first attempt — a settled answer, not an
+    outage.
+    """
+    started = time.monotonic()
+    delay = 1.0
+    last_status: int | None = None
+    last_response: httpx.Response | None = None
+    last_transport: httpx.RequestError | None = None
+
+    for attempt in range(_VINTAGE_RETRY_ATTEMPTS):
+        retry_after: float | None = None
+        try:
+            response = await client.get(url, params=params)
+        except _VINTAGE_RETRYABLE_TRANSPORT as exc:
+            last_transport = exc
+            last_status = None
+        except httpx.RequestError as exc:
+            raise GeocoderUnavailableError(f"Vintage tract lookup error: {_describe(exc)}") from exc
+        else:
+            if response.status_code not in _VINTAGE_RETRYABLE_STATUSES:
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    raise GeocoderUnavailableError(
+                        f"Vintage tract lookup error: {_describe(exc)}"
+                    ) from exc
+                return response
+            last_status = response.status_code
+            last_response = response
+            last_transport = None
+            retry_after = _vintage_retry_after_seconds(response)
+
+        if attempt == _VINTAGE_RETRY_ATTEMPTS - 1:
+            break
+
+        wait = retry_after if retry_after is not None else delay
+        spent = time.monotonic() - started
+        if spent + wait > _VINTAGE_RETRY_BUDGET_S:
+            logger.warning(
+                "Vintage tract lookup retry exceeds the request budget, giving up",
+                extra={
+                    "vintage": params.get("vintage"),
+                    "attempt": attempt + 1,
+                    "wait_s": wait,
+                    "spent_s": spent,
+                },
+            )
+            break
+
+        wait = min(_vintage_jittered(wait), _VINTAGE_RETRY_BUDGET_S - spent)
+        logger.warning(
+            "Vintage tract lookup failed; retrying",
+            extra={
+                "vintage": params.get("vintage"),
+                "attempt": attempt + 1,
+                "wait_s": wait,
+                "status": last_status,
+                "error": str(last_transport) if last_transport else None,
+            },
+        )
+        await asyncio.sleep(wait)
+        delay *= 2
+
+    if last_transport is not None:
+        raise GeocoderUnavailableError(
+            f"Vintage tract lookup error: {_describe(last_transport)}"
+        ) from last_transport
+
+    assert last_status is not None and last_response is not None
+    try:
+        last_response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise GeocoderUnavailableError(f"Vintage tract lookup error: {_describe(exc)}") from exc
+    raise AssertionError("unreachable: raise_for_status must raise for a retryable status")
+
+
 async def lookup_tract_at_vintage(
     latitude: float,
     longitude: float,
@@ -390,7 +517,11 @@ async def lookup_tract_at_vintage(
     Returns None when the vintage yields no tract for the point.
 
     Raises:
-        GeocoderUnavailableError: Census API unreachable after retries.
+        GeocoderUnavailableError: Census API unreachable after retries, or a
+            terminal (non-retryable) HTTP status. The caller (`_VintageTracts`
+            in tasks/timeline.py) does *not* catch this and fall back to the
+            stored tract — Z6: a wrong tract silently written as `ok` is worse
+            than a `failed` row the ledger can retry.
     """
     url = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
     params: dict[str, str] = {
@@ -404,55 +535,34 @@ async def lookup_tract_at_vintage(
     if settings.census_api_key:
         params["key"] = settings.census_api_key
 
-    last_exc: Exception | None = None
+    logger.info(
+        "Looking up tract at vintage",
+        extra={"lat": latitude, "lon": longitude, "vintage": vintage},
+    )
 
     async with httpx.AsyncClient(timeout=settings.census_geocoder_timeout) as client:
-        for attempt in range(1, _MAX_ATTEMPTS + 1):
+        response = await _vintage_get_with_retry(client, url, params)
+
+    data = _parse_json(response, "Census reverse geocoder")
+
+    try:
+        geographies = (data.get("result") or {}).get("geographies") or {}
+        census_tracts = geographies.get("Census Tracts", [])
+        if not census_tracts:
             logger.info(
-                "Looking up tract at vintage",
-                extra={"lat": latitude, "lon": longitude, "vintage": vintage, "attempt": attempt},
+                "No tract for point in vintage",
+                extra={"vintage": vintage},
             )
-            try:
-                response = await client.get(url, params=params)
-                response.raise_for_status()
-            except httpx.TimeoutException as exc:
-                last_exc = exc
-                logger.warning(
-                    "Vintage tract lookup timeout",
-                    extra={"vintage": vintage, "attempt": attempt},
-                )
-                if attempt < _MAX_ATTEMPTS:
-                    await asyncio.sleep(1.0)
-                continue
-            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                raise GeocoderUnavailableError(
-                    f"Vintage tract lookup error: {_describe(exc)}"
-                ) from exc
+            return None
 
-            data = _parse_json(response, "Census reverse geocoder")
+        tract = census_tracts[0]
+        state_fips = tract.get("STATE")
+        county_fips = tract.get("COUNTY")
+        tract_fips = tract.get("TRACT")
+    except _SHAPE_ERRORS as exc:
+        raise _shape_error("Census reverse geocoder", exc) from exc
 
-            try:
-                geographies = (data.get("result") or {}).get("geographies") or {}
-                census_tracts = geographies.get("Census Tracts", [])
-                if not census_tracts:
-                    logger.info(
-                        "No tract for point in vintage",
-                        extra={"vintage": vintage},
-                    )
-                    return None
+    if not (state_fips and county_fips and tract_fips):
+        return None
 
-                tract = census_tracts[0]
-                state_fips = tract.get("STATE")
-                county_fips = tract.get("COUNTY")
-                tract_fips = tract.get("TRACT")
-            except _SHAPE_ERRORS as exc:
-                raise _shape_error("Census reverse geocoder", exc) from exc
-
-            if not (state_fips and county_fips and tract_fips):
-                return None
-
-            return f"{state_fips}{county_fips}{tract_fips}"
-
-        raise GeocoderUnavailableError(
-            f"Vintage tract lookup timed out after {_MAX_ATTEMPTS} attempts"
-        ) from last_exc
+    return f"{state_fips}{county_fips}{tract_fips}"
