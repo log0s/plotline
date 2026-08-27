@@ -549,7 +549,7 @@ retry is a failure, and a failure is never a smaller success.**
 | Z1 | **Resolved (`533bc3b`, 2026-08-27), deployed 2026-08-27T18:29Z at `7807c4d` — swept, retry unobserved: pending first 429.** The scoring sweep ran **79 ArcGIS queries** across Denver, DC and Adams and every one answered 200. Zero `"ArcGIS rate-limited; backing off"`, zero `ArcGISError`, zero error-level lines from `arcgis.py`. P-8 confirmed: Denver's `complete:0` count did not move and its one historical `failed` task did not recur. The 429 branch has never run in production. `../2026-08-ops-batch/SWEEP-SCORECARD.md` §5. | **`arcgis.py` had no 429 branch.** Esri acknowledges server-side rate limiting on hosted feature services with no published number (SOURCE-LANDSCAPE §0.2, §5.6); a 429 fell through the generic non-200 path and became an `ArcGISError` on the first try. Denver and Adams both run on hosted services, and R4/R5 would add traffic to the same client. Now: `Retry-After` capped at 20 s (Esri publishes no bound, and a longer sleep would spend the query's budget without asking again) or a jittered exponential backoff, up to 3 attempts, **inside** the caller's existing `timeout` rather than extending it — an attempt starts only while `spent + wait <= timeout` (`arcgis.py:110-143`). An unclearing 429 raises naming the status, so `_collect` counts a failed query rather than returning rows that were never fetched. |
 | Z2 | **Resolved (`2c3f468`, 2026-08-27), deployed 2026-08-27T18:29Z at `7807c4d` — swept, and observed to change nothing, as predicted.** The scoring sweep ran **15 Socrata queries** against NYC's three 4x4 ids and all answered 200: `ipu4-2q9a` returned rows on 4 of 5 calls, `w2pb-icbu` and `usep-8jbt` on 1 of 5 each, nine zero-row responses, **zero 404s**. P-6 confirmed at its most-likely value of 0 — no NYC task moved from `complete:0` to a failed query. All three resource ids are live; the fix stays what it was written as, insurance against a future retirement rather than a diagnosis of a current one. `../2026-08-ops-batch/SWEEP-SCORECARD.md` §5. | **`socrata.py:73-78` answered a 404 with `[]`.** A retired or renamed 4x4 resource id — the ids are string constants in `county_adapters.py` — read as "this address has no records", `_collect` counted a success with no rows, and the property task completed with zero. Property has no per-year ledger (m3-design §6), so the task status is the whole record and nothing was left behind for a later reader to correct. Now a 404 raises like any other non-200. Grepped for the shape across all five county adapters, `arcgis.py` and `ckan.py`: this was the only status collapsed to an empty list in the property path (`../2026-08-ops-batch/REPORT.md` §4). |
 | Z3 | **New — open, not fixed.** | **A throttled query thins a property task that still says `complete`.** H4's rule fails a task only when *every* query fails (`tasks/timeline.py:1289-1302`), and there is no `partial` status for a property task — `partial` exists only at the request level. So a 429-exhausted query on Adams (1 query) correctly marks the task `failed`, but one on Denver (2 permit layers) with the other succeeding leaves `complete` with a silently thinner `items_found`; DC's 7 layers are weaker still. Both confirmed by test in `533bc3b`. Recorded rather than fixed because inventing a fourth task status is a design decision, not a retry fix. Z1 at least makes the failed query *counted*, so a future partial rule has something to read. |
-| Z4 | **New — open, not fixed.** | **"Rows returned, all rejected by the address matcher" is invisible in the database, for every county.** `_fetch_property` filters events by `is_address_match` after the adapters return, and `items_found` counts persisted events — so a broad `LIKE` that matched 40 records and kept none looks identical to a portal that returned nothing. The raw/matched split exists only in the worker log line `"Property events filtered"` (`tasks/timeline.py:1314-1321`). This is the one genuinely undistinguished case left in the property path after Z1 and Z2, and it is the residue of the Adams question below. *2026-08-27, read for the first time across a whole fleet sweep — 31 `"Property events filtered"` lines, and they do separate the two cases the database cannot. Adams: `raw_count=0, matched_count=0` (the answer to the question below). DC shows both shapes in one run — `raw_count 180 → matched 53`, `15 → 10`, and once `1 → 0`, a task that would read `complete:0` with a row actually returned. NYC likewise, `234 → 100` and `100 → 25`. **So Z4 is not hypothetical: at least one task in this sweep persisted zero events out of a non-zero raw count**, and only the log says so. The line is doing its job; the defect is that it is the only place the split exists, and `fly logs` dropped ~3% of this run's stream. `../2026-08-ops-batch/SWEEP-SCORECARD.md` §5, §9.2.* |
+| Z4 | **New — open, not fixed.** | **"Rows returned, all rejected by the address matcher" is invisible in the database, for every county.** `_fetch_property` filters events by `is_address_match` after the adapters return, and `items_found` counts persisted events — so a broad `LIKE` that matched 40 records and kept none looks identical to a portal that returned nothing. The raw/matched split exists only in the worker log line `"Property events filtered"` (`tasks/timeline.py:1314-1321`). This is the one genuinely undistinguished case left in the property path after Z1 and Z2. *2026-08-27, read for the first time across a whole fleet sweep — 31 `"Property events filtered"` lines, and they do separate the two cases the database cannot. **Adams is no longer an instance of this row**: its `raw_count` is 0, and the portal check closed it as a jurisdiction gap rather than a matcher rejection (see the Adams entry under *To investigate*). DC shows both shapes in one run — `raw_count 180 → matched 53`, `15 → 10`, and once `1 → 0`, a task that would read `complete:0` with a row actually returned. NYC likewise, `234 → 100` and `100 → 25`. **So Z4 is not hypothetical: at least one task in this sweep persisted zero events out of a non-zero raw count**, and only the log says so. The line is doing its job; the defect is that it is the only place the split exists, and `fly logs` dropped ~3% of this run's stream. `../2026-08-ops-batch/SWEEP-SCORECARD.md` §5, §9.2.* |
 | Z5 | **Deferred — no row existed for it before now.** | **PC STAC search results are never cached.** ~43 Landsat + ~12 S2 year-chunks + 1 NAIP search per parcel per run, every run, cache nothing (SOURCE-LANDSCAPE §5.3; INVENTORY caching ledger). PC's maintainers call the search endpoint a shared resource with 503/504 under load and advise retry-with-backoff, which the search path already does (`timeline.py:97-135`); what the guidance implies and the code lacks is the caching. A Redis cache keyed on (collection, bbox-hash, year) with a 24 h TTL would cut re-run traffic to near zero. Dropped from this batch as a design question, not a retry fix — the TTL interacts with reconciliation and with how a heal decides a year is genuinely absent. **S/M.** This row exists so the item stops being orphaned in a research doc. |
 | Z6 | **New — open, not fixed. Found by the scoring sweep, 2026-08-27.** | **The geocoder's vintage tract lookup has no retry, and it is the one census-path client this batch did not widen.** `geocoder.lookup_tract_at_vintage` issues a bare `await client.get(url, params=params)` (`geocoder.py:416`) and turns any transport error into `GeocoderUnavailableError` on the first attempt — no attempt loop, no backoff. The same module *does* retry elsewhere (`geocoder.py:30, 139-147`), and N2 gave `CensusFetcher` a 3-attempt budget, so this call is now the outlier on its own path in exactly the way `CensusFetcher` was before `8a86fad`. **Observed, not reasoned:** one `httpx.ConnectError` reached it at 18:55:14Z during the sweep's census task for tract `36061000900`; `tasks/timeline.py:1013` caught it, logged `"Vintage tract lookup failed, using stored tract"` at warning, and continued with the stored tract. Degraded, not lost — the fallback is real and it worked. What makes this worth a row is the arithmetic: the sweep met **exactly one** transient upstream failure in 69 minutes, and it landed here rather than on any of the three clients the batch widened. That is why P-1 came back `not exercised` while a transient was in fact available to be retried. The blast radius is a tract resolved at the wrong vintage, which silently changes which tract's demographics a parcel is attributed — worse than a missing row, because it is a wrong row. Not fixed here: this sweep was scored, not coded. `../2026-08-ops-batch/SWEEP-SCORECARD.md` §9.1. |
 
@@ -1156,25 +1156,61 @@ retry is a failure, and a failure is never a smaller success.**
   collapsed a status either; 16 of its 23 tasks are `complete:0` and this
   batch does not move them.*
 
-  *2026-08-27, **answered by the scoring sweep** without touching the portal —
-  `../2026-08-ops-batch/SWEEP-SCORECARD.md` §5. P-7 confirmed: the Adams task
-  ran, completed, `items_found: 0`. The whole chain is in the worker log:
-  `ArcGIS Feature Service query` on `Building_Permits_Eye_On_Adams/FeatureServer/0`
-  with `where: upper(CombinedAddress) LIKE '12804 %EMERSON%'`, then
+  **CLOSED as a data question, 2026-08-27 — this is a jurisdiction gap, not
+  an adapter bug, and it is confirmed twice from two independent directions.**
+
+  *(1) Portal check, run 2026-08-27 — the ten-minute check this row has been
+  asking for since the ops audit.* The exact pattern the adapter sends returns
+  **`count=3`** against the county layer, so **the WHERE clause is correct**
+  and the "does `CombinedAddress` hold this address in this form" candidate is
+  dead. Eye On Adams's Emerson St coverage runs house numbers **5600–8371** —
+  the unincorporated pocket south of roughly 84th Ave — returned ascending
+  with **no `exceededTransferLimit`**, so the list is complete rather than
+  truncated. **12804 Emerson is on the 128th Ave block, inside Thornton, which
+  issues its own permits.** The county layer is not missing this property's
+  records; it was never the authority for them.
+
+  *(2) The scoring sweep, 2026-08-27 — `../2026-08-ops-batch/SWEEP-SCORECARD.md`
+  §5.* P-7 confirmed: the task ran, completed, `items_found: 0`. The chain is
+  in the worker log — `ArcGIS Feature Service query` on
+  `Building_Permits_Eye_On_Adams/FeatureServer/0` with
+  `where: upper(CombinedAddress) LIKE '12804 %EMERSON%'`, then
   `ArcGIS response rows: 0`, then `Property events filtered raw_count: 0
-  matched_count: 0`. **`raw_count` is zero — the service returned no features
-  at all**, so the address matcher never had anything to reject. Of the two
-  possibilities this row narrowed to, it is the first: the feature service
-  answers 200 with zero rows for that WHERE clause. Z4 is not the explanation
-  here (though the same sweep proves Z4 real elsewhere — see its row). **What
-  is still owed is now one question, not three: why does that clause find
-  nothing?** Candidates, none tested: `CombinedAddress` does not hold this
-  address in this form; the layer does not cover this property; or the parcel
-  genuinely has no permits on file. That is a portal question, and it is the
-  only part of this row that a database or a log cannot answer. Santa Clara,
-  re-checked in the same sweep: 7 parcels, 2 with events (2 items between
-  them), 5 `complete:0`, zero CKAN errors across 21 queries — P-9 confirmed,
-  unmoved, as predicted.*
+  matched_count: 0`. **`raw_count=0` is exactly what the portal check
+  predicts**: a correct query against a layer whose jurisdiction excludes the
+  address. The two observations were made independently and agree.
+
+  **Nothing is owed on the portal.** All three of the previous paragraph's
+  candidates are resolved: the clause is right, the list is complete, and the
+  parcel's permits exist — in Thornton.
+
+  **What is owed is code, and it is a new shape: a municipality coverage
+  gate.** The adapter needs `covers(city)` at the adapter level, so an address
+  inside a home-rule municipality the county layer does not serve resolves to
+  the existing **skipped / not-covered** task state rather than to
+  `complete:0`. This is the same distinction H4 and Z2 drew one level down —
+  "we did not ask" is not "we asked and there is nothing" — and Adams is the
+  first case where the boundary is jurisdictional rather than technical.
+  Denver and DC are city-counties and so cannot show it; any future
+  county adapter over a metro with incorporated municipalities can.
+
+  **Z4 is not the explanation here and no longer cites Adams.** It stays open
+  for the other counties, where the sweep did prove it real (DC returned
+  `raw_count 1 → matched 0` on one task).
+
+  **Two notes that survive this closure.** Eye On Adams is **2011-onward and
+  status-filtered**, so even a covered address gets a partial permit history
+  from it — a coverage limit, not a bug, and one nothing currently records.
+  And **which `street_name` form the pipeline passes is still unanswered**:
+  this parcel's query went out as `%EMERSON%` with no suffix, which happened
+  not to matter here because the jurisdiction excluded it anyway. That
+  question applies to **Denver and DC**, whose non-zero results could be
+  thinner than they look for the same reason, and it is not closed by
+  anything above.
+
+  *Santa Clara, re-checked in the same sweep: 7 parcels, 2 with events (2
+  items between them), 5 `complete:0`, zero CKAN errors across 21 queries —
+  P-9 confirmed, unmoved, as predicted.*
 - **Incidental, from the same finding:** the 2026-08-11 incident parcel
   recorded `property complete:0` during the burst window while its five Denver
   peers hold 10–33 events each. Suggestive, not conclusive.

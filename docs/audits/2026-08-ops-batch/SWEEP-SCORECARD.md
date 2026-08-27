@@ -218,6 +218,25 @@ nothing — a wrong address form, a layer that does not carry this address, or a
 parcel with genuinely no permits. The narrowed question survives; it is now
 about the clause, not about the pipeline.
 
+**Later, 2026-08-27 — settled, and none of the three candidates above is the
+answer.** A portal check run the same day returns `count=3` for the adapter's
+exact pattern against the county layer, so the clause is correct. Eye On
+Adams's Emerson St coverage is house numbers 5600–8371 — the unincorporated
+pocket south of ~84th Ave — ascending, with no `exceededTransferLimit`, so the
+list is complete. **12804 Emerson is on the 128th Ave block, in Thornton,
+which issues its own permits.** `raw_count=0` is precisely what a correct
+query against a layer that does not have jurisdiction predicts, and the two
+observations were made independently.
+
+So this is a **jurisdiction gap**, not an adapter defect and not an instance of
+Z4. The remedy is a municipality coverage gate — `covers(city)` at the adapter
+level, resolving to the existing skipped / not-covered task state instead of
+`complete:0`. Nothing is owed on the portal. Two limits survive: Eye On Adams
+is 2011-onward and status-filtered, so even a covered address gets a partial
+history; and which `street_name` form the pipeline passes is still unanswered,
+which matters for **Denver and DC** rather than here. Full record in
+STATUS.md's Adams entry under *To investigate*.
+
 ---
 
 ## 6. Regression
