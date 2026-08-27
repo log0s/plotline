@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -273,14 +273,17 @@ class TestCensusFetcher:
 
     @pytest.mark.asyncio
     async def test_request_raises_on_http_error(self) -> None:
-        """Network errors in _request should raise CensusApiError."""
+        """Network errors in _request should raise CensusApiError — after retries."""
         from app.services.census import CensusApiError
 
         fetcher = CensusFetcher(api_key="test-key")
         fetcher.client = AsyncMock()
         fetcher.client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
 
-        with pytest.raises(CensusApiError, match="HTTP error"):
+        with (
+            patch("app.services.census.asyncio.sleep", new_callable=AsyncMock),
+            pytest.raises(CensusApiError, match="HTTP error"),
+        ):
             await fetcher.fetch_acs5(2023, "08", "031", "006202")
 
     @pytest.mark.asyncio
@@ -289,18 +292,166 @@ class TestCensusFetcher:
         mock_response = MagicMock()
         mock_response.status_code = 500
         mock_response.text = "Internal Server Error"
+        mock_response.headers = {}
 
         fetcher = CensusFetcher(api_key="secret-key")
         fetcher.client = AsyncMock()
         fetcher.client.get = AsyncMock(return_value=mock_response)
 
-        with pytest.raises(CensusApiError, match="500") as caught:
+        with (
+            patch("app.services.census.asyncio.sleep", new_callable=AsyncMock),
+            pytest.raises(CensusApiError, match="500") as caught,
+        ):
             await fetcher.fetch_acs5(2023, "08", "031", "006202")
 
         # The dataset path, so a ledger `detail` names the URL that failed —
         # and never the query string, where the key is.
         assert "/2023/acs/acs5" in str(caught.value)
         assert "secret-key" not in str(caught.value)
+
+    @pytest.mark.asyncio
+    async def test_timeout_then_200_recovers_the_year(self) -> None:
+        """N2: one read timeout no longer costs the parcel a census year.
+
+        Delete-the-fix: drop ``httpx.ReadTimeout`` from
+        ``_RETRYABLE_TRANSPORT`` and the first timeout raises, which is
+        exactly M4 occurrence 3 — four ReadTimeouts against api.census.gov,
+        none of them retried, two years lost off one Maricopa parcel.
+        """
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.headers = {}
+        ok.json = MagicMock(return_value=[["P1_001N", "H1_001N"], ["4200", "1700"]])
+
+        fetcher = CensusFetcher(api_key="test-key")
+        fetcher.client = AsyncMock()
+        fetcher.client.get = AsyncMock(side_effect=[httpx.ReadTimeout("timed out"), ok])
+
+        with patch("app.services.census.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            result = await fetcher.fetch_decennial(2020, "04", "013", "610500")
+
+        assert result["total_population"] == 4200
+        assert fetcher.client.get.await_count == 2
+        assert sleep.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_three_timeouts_raise_as_read_timeout_for_the_ledger(self) -> None:
+        """The Crawford shape: exhausted retries are a failure, with the cause intact.
+
+        ``_census_failure_reason`` reads the transport type off ``__cause__``,
+        so the ledger records ``failed``/``read_timeout`` rather than ``other``
+        — and never ``absent``, which is what a swallowed error would look
+        like to a heal.
+        """
+        from app.services.census import _RETRY_ATTEMPTS, CensusApiError
+        from app.tasks.timeline import _census_failure_reason
+
+        fetcher = CensusFetcher(api_key="test-key")
+        fetcher.client = AsyncMock()
+        fetcher.client.get = AsyncMock(side_effect=httpx.ReadTimeout("timed out"))
+
+        with (
+            patch("app.services.census.asyncio.sleep", new_callable=AsyncMock),
+            pytest.raises(CensusApiError) as caught,
+        ):
+            await fetcher.fetch_acs5(2021, "04", "013", "610500")
+
+        assert fetcher.client.get.await_count == _RETRY_ATTEMPTS
+        assert _census_failure_reason(caught.value) == "read_timeout"
+
+    @pytest.mark.asyncio
+    async def test_a_404_raises_once_with_no_retry(self) -> None:
+        """404 is a settled answer — retrying it would spend the budget on it."""
+        from app.services.census import CensusHttpStatusError
+
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.headers = {}
+
+        fetcher = CensusFetcher(api_key="test-key")
+        fetcher.client = AsyncMock()
+        fetcher.client.get = AsyncMock(return_value=mock_response)
+
+        with (
+            patch("app.services.census.asyncio.sleep", new_callable=AsyncMock) as sleep,
+            pytest.raises(CensusHttpStatusError),
+        ):
+            await fetcher.fetch_decennial(2000, "08", "031", "999999")
+
+        assert fetcher.client.get.await_count == 1
+        assert sleep.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_exhausted_5xx_keeps_its_status_for_the_ledger(self) -> None:
+        """A 503 that never clears reaches the ledger as ``http_503``."""
+        from app.services.census import _RETRY_ATTEMPTS, CensusHttpStatusError
+        from app.tasks.timeline import _census_failure_reason
+
+        mock_response = MagicMock()
+        mock_response.status_code = 503
+        mock_response.text = "Service Unavailable"
+        mock_response.headers = {}
+
+        fetcher = CensusFetcher(api_key="test-key")
+        fetcher.client = AsyncMock()
+        fetcher.client.get = AsyncMock(return_value=mock_response)
+
+        with (
+            patch("app.services.census.asyncio.sleep", new_callable=AsyncMock),
+            pytest.raises(CensusHttpStatusError) as caught,
+        ):
+            await fetcher.fetch_acs5(2023, "08", "031", "006202")
+
+        assert fetcher.client.get.await_count == _RETRY_ATTEMPTS
+        assert _census_failure_reason(caught.value) == "http_503"
+
+    @pytest.mark.asyncio
+    async def test_retry_honours_retry_after_and_jitters_upward(self) -> None:
+        """A ``Retry-After`` is honoured, and never undercut by the jitter."""
+        from app.services.census import _RETRY_JITTER_FRACTION
+
+        throttled = MagicMock()
+        throttled.status_code = 503
+        throttled.text = ""
+        throttled.headers = {"retry-after": "5"}
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.headers = {}
+        ok.json = MagicMock(return_value=[["B01003_001E"], ["1234"]])
+
+        fetcher = CensusFetcher(api_key="test-key")
+        fetcher.client = AsyncMock()
+        fetcher.client.get = AsyncMock(side_effect=[throttled, ok])
+
+        with patch("app.services.census.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            result = await fetcher.fetch_acs5(2023, "08", "031", "006202")
+
+        assert result["total_population"] == 1234
+        slept = sleep.await_args_list[0].args[0]
+        assert 5.0 <= slept <= 5.0 * (1.0 + _RETRY_JITTER_FRACTION)
+
+    @pytest.mark.asyncio
+    async def test_retry_budget_keeps_the_census_task_inside_its_time_limit(self) -> None:
+        """The retry bound and the Celery limit it is sized against, in one place.
+
+        Worst case is ``_RETRY_ATTEMPTS`` attempts of ``census_api_timeout``
+        plus the backoff, over the 9 years the task fetches. If either number
+        moves, this is where the arithmetic stops working.
+        """
+        from app.config import get_settings
+        from app.services.census import (
+            _RETRY_ATTEMPTS,
+            _RETRY_BUDGET_S,
+            ACS5_YEARS,
+            DECENNIAL_YEARS,
+        )
+        from app.tasks.timeline import fetch_imagery_timeline
+
+        per_attempt = get_settings().census_api_timeout
+        worst_request = _RETRY_ATTEMPTS * per_attempt + _RETRY_BUDGET_S
+        worst_task = worst_request * (len(DECENNIAL_YEARS) + len(ACS5_YEARS))
+
+        assert worst_task < fetch_imagery_timeline.soft_time_limit
 
     @pytest.mark.asyncio
     async def test_decennial_2000_asks_for_the_four_character_tract(self) -> None:

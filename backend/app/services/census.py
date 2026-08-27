@@ -6,14 +6,71 @@ Community Survey 5-year estimates (2009–2023) at the census-tract level.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import random
 import re
+import time
 from typing import Any, cast
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# ── Retry policy ──────────────────────────────────────────────────────────────
+
+# Statuses worth asking again about. 4xx is not among them: a 404 is a dataset
+# that does not exist (``1990/dec/sf1`` never has), and a 400 is a variable
+# this vintage does not publish — both are settled answers, and
+# ``CensusHttpStatusError`` from e6afa9b exists precisely so they stay
+# terminal and reach the ledger as ``failed``/``http_<status>``.
+_RETRYABLE_STATUSES = frozenset({500, 502, 503, 504})
+
+# Transport failures worth asking again about. Deliberately narrower than
+# ``httpx.HTTPError``: an ``InvalidURL`` or ``UnsupportedProtocol`` is our bug
+# and retrying would only spend the budget confirming it.
+_RETRYABLE_TRANSPORT = (httpx.ReadTimeout, httpx.ConnectError)
+
+_RETRY_ATTEMPTS = 3
+
+# How far behind schedule one logical request may already be before another
+# attempt is worth starting — sleeping and waiting on api.census.gov alike.
+#
+# Sized against the task that contains it. The census fetch issues at most 9
+# logical requests (3 decennial years + 6 ACS years, sequential, with a 0.5 s
+# pause between them), each attempt capped by ``census_api_timeout`` (30 s,
+# ``config.py:56``). At 65 s a third attempt can still start at ~61 s elapsed,
+# so one request costs at most 3 x 30 s + 3 s of backoff = 93 s, and the whole
+# census task at most ~841 s. The Celery task's soft limit is 1800 s
+# (``tasks/timeline.py:1608-1609``), and census runs concurrently with the
+# imagery sources rather than after them, so that is the number it has to fit
+# inside — with room to spare, deliberately: this bound is a ceiling on a
+# pathological outage, not a target.
+_RETRY_BUDGET_S = 65.0
+
+# Upward-only spread, so a fleet-wide sweep's parallel workers do not resume
+# in lockstep after the same outage.
+_RETRY_JITTER_FRACTION = 0.25
+
+
+def _jittered(delay: float) -> float:
+    """``delay`` spread upward by up to ``_RETRY_JITTER_FRACTION`` of itself."""
+    return delay * (1.0 + random.random() * _RETRY_JITTER_FRACTION)
+
+
+def _retry_after_seconds(resp: httpx.Response) -> float | None:
+    """Parse a Retry-After header (delta-seconds form) into seconds."""
+    raw = resp.headers.get("retry-after")
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        return max(0.0, float(raw.strip()))
+    except ValueError:
+        # HTTP-date form: a bad parse falls back to exponential backoff
+        # rather than raising on a header that is only advisory.
+        return None
+
 
 # The Census API encodes "not available" as large negative annotation values:
 # -666666666 (estimate not computed) is the most common, but ACS also returns
@@ -300,9 +357,11 @@ class CensusFetcher:
     ) -> list[list[str]] | None:
         """Make a Census API request. Returns None on a 204 (tract not found).
 
-        A 4xx/5xx raises ``CensusHttpStatusError``: an endpoint that errors is
-        not a tract that has no data, and collapsing the two is what made a
-        dead 1990 URL read as absence on every parcel.
+        Transient failures — read timeouts, refused connections, 5xx — are
+        retried (see ``_get_with_retry``). A 4xx/5xx that survives the retries
+        raises ``CensusHttpStatusError``: an endpoint that errors is not a
+        tract that has no data, and collapsing the two is what made a dead
+        1990 URL read as absence on every parcel.
         """
         params: dict[str, str] = {
             "get": ",".join(variables),
@@ -312,11 +371,7 @@ class CensusFetcher:
         if self.api_key:
             params["key"] = self.api_key
 
-        try:
-            resp = await self.client.get(url, params=params)
-        except httpx.HTTPError as exc:
-            logger.error("Census API request failed", extra={"url": url}, exc_info=exc)
-            raise CensusApiError(f"HTTP error: {exc}") from exc
+        resp = await self._get_with_retry(url, params)
 
         if resp.status_code == 302:
             location = resp.headers.get("location", "")
@@ -355,6 +410,90 @@ class CensusFetcher:
                 extra={"url": url, "body": resp.text[:200]},
             )
             raise CensusApiError(f"Census API returned invalid JSON: {exc}") from exc
+
+    async def _get_with_retry(self, url: str, params: dict[str, str]) -> httpx.Response:
+        """GET the Census API, retrying transient failures within a budget.
+
+        The client had no retry at all until this: one ``GET``, and any
+        ``httpx.HTTPError`` — timeout, connect error, read error — became a
+        ``CensusApiError`` on the spot (N2). That is the mechanism behind M4
+        occurrence 3, where four ``httpx.ReadTimeout``s against
+        api.census.gov cost a Maricopa parcel its acs5 2021 and decennial
+        2020 rows and not one of the four was ever retried. Both of our other
+        upstream clients — the geocoder and the STAC search — already retry.
+
+        An exhausted retry raises, never returns an empty result, and carries
+        what failed last: a status becomes ``CensusHttpStatusError`` (ledger
+        reason ``http_<status>``) and a transport error stays on ``__cause__``
+        (``read_timeout`` / ``connect_error``) — see
+        ``tasks/timeline.py:_census_failure_reason``.
+        """
+        started = time.monotonic()
+        delay = 1.0
+        last_status: int | None = None
+        last_transport: httpx.HTTPError | None = None
+
+        for attempt in range(_RETRY_ATTEMPTS):
+            retry_after: float | None = None
+            try:
+                resp = await self.client.get(url, params=params)
+                if resp.status_code not in _RETRYABLE_STATUSES:
+                    return resp
+                last_status = resp.status_code
+                last_transport = None
+                retry_after = _retry_after_seconds(resp)
+            except _RETRYABLE_TRANSPORT as exc:
+                last_transport = exc
+                last_status = None
+            except httpx.HTTPError as exc:
+                logger.error("Census API request failed", extra={"url": url}, exc_info=exc)
+                raise CensusApiError(f"HTTP error: {exc}") from exc
+
+            if attempt == _RETRY_ATTEMPTS - 1:
+                break
+
+            wait = retry_after if retry_after is not None else delay
+            spent = time.monotonic() - started
+            if spent + wait > _RETRY_BUDGET_S:
+                logger.warning(
+                    "Census API retry exceeds the request budget, giving up",
+                    extra={
+                        "url": _dataset_path(url),
+                        "attempt": attempt + 1,
+                        "wait_s": wait,
+                        "spent_s": spent,
+                    },
+                )
+                break
+
+            wait = min(_jittered(wait), _RETRY_BUDGET_S - spent)
+            logger.warning(
+                "Census API request failed; retrying",
+                extra={
+                    "url": _dataset_path(url),
+                    "attempt": attempt + 1,
+                    "wait_s": wait,
+                    "status": last_status,
+                    "error": str(last_transport) if last_transport else None,
+                },
+            )
+            await asyncio.sleep(wait)
+            delay *= 2
+
+        if last_transport is not None:
+            logger.error(
+                "Census API request failed after retries",
+                extra={"url": _dataset_path(url)},
+                exc_info=last_transport,
+            )
+            raise CensusApiError(f"HTTP error: {last_transport}") from last_transport
+
+        assert last_status is not None  # only reached after a retryable failure
+        logger.error(
+            "Census API error after retries",
+            extra={"url": _dataset_path(url), "status": last_status},
+        )
+        raise CensusHttpStatusError(last_status, _dataset_path(url))
 
 
 def _tract_for_dataset(tract_code: str, config: dict[str, Any]) -> str:
