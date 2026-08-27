@@ -783,6 +783,76 @@ def _insert_snapshot(db: Session, parcel_id: uuid.UUID, source: str, cog_url: st
     return get_imagery_snapshots(db, parcel_id=parcel_id, source=source)[0].id
 
 
+def _insert_topo_snapshot(db: Session, parcel_id: uuid.UUID, cog_url: str) -> uuid.UUID:
+    from app.services.imagery import get_imagery_snapshots, upsert_imagery_snapshot
+
+    upsert_imagery_snapshot(
+        db,
+        parcel_id=parcel_id,
+        source="usgs_topo",
+        capture_date=date(1954, 1, 1),
+        stac_item_id="tnm-1954-sheet",
+        stac_collection="usgs_topo",
+        cog_url=cog_url,
+        thumbnail_url=None,
+        resolution_m=2.0,
+    )
+    return get_imagery_snapshots(db, parcel_id=parcel_id, source="usgs_topo")[0].id
+
+
+def test_topo_tile_on_an_unlisted_host_is_refused(client: TestClient, db: Session) -> None:
+    """N5: the topo URL comes straight out of TNM's `urls.GeoTIFF`, unsigned.
+
+    Nothing else inspects it — `_proxy_cog_tile` is called with `sign=False`
+    for usgs_topo — so this check is the only thing between a stored value
+    and Titiler fetching an attacker-chosen host from inside the network.
+    Delete-the-fix: drop the `_refuse_unlisted_host` call at
+    `api/imagery.py:486` and the request reaches Titiler.
+    """
+    from app.api.v1.imagery import _snapshot_cache
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id, "Topo Ln")
+    snapshot_id = _insert_topo_snapshot(db, parcel_id, "https://evil.example.com/topo.tif")
+    _snapshot_cache.clear()
+
+    with patch("app.api.v1.imagery._get_titiler_client") as mock_titiler:
+        resp = client.get(f"/api/v1/imagery/{snapshot_id}/tiles/12/100/200")
+
+    assert resp.status_code == 502
+    assert "evil.example.com" not in resp.text
+    mock_titiler.assert_not_called()
+
+
+def test_topo_tile_on_the_tnm_host_is_served(client: TestClient, db: Session) -> None:
+    """The positive control: `prd-tnm.s3.amazonaws.com` is the real TNM host.
+
+    Verified against production 2026-08-27: 1183 `usgs_topo`
+    `imagery_snapshots` rows, one distinct host, this one. Without this half
+    the refusal above would also pass with the allowlist emptied.
+    """
+    from app.api.v1.imagery import _snapshot_cache
+
+    parcel_id = uuid.uuid4()
+    _insert_parcel(db, parcel_id, "Quad St")
+    url = "https://prd-tnm.s3.amazonaws.com/StagedProducts/Maps/HistoricalTopo/GeoTIFF/x.tif"
+    snapshot_id = _insert_topo_snapshot(db, parcel_id, url)
+    _snapshot_cache.clear()
+
+    upstream = MagicMock()
+    upstream.status_code = 200
+    upstream.content = b"tile"
+    upstream.headers = {"content-type": "image/png"}
+    titiler = MagicMock()
+    titiler.get = AsyncMock(return_value=upstream)
+
+    with patch("app.api.v1.imagery._get_titiler_client", return_value=titiler):
+        resp = client.get(f"/api/v1/imagery/{snapshot_id}/tiles/12/100/200")
+
+    assert resp.status_code == 200
+    assert titiler.get.await_args.kwargs["params"]["url"] == url
+
+
 def test_tile_proxy_502s_when_signing_fails(client: TestClient, db: Session) -> None:
     """A terminal signing failure 502s instead of handing Titiler an
     unsigned href — which Planetary Computer rejects with a 409 that
