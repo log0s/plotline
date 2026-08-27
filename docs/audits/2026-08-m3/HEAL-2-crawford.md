@@ -194,3 +194,35 @@ decennial trim. Crawford County is fully healed: 43 Landsat years, 6 NAIP
 years (14-year ceiling not reached — NAIP simply had no scene for most of
 the retried years), 12 Sentinel-2 years, 3 USGS topo decades, 9 census
 snapshot rows.
+
+## Addendum, 2026-08-27 — two things worth stating plainly
+
+**11 of the 33 `failed/read_timeout` groups were genuine absence wearing a
+timeout's clothes, and the ledger is what told them apart.** NAIP's 11
+`absent/no_scenes` outcomes are not a second timeout that happened to land
+on a legal reason — they are the collection's real biennial-ish state
+coverage, previously indistinguishable from a retryable failure because the
+task-level status (`naip failed`) carried no per-year detail. Before M4's
+per-year persistence, this parcel's NAIP task was just `failed`, full stop;
+nothing said which of its 17 years were worth a retry and which were never
+going to produce a scene. The ledger recording `read_timeout` and
+`no_scenes` as distinct outcomes at attempt 1 is what let this heal retry
+the whole group once and read the answer back cleanly — 6 groups that were
+genuinely retryable came back `ok`, 11 that were not stopped being falsely
+`failed` and became correctly `absent`. That is the M4→M3 story condensed
+into one parcel: instrument first, then a heal that can act on what it
+measured instead of guessing at what a bare `failed` status meant.
+
+**The decennial-2000 ride-along changes P2's arithmetic, not just its
+mechanism.** `PREDICTION.md` P2 counts 64 recoverable `census_decennial`
+2000 rows off a snapshot of the ledger taken before any full-scope run
+executed under the deployed trim. This heal's Phase 3b shows that trim
+firing as a side effect of an ordinary full-scope requeue — no
+`--from-ledger`, no `--sources census_decennial` involved. Every full-scope
+heal or backfill that touches a `2000`-tract-ending-`00` parcel between now
+and P2's sweep picks that parcel's row off the 64 before the sweep runs,
+the same way this one did. **P2's eventual recovered count will land
+somewhere under 64, and that is not a deviation from the prediction — it is
+the predicted mechanism operating early, on a population outside the
+sweep's control.** Recorded here so the eventual `HEAL-SCORECARD.md` reads
+a gap against 64 as this, not as a new defect.

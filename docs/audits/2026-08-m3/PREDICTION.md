@@ -283,6 +283,21 @@ against deployed M3 code, once Ryan deploys it, is the only thing that can
 confirm this number reads the same way through `requeue_parcels.py` itself;
 this addendum stands until that happens.
 
+### Addendum, 2026-08-27 — the 64 will erode before P2 runs
+
+`../2026-08-m3/HEAL-2-crawford.md` observed the decennial tract-width trim
+(`e6afa9b`) firing as a ride-along on an ordinary full-scope heal —
+`6563dedf`'s `decennial`/2000 moved `absent`/`api_no_data` → `ok` with no
+`--from-ledger` and no `--sources census_decennial` in the command. The 64
+above was counted off a ledger snapshot taken before any full-scope run
+executed under the deployed trim; every full-scope heal or backfill that
+touches one of the 64 parcels between that count and P2's actual sweep
+removes it from the population P2 will find. **A recovered count under 64
+at sweep time is this mechanism, not a falsifier** — it means the ride-along
+got there first, not that the trim recovers fewer than 64 tracts. The
+scorecard should check parcel-level overlap against Heal 2's affected
+parcel before reading a sub-64 count as a deviation.
+
 ---
 
 ## P3 — Crawford County `6563dedf`, 33 groups no self-running code could reach
