@@ -172,6 +172,21 @@ class CountyAdapter(ABC):
         """
         ...
 
+    def covers(self, city: str | None) -> bool:
+        """Is this address inside the jurisdiction this adapter can answer for?
+
+        Default ``True``: a city-county adapter (Denver, DC) or a
+        borough-wide one (New York) has no boundary below the county, so
+        there is nothing to gate on.
+
+        ``city`` is the geocoder's *mailing* city, which is not the same thing
+        as the jurisdiction that issues permits. A ``None`` city therefore
+        never denies: the coverage verdict is only allowed to turn a real
+        answer into "we did not ask" when it knows something, never when it
+        knows nothing.
+        """
+        return True
+
     @abstractmethod
     async def fetch_sales(
         self,
@@ -309,9 +324,57 @@ class AdamsCountyAdapter(CountyAdapter):
         "/Building_Permits_Eye_On_Adams/FeatureServer/0"
     )
 
+    # Mailing cities the Eye On Adams layer is not the permit authority for.
+    #
+    # The rule is a DENYlist, not an allowlist, because the county serves the
+    # residual: everything that is not one of these municipalities. The layer's
+    # own ``definitionQuery`` (read 2026-08-27) filters on ApplicationStatus
+    # only and encodes no jurisdiction at all, so this list is derived from
+    # what the layer actually holds:
+    #
+    #   * Thornton — 12804 Emerson St returns count=0 while the same street's
+    #     records run 5600–8371 and 8601–8651, i.e. the county's Emerson
+    #     coverage stops exactly where Thornton's limits begin (STATUS.md, the
+    #     Adams row, portal check of 2026-08-27).
+    #   * Sampled 2026-08-27 across HURON, YORK, WASHINGTON and EMERSON: 4,013
+    #     house numbers spanning 741–16610, and **zero** anywhere in
+    #     9000–13600 — the band that is Thornton, Northglenn and Federal
+    #     Heights. The gap is the jurisdiction.
+    #
+    # DENVER and BRIGHTON are deliberately absent: both are mailing cities for
+    # large unincorporated pockets the layer does cover — 8601 EMERSON CT
+    # geocodes to DENVER in Adams County, 16610 YORK ST to BRIGHTON, and the
+    # layer holds records for both. Denying on mailing city alone would lose
+    # them.
+    #
+    # ACCEPTED RISK (STATUS.md AA2): the geocoder returns a mailing city, not
+    # a jurisdiction, so an unincorporated address whose mail is addressed to
+    # one of these cities resolves to ``not_covered`` and is never queried.
+    # That is a false negative in the safe direction — "we did not ask" rather
+    # than a fabricated "there is nothing here" — but it is a real one, and
+    # anyone adding a city to this list is adding that risk with it. Add a
+    # city only with the same evidence shape as above: a house-number band the
+    # layer holds nothing in.
+    NOT_COVERED_CITIES = frozenset(
+        {
+            "THORNTON",
+            "NORTHGLENN",
+            "WESTMINSTER",
+            "COMMERCE CITY",
+            "FEDERAL HEIGHTS",
+            "AURORA",
+            "ARVADA",
+        }
+    )
+
     @property
     def county_name(self) -> str:
         return "Adams"
+
+    def covers(self, city: str | None) -> bool:
+        if not city:
+            return True
+        return city.strip().upper() not in self.NOT_COVERED_CITIES
 
     @property
     def display_name(self) -> str:
@@ -559,9 +622,23 @@ class SantaClaraAdapter(CountyAdapter):
         ("df4b8461-0c7a-4d16-b85d-ff7f71c5fed5", "expired"),
     ]
 
+    # An ALLOWlist, the inverse of Adams's rule, because the source is the
+    # inverse: ``data.sanjoseca.gov`` is the City of San Jose's own portal,
+    # not the county's, so San Jose is the whole of what it can answer for.
+    # Sunnyvale, Mountain View, Cupertino, Palo Alto and the rest run their
+    # own permit systems, and the county has no countywide feed to fall back
+    # on. Same mailing-city caveat as Adams (STATUS.md AA2): a ``None`` city
+    # never denies.
+    COVERED_CITIES = frozenset({"SAN JOSE"})
+
     @property
     def county_name(self) -> str:
         return "Santa Clara"
+
+    def covers(self, city: str | None) -> bool:
+        if not city:
+            return True
+        return city.strip().upper() in self.COVERED_CITIES
 
     @property
     def display_name(self) -> str:

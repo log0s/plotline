@@ -812,6 +812,123 @@ async def test_fetch_property_unsupported_county_marks_skipped() -> None:
     assert count == 0
     mock_update.assert_called_once()
     assert mock_update.call_args[0][2] == "skipped"
+    counts = mock_update.call_args.kwargs["counts"]
+    assert counts.coverage == "no_adapter"
+    assert counts.queries_run == 0
+    assert mock_update.call_args.kwargs["clear_items_found"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("county", "address"),
+    [
+        # 12804 Emerson is in Thornton, which issues its own permits; the
+        # county layer's Emerson coverage stops below 84th Ave. Confirmed
+        # twice — portal check and sweep — on 2026-08-27.
+        ("Adams", "12804 EMERSON ST, THORNTON, CO, 80241"),
+        # data.sanjoseca.gov is the City of San Jose's portal, not the
+        # county's; Sunnyvale runs its own.
+        ("Santa Clara", "500 W OLIVE AVE, SUNNYVALE, CA, 94086"),
+    ],
+)
+async def test_fetch_property_outside_coverage_skips_without_asking(
+    county: str, address: str
+) -> None:
+    """The municipality coverage gate: not_covered, and zero queries run.
+
+    ``complete:0`` on an address the county was never the authority for reads
+    as "no records at this address" forever — the same conflation the
+    "no adapter for county" skip already avoids, one level down.
+
+    Delete-the-fix: remove the ``if not adapter.covers(city)`` block from
+    ``_fetch_property`` and the adapter is queried, the task reads
+    ``complete`` with ``items_found`` 0, and every assertion below fails.
+    """
+    from app.services.county_adapters import get_adapter_for_county
+    from app.tasks.timeline import _fetch_property
+
+    adapter = get_adapter_for_county(county)
+    assert adapter is not None
+
+    mock_db = MagicMock()
+    mock_db.__enter__ = MagicMock(return_value=mock_db)
+    mock_db.__exit__ = MagicMock(return_value=False)
+    mock_db.execute.return_value.scalars.return_value.first.return_value = MagicMock()
+
+    with (
+        patch("app.db.SessionLocal", return_value=mock_db),
+        patch("app.tasks.timeline.get_adapter_for_county", return_value=adapter),
+        # Any outbound query at all is the failure this test is about.
+        patch("app.services.county_adapters.query_feature_service") as mock_arcgis,
+        patch("app.services.county_adapters.query_ckan_datastore") as mock_ckan,
+        patch("app.tasks.timeline.imagery_service.update_request_task") as mock_update,
+    ):
+        count = await _fetch_property(uuid.uuid4(), uuid.uuid4(), county, address)
+
+    assert count == 0
+    mock_arcgis.assert_not_called()
+    mock_ckan.assert_not_called()
+    mock_update.assert_called_once()
+    assert mock_update.call_args[0][2] == "skipped"
+    counts = mock_update.call_args.kwargs["counts"]
+    assert counts.coverage == "not_covered"
+    assert (counts.queries_run, counts.queries_failed) == (0, 0)
+    # NULL, not 0: nothing was counted because nothing was asked.
+    assert mock_update.call_args.kwargs["clear_items_found"] is True
+    assert mock_update.call_args.kwargs["items_found"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("county", "address"),
+    [
+        # Unincorporated Adams with a Brighton mailing address — the layer
+        # holds York St records to 16610, so denying on the mailing city
+        # would lose them (checked 2026-08-27).
+        ("Adams", "16610 YORK ST, BRIGHTON, CO, 80602"),
+        # Unincorporated Adams with a Denver mailing address, same shape.
+        ("Adams", "8601 EMERSON CT, DENVER, CO, 80229"),
+        ("Santa Clara", "200 E SANTA CLARA ST, SAN JOSE, CA, 95113"),
+    ],
+)
+async def test_fetch_property_inside_coverage_still_queries(county: str, address: str) -> None:
+    """The gate must not swallow the addresses the adapter does serve."""
+    from app.services.county_adapters import get_adapter_for_county
+    from app.tasks.timeline import _fetch_property
+
+    adapter = get_adapter_for_county(county)
+    assert adapter is not None
+
+    mock_db = MagicMock()
+    mock_db.__enter__ = MagicMock(return_value=mock_db)
+    mock_db.__exit__ = MagicMock(return_value=False)
+    mock_db.execute.return_value.scalars.return_value.first.return_value = MagicMock()
+
+    with (
+        patch("app.db.SessionLocal", return_value=mock_db),
+        patch("app.tasks.timeline.get_adapter_for_county", return_value=adapter),
+        patch(
+            "app.services.county_adapters.query_feature_service",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "app.services.county_adapters.query_ckan_datastore",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "app.tasks.timeline.property_events_service.count_property_events",
+            return_value=0,
+        ),
+        patch("app.tasks.timeline.imagery_service.update_request_task") as mock_update,
+    ):
+        await _fetch_property(uuid.uuid4(), uuid.uuid4(), county, address)
+
+    final = mock_update.call_args_list[-1]
+    assert final[0][2] == "complete"
+    assert final.kwargs["counts"].coverage == "covered"
+    assert final.kwargs["counts"].queries_run > 0
 
 
 @pytest.mark.asyncio

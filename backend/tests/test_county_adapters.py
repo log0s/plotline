@@ -481,3 +481,61 @@ async def test_one_malformed_query_does_not_discard_the_others() -> None:
     assert not result.all_queries_failed
     # The surviving layer's record is still here
     assert [e.source_record_id for e in result.events] == ["2024-BLD-001"]
+
+
+# ── Municipality coverage gate ───────────────────────────────────────────────
+
+
+def test_covers_defaults_to_true_for_city_county_adapters() -> None:
+    """Denver, DC and Manhattan have no boundary below the county to gate on."""
+    from app.services.county_adapters import DCAdapter, DenverAdapter, NewYorkCountyAdapter
+
+    for adapter in (DenverAdapter(), DCAdapter(), NewYorkCountyAdapter()):
+        assert adapter.covers("ANY CITY") is True
+        assert adapter.covers(None) is True
+
+
+@pytest.mark.parametrize(
+    ("city", "covered"),
+    [
+        # The confirmed instance: 12804 Emerson is Thornton's to permit.
+        ("THORNTON", False),
+        ("Thornton", False),
+        ("  northglenn ", False),
+        ("COMMERCE CITY", False),
+        # Mailing cities for large unincorporated pockets the layer does
+        # cover — 8601 EMERSON CT geocodes to DENVER in Adams County and
+        # 16610 YORK ST to BRIGHTON, and the layer holds records for both.
+        ("DENVER", True),
+        ("BRIGHTON", True),
+        ("STRASBURG", True),
+        # Never deny on missing data.
+        (None, True),
+        ("", True),
+    ],
+)
+def test_adams_covers_unincorporated_only(city: str | None, covered: bool) -> None:
+    """Delete-the-fix: return True unconditionally from AdamsCountyAdapter.covers
+    and the Thornton rows fail — which is the state that reported 12804 Emerson
+    as complete:0 rather than not-covered."""
+    from app.services.county_adapters import AdamsCountyAdapter
+
+    assert AdamsCountyAdapter().covers(city) is covered
+
+
+@pytest.mark.parametrize(
+    ("city", "covered"),
+    [
+        ("SAN JOSE", True),
+        ("san jose", True),
+        ("SUNNYVALE", False),
+        ("MOUNTAIN VIEW", False),
+        ("CUPERTINO", False),
+        (None, True),
+    ],
+)
+def test_santa_clara_covers_san_jose_only(city: str | None, covered: bool) -> None:
+    """data.sanjoseca.gov is one city's portal, not the county's."""
+    from app.services.county_adapters import SantaClaraAdapter
+
+    assert SantaClaraAdapter().covers(city) is covered

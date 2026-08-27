@@ -620,7 +620,15 @@ def maybe_refetch_for_backfill(
             # 'partial' joins the list because it is exactly the state this
             # trigger exists for: some county queries failed, so the history
             # on file is known-thin and a later visit can honestly try again.
-            if not prop_task or prop_task.status in ("skipped", "partial", "failed"):
+            #
+            # 'not_covered' is excluded for the opposite reason. It is not a
+            # transient gap a retry can close: the county is not the permit
+            # authority for that address, and re-asking would dispatch a
+            # full-scope request on every single visit, forever. Only a code
+            # change — a new adapter, or a change to the coverage rule — can
+            # move it, and that arrives as a deploy, not as a refetch.
+            covered = prop_task is None or prop_task.coverage != "not_covered"
+            if covered and (not prop_task or prop_task.status in ("skipped", "partial", "failed")):
                 needs_refetch = True
                 logger.info(
                     "Property task missing/skipped/partial/failed — refetch needed",

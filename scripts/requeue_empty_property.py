@@ -89,6 +89,11 @@ def find_candidates(county_filter: str | None) -> list[tuple[uuid.UUID, str]]:
             .where(TimelineRequest.status.in_(("complete", "partial")))
             .where(TimelineRequestTask.source == "property")
             .where(TimelineRequestTask.status == "complete")
+            # Nullable since 0014. A not-covered task carries NULL here, and
+            # `NULL == 0` is NULL, so it is excluded — which is right twice
+            # over: it is also 'skipped', not 'complete', and re-queueing an
+            # address the county is not the authority for would ask the same
+            # question forever.
             .where(TimelineRequestTask.items_found == 0)
             .where(Parcel.county.isnot(None))
         )

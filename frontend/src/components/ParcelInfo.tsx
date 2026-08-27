@@ -17,7 +17,7 @@ import { isTimelineDelivered } from "../utils/timelineStatus";
 
 function TaskRow({ task }: { task: TimelineRequestTask }) {
   const label = SOURCE_LABELS[task.source] ?? task.source;
-  const isDone = task.status === "complete";
+  const isDone = task.status === "complete" || task.status === "partial";
   const isProcessing = task.status === "processing";
   const isFailed = task.status === "failed";
   const isSkipped = task.status === "skipped";
@@ -32,15 +32,22 @@ function TaskRow({ task }: { task: TimelineRequestTask }) {
     <span className="inline-block w-2 h-2 rounded-full bg-slate-600 shrink-0" />
   );
 
-  const statusText = isDone
-    ? `${task.items_found} item${task.items_found !== 1 ? "s" : ""}`
-    : isProcessing
-      ? "loading…"
-      : isFailed
-        ? "failed"
-        : isSkipped
-          ? "skipped"
-          : "queued";
+  // items_found is null when the task ran no queries. "not covered" is the
+  // honest reading of that; an "0 items" here would say we looked.
+  const statusText =
+    task.items_found == null && isSkipped
+      ? task.coverage === "covered"
+        ? "skipped"
+        : "not covered"
+      : isDone
+        ? `${task.items_found ?? 0} item${task.items_found !== 1 ? "s" : ""}`
+        : isProcessing
+          ? "loading…"
+          : isFailed
+            ? "failed"
+            : isSkipped
+              ? "skipped"
+              : "queued";
 
   return (
     <li className="flex items-center justify-between gap-2 text-xs">
@@ -133,8 +140,9 @@ export function ParcelInfo({
   const unavailableSources = tasks.filter(
     (t) => t.status === "failed" || t.status === "skipped",
   );
-  const taskStatus = (source: string) =>
-    tasks.find((t) => t.source === source)?.status;
+  const task = (source: string) => tasks.find((t) => t.source === source);
+  const taskStatus = (source: string) => task(source)?.status;
+  const propertyTask = task("property");
 
   const isLoading = geocodeMutation.isPending;
   const error = geocodeMutation.error?.message ?? null;
@@ -287,7 +295,9 @@ export function ParcelInfo({
               (timelineRequestId == null && snapshots.length > 0)
             }
             censusStatus={taskStatus("census")}
-            propertyStatus={taskStatus("property")}
+            propertyStatus={propertyTask?.status}
+            propertyCoverage={propertyTask?.coverage ?? null}
+            propertyMessage={propertyTask?.error_message ?? null}
             compact={isMobile}
           />
         </div>

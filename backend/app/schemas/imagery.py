@@ -23,6 +23,10 @@ class TimelineRequestTaskResponse(BaseModel):
     # address is outside the adapter's jurisdiction has no count to report,
     # and readers must render that as "not asked", not as zero.
     items_found: int | None = None
+    # Property-only, NULL elsewhere. 'not_covered' and 'no_adapter' are both
+    # "we did not ask"; the UI must render them as that, not as zero records
+    # and not as an error.
+    coverage: str | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
     error_message: str | None = None

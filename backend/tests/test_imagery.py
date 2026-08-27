@@ -370,7 +370,10 @@ def test_list_imagery_caps_rendered_preview_thumbnails(client: TestClient, db: S
 
 
 def _backfill_setup(
-    db: Session, property_status: str, age_hours: float = 24.0
+    db: Session,
+    property_status: str,
+    age_hours: float = 24.0,
+    coverage: str | None = None,
 ) -> tuple[object, object]:
     """Insert a completed request whose property task has the given status.
 
@@ -403,6 +406,7 @@ def _backfill_setup(
             TimelineRequestTask(
                 id=uuid.uuid4(),
                 timeline_request_id=req.id,
+                coverage=coverage if source == "property" else None,
                 source=source,
                 status=status,
                 items_found=0,
@@ -451,6 +455,40 @@ def test_backfill_leaves_complete_property_task_alone(db: Session) -> None:
     from app.services.imagery import maybe_refetch_for_backfill
 
     parcel, req = _backfill_setup(db, "complete")
+
+    assert maybe_refetch_for_backfill(db, parcel, req) is None
+
+
+def test_backfill_retries_a_partial_property_task(db: Session) -> None:
+    """A task that lost some of its county queries has a known hole a later
+    visit can honestly try to close — the same reason 'failed' is retried.
+
+    Delete-the-fix: drop ``"partial"`` from the status tuple in
+    ``maybe_refetch_for_backfill`` and this returns None, leaving the thin
+    history in place with nothing that would ever revisit it.
+    """
+    from app.services.imagery import maybe_refetch_for_backfill
+
+    parcel, req = _backfill_setup(db, "partial")
+
+    assert maybe_refetch_for_backfill(db, parcel, req) is not None
+
+
+def test_backfill_never_retries_a_not_covered_property_task(db: Session) -> None:
+    """A jurisdiction gap is not a transient one.
+
+    The county is not the permit authority for the address; re-asking would
+    dispatch a full-scope request on every page view, forever, and get the
+    same answer every time. Only a deploy — a new adapter, or a changed
+    coverage rule — can move it.
+
+    Delete-the-fix: remove the ``covered`` guard from
+    ``maybe_refetch_for_backfill`` and this returns a request, because
+    'skipped' is on the retry list.
+    """
+    from app.services.imagery import maybe_refetch_for_backfill
+
+    parcel, req = _backfill_setup(db, "skipped", coverage="not_covered")
 
     assert maybe_refetch_for_backfill(db, parcel, req) is None
 

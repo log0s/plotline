@@ -6,9 +6,10 @@ import { IncomeValueChart } from "./demographics/IncomeValueChart";
 import { NeighborhoodSnapshot } from "./demographics/NeighborhoodSnapshot";
 import { PopulationChart } from "./demographics/PopulationChart";
 import { PriceHistoryChart } from "./demographics/PriceHistoryChart";
+import { NotCoveredBanner } from "./demographics/NotCoveredBanner";
 import { UnsupportedCountyBanner } from "./demographics/UnsupportedCountyBanner";
 
-import type { TimelineRequestTask } from "../types";
+import type { TaskCoverage, TimelineRequestTask } from "../types";
 
 type TaskStatus = TimelineRequestTask["status"];
 
@@ -19,6 +20,13 @@ interface DemographicsPanelProps {
    * there's no run to wait on — treat it as settled, not pending. */
   censusStatus?: TaskStatus;
   propertyStatus?: TaskStatus;
+  /** Whether the county adapter was the authority for this address at all.
+   * "not_covered" is neither zero records nor an error, and must not be
+   * rendered as either. */
+  propertyCoverage?: TaskCoverage | null;
+  /** The property task's error_message, which names the county and city for
+   * the not-covered case. */
+  propertyMessage?: string | null;
   compact?: boolean;
 }
 
@@ -30,6 +38,8 @@ export function DemographicsPanel({
   enabled,
   censusStatus,
   propertyStatus,
+  propertyCoverage,
+  propertyMessage,
   compact,
 }: DemographicsPanelProps) {
   const selectedYear = useAppStore((s) => s.selectedYear);
@@ -75,13 +85,14 @@ export function DemographicsPanel({
     !demoFailed &&
     !eventsFailed
   ) {
+    const notCovered = propertyCoverage === "not_covered";
     const stillProcessing =
       isPending(censusStatus) || isPending(propertyStatus);
     const sourcesFailed =
       censusStatus === "failed" || propertyStatus === "failed";
 
     return (
-      <div className="flex items-center justify-center p-6 text-center">
+      <div className="flex flex-col items-center justify-center gap-3 p-6 text-center">
         <p className="text-xs text-slate-500">
           {stillProcessing ? (
             <>
@@ -101,10 +112,15 @@ export function DemographicsPanel({
               <br />
               We&rsquo;ll retry on your next visit.
             </>
+          ) : notCovered ? (
+            // "No records found" would claim we looked. We did not: the
+            // county is not the permit authority for this address.
+            <>No census records found for this address.</>
           ) : (
             <>No census or property records found for this address.</>
           )}
         </p>
+        {notCovered && <NotCoveredBanner message={propertyMessage ?? null} />}
       </div>
     );
   }
@@ -151,6 +167,9 @@ export function DemographicsPanel({
             Census data unavailable — we&rsquo;ll retry on your next visit.
           </span>
         </div>
+      )}
+      {propertyCoverage === "not_covered" && (
+        <NotCoveredBanner message={propertyMessage ?? null} />
       )}
       {propertyStatus === "failed" && !eventsFailed && (
         <div className="flex items-center gap-2 text-xs text-slate-400">

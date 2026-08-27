@@ -61,10 +61,31 @@ export interface ImagerySnapshot {
   stac_collection: string;
 }
 
+/** Whether the source's provider was the authority for this address at all.
+ *
+ * Property-only; null on every other source and on any task recorded before
+ * migration 0014. "not_covered" (the address is inside a municipality the
+ * county adapter doesn't serve) and "no_adapter" (the county has no adapter)
+ * are both "we did not ask" — never zero records, never an error. */
+export type TaskCoverage = "covered" | "not_covered" | "no_adapter";
+
 export interface TimelineRequestTask {
   source: string;
-  status: "queued" | "processing" | "complete" | "failed" | "skipped";
-  items_found: number;
+  // "partial" is terminal and serving at this level too: some of the source's
+  // queries failed and some did not, so the data shown is real but thin.
+  status:
+    | "queued"
+    | "processing"
+    | "complete"
+    | "partial"
+    | "failed"
+    | "skipped";
+  // null when the task ran no queries — there is no count to report, and 0
+  // would read as an answer.
+  items_found: number | null;
+  // Optional, not just nullable: payloads captured before migration 0014
+  // (types.contract.test.ts pins real ones) have no such key at all.
+  coverage?: TaskCoverage | null;
   started_at: string | null;
   completed_at: string | null;
   error_message: string | null;

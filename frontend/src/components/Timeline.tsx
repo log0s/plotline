@@ -56,12 +56,15 @@ function formatPublicationYear(isoDate: string): string {
 }
 
 function progressLabel(
-  tasks: { source: string; status: string; items_found: number }[],
+  tasks: { source: string; status: string; items_found: number | null }[],
 ): string {
   const parts: string[] = [];
   for (const t of tasks) {
     const label = SOURCE_LABELS[t.source] ?? t.source;
-    if (t.status === "complete") parts.push(`${label} (${t.items_found})`);
+    // A null count means the task ran no queries; it has no progress to
+    // report, so it contributes nothing rather than a "(0)".
+    if (t.status === "complete" && t.items_found != null)
+      parts.push(`${label} (${t.items_found})`);
     else if (t.status === "processing") parts.push(`Loading ${label}...`);
   }
   return parts.join(" · ");
@@ -173,7 +176,13 @@ export function Timeline({
     // Sort chronologically
     result.sort((a, b) => a.dateStr.localeCompare(b.dateStr));
     return result;
-  }, [snapshots, propertyEvents, activeFilters, activeEventFilters, compareMode]);
+  }, [
+    snapshots,
+    propertyEvents,
+    activeFilters,
+    activeEventFilters,
+    compareMode,
+  ]);
 
   // Imagery-only items for keyboard nav
   const visibleSnapshots = useMemo(
@@ -323,7 +332,9 @@ export function Timeline({
     imageryLoading ||
     timelineStatus?.status === "queued" ||
     timelineStatus?.status === "processing" ||
-    (timelineRequestId != null && timelineStatus == null && snapshots.length === 0);
+    (timelineRequestId != null &&
+      timelineStatus == null &&
+      snapshots.length === 0);
 
   const isFailed = timelineStatus?.status === "failed";
   const isEmpty = !isProcessing && !isFailed && snapshots.length === 0;
@@ -391,7 +402,12 @@ export function Timeline({
               {/* Imagery source toggles */}
               {snapshots.length > 0 &&
                 (
-                  ["usgs_topo", "naip", "landsat", "sentinel2"] as ImagerySource[]
+                  [
+                    "usgs_topo",
+                    "naip",
+                    "landsat",
+                    "sentinel2",
+                  ] as ImagerySource[]
                 ).map((src) => {
                   const hasItems = snapshots.some((s) => s.source === src);
                   if (!hasItems) return null;
@@ -401,7 +417,9 @@ export function Timeline({
                       key={src}
                       onClick={() => toggleFilter(src)}
                       className={`px-2 py-0.5 rounded text-[10px] font-medium whitespace-nowrap transition-opacity ${
-                        active ? SOURCE_COLORS[src] : "bg-navy-800 text-slate-500"
+                        active
+                          ? SOURCE_COLORS[src]
+                          : "bg-navy-800 text-slate-500"
                       }`}
                       title={`${active ? "Hide" : "Show"} ${SOURCE_LABELS[src]}`}
                     >
@@ -439,28 +457,31 @@ export function Timeline({
             {/* Fade hint for scroll overflow (mobile only) */}
             <div
               className="pointer-events-none absolute inset-y-0 right-0 w-6 md:hidden"
-              style={{ background: "linear-gradient(to left, rgba(8,13,26,0.95), transparent)" }}
+              style={{
+                background:
+                  "linear-gradient(to left, rgba(8,13,26,0.95), transparent)",
+              }}
             />
           </div>
 
           {/* Compare toggle — pinned outside scroll area */}
           {snapshots.length >= 2 && (
             <>
-            <span className="hidden md:block w-px h-4 bg-navy-700/60 mx-1" />
-            <button
-              onClick={() => setCompareMode(!compareMode)}
-              className={`flex items-center justify-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-all shrink-0 min-w-[32px] min-h-[32px] ${
-                compareMode
-                  ? "bg-amber-500 text-navy-950 font-semibold"
-                  : "border border-amber-500/40 text-amber-400/70 hover:border-amber-500 hover:text-amber-400"
-              }`}
-              title={
-                compareMode ? "Exit compare mode" : "Compare two snapshots"
-              }
-            >
-              <SplitSquareHorizontal size={12} />
-              <span className="hidden md:inline">Compare</span>
-            </button>
+              <span className="hidden md:block w-px h-4 bg-navy-700/60 mx-1" />
+              <button
+                onClick={() => setCompareMode(!compareMode)}
+                className={`flex items-center justify-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-all shrink-0 min-w-[32px] min-h-[32px] ${
+                  compareMode
+                    ? "bg-amber-500 text-navy-950 font-semibold"
+                    : "border border-amber-500/40 text-amber-400/70 hover:border-amber-500 hover:text-amber-400"
+                }`}
+                title={
+                  compareMode ? "Exit compare mode" : "Compare two snapshots"
+                }
+              >
+                <SplitSquareHorizontal size={12} />
+                <span className="hidden md:inline">Compare</span>
+              </button>
             </>
           )}
         </div>

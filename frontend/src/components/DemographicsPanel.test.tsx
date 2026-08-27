@@ -86,6 +86,42 @@ describe("DemographicsPanel property source states", () => {
       screen.getByText(/we’ll retry on your next visit/i),
     ).toBeInTheDocument();
   });
+
+  // The fourth state, new with migration 0014: the county has an adapter but
+  // is not the authority for this address. 12804 Emerson is in Thornton,
+  // which issues its own permits, and the county layer's Emerson coverage
+  // stops below it — confirmed twice on 2026-08-27.
+  //
+  // Delete-the-fix: remove the `propertyCoverage === "not_covered"` branch
+  // from DemographicsPanel and the banner assertion fails; the panel falls
+  // back to the same silence it gives a real complete-with-zero.
+  it("says the records are the city's when the county doesn't cover the address", async () => {
+    renderWithProviders(
+      <DemographicsPanel
+        parcelId={ADAMS_PARCEL}
+        enabled
+        censusStatus="complete"
+        propertyStatus="skipped"
+        propertyCoverage="not_covered"
+        propertyMessage="Adams County's records don't cover Thornton — the city keeps its own"
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/don’t cover Thornton|don't cover Thornton/i),
+      ).toBeInTheDocument(),
+    );
+    // Not an error, and not a claim that we looked and found nothing.
+    expect(
+      screen.queryByText(/property records unavailable/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/we’ll retry/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/no census or property records found/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/could not load/i)).not.toBeInTheDocument();
+  });
 });
 
 // The third M11 state: nothing has run yet. Empty payloads here mean "not

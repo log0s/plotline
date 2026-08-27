@@ -259,3 +259,28 @@ def test_directional_variants_score_above_genuine_mismatch() -> None:
 )
 def test_extract_search_terms(raw: str, expected: tuple[str, str]) -> None:
     assert extract_search_terms(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("12804 EMERSON ST, THORNTON, CO, 80241", "THORNTON"),
+        ("8601 EMERSON CT, DENVER, CO, 80229", "DENVER"),
+        # Lowercase and stray whitespace are the geocoder's, not ours.
+        ("200 E Santa Clara St, san jose , CA, 95113", "SAN JOSE"),
+        # A raw address that was never geocoded has no city component; None
+        # is the honest answer, and covers() reads it as "don't deny".
+        # Production's other real shapes, read 2026-08-27.
+        ("12804 Emerson Street, Thornton, Colorado 80241", "THORNTON"),
+        # A city-level geocode has no street line, so the second component is
+        # the state. Digits give it away; a city name has none.
+        ("Cupertino, California 95014", None),
+        ("1600 PENNSYLVANIA AVE NW", None),
+        ("", None),
+        ("123 MAIN ST,", None),
+    ],
+)
+def test_city_from_address(raw: str, expected: str | None) -> None:
+    from app.services.address_normalizer import city_from_address
+
+    assert city_from_address(raw) == expected

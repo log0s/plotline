@@ -24,7 +24,11 @@ from app.services import property_events as property_events_service
 from app.services import stac as stac_service
 from app.services import usgs_topo as topo_service
 from app.services import year_ledger
-from app.services.address_normalizer import extract_search_terms, is_address_match
+from app.services.address_normalizer import (
+    city_from_address,
+    extract_search_terms,
+    is_address_match,
+)
 from app.services.census import (
     ACS5_YEARS,
     DECENNIAL_YEARS,
@@ -1279,6 +1283,42 @@ async def _fetch_property(
             "property",
             "skipped",
             error_message=f"Property data not yet available for {county} County",
+            counts=imagery_service.TaskCounts(
+                queries_run=0,
+                queries_failed=0,
+                coverage="no_adapter",
+            ),
+            clear_items_found=True,
+        )
+        return 0
+
+    # The municipality coverage gate. An adapter can be the wrong authority
+    # for an address inside the county it serves: Adams County's layer covers
+    # unincorporated Adams, and 12804 Emerson is in Thornton, which issues its
+    # own permits. Reporting that as complete:0 is the same conflation
+    # "no adapter for county" already avoids, one level down — so it resolves
+    # to the same skipped state, distinguished by ``coverage``.
+    city = city_from_address(normalized_address)
+    if not adapter.covers(city):
+        logger.info(
+            "Address outside adapter coverage",
+            extra={"county": county, "city": city, "parcel_id": str(parcel_id)},
+        )
+        _set_task_status(
+            timeline_request_id,
+            "property",
+            "skipped",
+            error_message=(
+                f"{county} County's records don't cover {city.title()} — the city keeps its own"
+                if city
+                else f"Address is outside {county} County's records"
+            ),
+            counts=imagery_service.TaskCounts(
+                queries_run=0,
+                queries_failed=0,
+                coverage="not_covered",
+            ),
+            clear_items_found=True,
         )
         return 0
 

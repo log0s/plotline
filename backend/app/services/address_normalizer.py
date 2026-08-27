@@ -106,6 +106,40 @@ def extract_search_terms(address: str) -> tuple[str, str]:
     return street_number, parts[idx] if idx < len(parts) else parts[1]
 
 
+def city_from_address(address: str) -> str | None:
+    """The city component of a geocoded address, or None if there isn't one.
+
+    The Census geocoder's ``matchedAddress`` — what ``parcels.normalized_address``
+    holds — is comma-delimited street, city, state, ZIP:
+    ``"12804 EMERSON ST, THORNTON, CO, 80241"``. There is no city column on
+    ``parcels`` and no city field on ``GeocodeResult``, so this line is the
+    only place the city exists, which is why the county adapters' coverage
+    gate reads it from here.
+
+    Uppercased and stripped, matching how the adapters spell their city sets.
+    A raw user-typed address that was never geocoded may have no second
+    component at all; None is the honest answer there, and ``covers()``
+    treats it as "don't know, don't deny".
+
+    Production carries more than one shape (read 2026-08-27): the strict
+    Census form ``"12804 EMERSON ST, THORNTON, CO, 80241"``, a
+    spelled-out one ``"12804 Emerson Street, Thornton, Colorado 80241"``,
+    and city-level geocodes with no street line at all —
+    ``"Cupertino, California 95014"``, where the second component is the
+    *state*, not the city. A component containing digits is therefore
+    rejected: a US city name has none, and returning "CALIFORNIA 95014" as a
+    city would let an allowlist adapter deny an address on a reading it never
+    actually made.
+    """
+    parts = [p.strip() for p in address.split(",")]
+    if len(parts) < 2 or not parts[1]:
+        return None
+    city = parts[1].upper()
+    if any(c.isdigit() for c in city):
+        return None
+    return city
+
+
 def _street_line(address: str) -> str:
     """The street portion of an address — everything before the first comma.
 
