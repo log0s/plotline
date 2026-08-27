@@ -196,6 +196,15 @@ not fixed here — out of scope).
 
 1. **`scripts/backfill_census_housing.py`'s `deployed_sha` write** — code-read
    only, no passing test (see Tests section above).
+   *Later, 2026-08-27 (`48b7fd8`): **closed**, and the reason recorded here was
+   wrong. `from app.db import SessionLocal` binds a name on the script module,
+   and rebinding that attribute is what `tests/test_revalidate_landsat.py:178`
+   already does — the seam existed. What actually blocked the test was the
+   script passing `parcel_id` as a `str` into a `UUID(as_uuid=True)` column:
+   psycopg2 coerces it, SQLAlchemy's SQLite variant raises `'str' object has no
+   attribute 'hex'`. Fixed at the source (`uuid.UUID(parcel_id)`) and covered by
+   `tests/test_backfill_census_housing.py`, delete-the-fix observed.
+   `../2026-08-property-outcomes/REPORT.md` §8.*
 2. **Migration downgrade path** — read, not executed against any database.
 3. **Claims 2, 3, 5 in `PREDICTION.md`** (post-deploy dry-run counts, the
    second dry-run reading zero, a real census heal's checksum-stable
