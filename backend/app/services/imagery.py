@@ -898,6 +898,52 @@ _GROUP_KEY_ENCODERS: dict[str, Callable[[tuple[int, ...]], str]] = {
 WHOLE_SOURCE_GROUP_KEY = "*"
 
 
+# ── Attempted set per source: what current code could still ask about ─────────
+
+# A group outside this set cannot be turned into "ok" by any run of current
+# code, so treating it as retryable forever is a policy gap (Y3,
+# docs/audits/2026-08-m3/STATUS.md): e6afa9b removed 1990 from
+# census.DECENNIAL_YEARS, so the pre-trim 1990 absent/api_no_data rows became
+# permanently — and wrongly — "retryable". Selection filters on this; a group
+# outside it moves to ledger_gaps.py's ``stale`` bucket instead of vanishing.
+#
+# Imagery sources whose loop covers "start year through today" read their
+# floor from IMAGERY_SOURCE_START_YEAR, the same table tasks/timeline.py's
+# ``_SOURCES`` builds start_year/start_date from, so a changed floor cannot
+# drift the two apart. Census's calendar is an explicit list per dataset,
+# imported from app.services.census rather than copied. usgs_topo has no
+# per-decade attempted set (INVESTIGATION section 3e) — one untimed search
+# either ran or didn't, so its only attempted group is the whole-source key.
+IMAGERY_SOURCE_START_YEAR: dict[str, int] = {
+    "naip": 2010,
+    "landsat": 1984,
+    "sentinel2": 2015,
+}
+
+
+def attempted_group_keys(source: str) -> set[str]:
+    """Every group_key current code could record an outcome for, this source.
+
+    Raises ``ValueError`` for a ledger source this function does not know —
+    silently returning an empty set would make every group of a new source
+    look stale on day one.
+    """
+    if source == "census_decennial":
+        from app.services.census import DECENNIAL_YEARS
+
+        return {encode_group_key("year", y) for y in DECENNIAL_YEARS}
+    if source == "census_acs5":
+        from app.services.census import ACS5_YEARS
+
+        return {encode_group_key("year", y) for y in ACS5_YEARS}
+    if source in IMAGERY_SOURCE_START_YEAR:
+        start = IMAGERY_SOURCE_START_YEAR[source]
+        return {encode_group_key("year", y) for y in range(start, date.today().year + 1)}
+    if source == "usgs_topo":
+        return {WHOLE_SOURCE_GROUP_KEY}
+    raise ValueError(f"Unknown ledger source: {source!r}")
+
+
 def encode_group_key(scope: str, value: date | int) -> str:
     """Encode a capture date (or bare year) as this scope's group key.
 

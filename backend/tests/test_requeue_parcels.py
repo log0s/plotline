@@ -118,6 +118,18 @@ def test_gate_runs_for_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
     assert exc.value.code == 1
 
 
+def test_groups_without_from_ledger_refuses(monkeypatch: pytest.MonkeyPatch, capsys: Any) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["requeue_parcels.py", "--skip-deploy-check", "not-a-uuid", "--groups", "2000"],
+    )
+    with pytest.raises(SystemExit) as exc:
+        script.main()
+    assert exc.value.code == 2
+    assert "--groups only means something with --from-ledger" in capsys.readouterr().err
+
+
 def test_bare_invocation_refuses_naming_both_flags(no_http: list[str], capsys: Any) -> None:
     with pytest.raises(SystemExit) as exc:
         script._check_deploy_gate("http://api:8000", None, skip=False)
@@ -201,6 +213,28 @@ def test_from_ledger_needs_the_flag_to_reach_absent_api(
     assert without == {}
     assert sorted(with_flag[parcel_id]) == ["census"]
     assert len(with_flag[parcel_id]["census"]) == 1
+
+
+def test_groups_narrows_selection_within_a_source(
+    committing_db: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--groups`` is operator scope on top of the retry policy, not a
+    substitute for the stale filter — see test_ledger_selection.py's Y3
+    tests for that half."""
+    from tests.test_ledger_selection import _parcel, _record, _run
+
+    monkeypatch.setattr(script, "SessionLocal", committing_db)
+
+    parcel_id = _parcel(committing_db)
+    tasks = _run(committing_db, parcel_id, sources=("landsat",), age_hours=2)
+    _record(committing_db, tasks["landsat"], "landsat", "1993", "failed", "read_timeout")
+    _record(committing_db, tasks["landsat"], "landsat", "1994", "failed", "read_timeout")
+
+    narrowed = script.select_from_ledger(
+        [], None, include_cloud_filtered=False, include_absent_api=False, groups=["1993"]
+    )
+
+    assert [g.group_key for g in narrowed[parcel_id]["landsat"]] == ["1993"]
 
 
 def test_from_ledger_narrows_to_the_ids_given(

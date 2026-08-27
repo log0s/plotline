@@ -108,6 +108,9 @@ Usage (API + worker must be running):
     docker compose exec api python scripts/requeue_parcels.py \
         --require-sha <sha> --from-ledger --sources census_decennial \
         --include-absent-api
+    docker compose exec api python scripts/requeue_parcels.py \
+        --require-sha <sha> --from-ledger --sources census_decennial \
+        --include-absent-api --groups 2000
 """
 
 from __future__ import annotations
@@ -239,16 +242,23 @@ def select_from_ledger(
     *,
     include_cloud_filtered: bool,
     include_absent_api: bool,
+    groups: list[str] | None = None,
 ) -> dict[uuid.UUID, dict[str, list[ledger_service.LedgerGroup]]]:
     """Parcels the retry policy has work for, and the scope each one needs.
 
     An empty ``parcel_ids`` means the whole fleet. The scope is derived per
     parcel, not shared: a parcel with only failed Landsat years gets a
     Landsat-only request even when the run also selects a census-only parcel.
+
+    ``groups`` is operator scope on top of the retry policy — "just 2000 this
+    time" — not a substitute for it: a group current code no longer attempts
+    is already excluded by ``ledger_service.is_stale`` regardless of this
+    filter (Y3, ``docs/audits/2026-08-m3/STATUS.md``).
     """
     wanted = set(parcel_ids) or None
+    wanted_groups = set(groups) if groups else None
     with SessionLocal() as db:
-        groups = ledger_service.retryable_groups(
+        retryable = ledger_service.retryable_groups(
             db,
             sources=ledger_filter(sources),
             include_cloud_filtered=include_cloud_filtered,
@@ -256,8 +266,10 @@ def select_from_ledger(
         )
 
     selected: dict[uuid.UUID, dict[str, list[ledger_service.LedgerGroup]]] = {}
-    for group in groups:
+    for group in retryable:
         if wanted is not None and group.parcel_id not in wanted:
+            continue
+        if wanted_groups is not None and group.group_key not in wanted_groups:
             continue
         selected.setdefault(group.parcel_id, {}).setdefault(group.task_source, []).append(group)
     return selected
@@ -327,6 +339,15 @@ def main() -> None:
         "the request itself has changed (e.g. the decennial tract trim)",
     )
     parser.add_argument(
+        "--groups",
+        nargs="+",
+        metavar="GROUP_KEY",
+        help="Limit --from-ledger selection to these group keys (e.g. 2000), "
+        "composable with --sources. Operator scope on top of the retry "
+        "policy, not a substitute for it — a group current code no longer "
+        "attempts stays excluded regardless of this flag",
+    )
+    parser.add_argument(
         "--api-url",
         default=get_settings().api_internal_url,
         help="Base URL of the running API to read /api/v1/health from",
@@ -358,6 +379,7 @@ def main() -> None:
     for flag, name in (
         (args.include_cloud_filtered, "--include-cloud-filtered"),
         (args.include_absent_api, "--include-absent-api"),
+        (args.groups, "--groups"),
     ):
         if flag and not args.from_ledger:
             parser.error(f"{name} only means something with --from-ledger")
@@ -382,6 +404,7 @@ def main() -> None:
             args.sources,
             include_cloud_filtered=args.include_cloud_filtered,
             include_absent_api=args.include_absent_api,
+            groups=args.groups,
         )
         targets = sorted(selected, key=str)
         scope = {pid: sorted(selected[pid]) for pid in targets}

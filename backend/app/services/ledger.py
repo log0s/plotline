@@ -29,6 +29,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from app.models.parcels import TimelineRequest
+from app.services.imagery import attempted_group_keys
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +213,19 @@ def retry_policy(outcome: str, reason: str | None) -> str:
     return NEVER
 
 
+def is_stale(group: LedgerGroup) -> bool:
+    """Whether current code would ever attempt this group again.
+
+    A group outside ``attempted_group_keys(group.source)`` cannot be turned
+    into ``ok`` by any run of current code — the census 1990 endpoint that
+    ``e6afa9b`` stopped asking about is the instance this exists for (Y3).
+    Distinct from the retry policy: an outcome can be policy-retryable and
+    still stale, and the stale group is what ``ledger_gaps.py`` reports
+    separately rather than silently dropping.
+    """
+    return group.group_key not in attempted_group_keys(group.source)
+
+
 def is_retryable(
     group: LedgerGroup,
     *,
@@ -219,6 +233,8 @@ def is_retryable(
     include_absent_api: bool = False,
 ) -> bool:
     """Whether this group is worth another attempt under the given flags."""
+    if is_stale(group):
+        return False
     policy = retry_policy(group.outcome, group.reason)
     if policy == RETRY:
         return True

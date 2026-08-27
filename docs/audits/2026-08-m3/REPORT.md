@@ -632,3 +632,114 @@ only one of the nine latest `suppressed` rows with a served snapshot);
 `ledger_gaps.py` did already compute latest-outcome-per-triple; and the
 request-status defect is real — `b1392b23` reads `complete` with two `failed`
 task rows under it as of 18:12Z.
+
+---
+
+## Addendum, 2026-08-26 — Y3 fix: a group current code no longer attempts is no longer "retryable"
+
+One commit on top of the five above. Mode: execute. Not pushed.
+
+### The attempted set, per loop, before this fix
+
+Nothing before this batch could answer "would current code ever attempt
+group X of source Y again", so nothing could tell a genuinely-still-failing
+group from one whose endpoint or year list moved out from under it. Five
+loops, five different answers, none of them shared:
+
+| source(s) | where the attempted set lives | shape |
+|---|---|---|
+| `census_decennial` | `census.py:91` `DECENNIAL_YEARS` | explicit year list |
+| `census_acs5` | `census.py:92` `ACS5_YEARS` | explicit year list |
+| `naip`, `landsat`, `sentinel2` | `timeline.py:58,70,82` (`start_date`/`start_year` on each `_SOURCES` entry) | `start_year..today` |
+| `usgs_topo` | nowhere — one untimed TNM query, `timeline.py:779` | whole-source only (`WHOLE_SOURCE_GROUP_KEY`, `"*"`) |
+
+The census loops (`timeline.py:1063` decennial, `:1123` acs5) iterate their
+list directly; the imagery loops (`timeline.py:381` chunk-by-year, `:441-443`
+un-chunked) build `attempted` from `start_year`/`start_date` through
+`date.today()`. `e6afa9b` shrank `DECENNIAL_YEARS` by removing 1990; nothing
+downstream of that change knew the ledger's pre-existing 1990 rows had gone
+stale, so `is_retryable` kept saying yes forever.
+
+### The fix
+
+1. **`imagery.attempted_group_keys(source) -> set[str]`**
+   (`imagery.py:924-945`), the one place all four shapes above are now
+   expressed. Census sources import `DECENNIAL_YEARS`/`ACS5_YEARS` directly
+   rather than duplicating them. The three time-ranged imagery sources read
+   their floor from `imagery.IMAGERY_SOURCE_START_YEAR`
+   (`imagery.py:917-921`) — `_SOURCES` in `timeline.py:58,70,82` now builds
+   `start_date`/`start_year` from that same dict, so the loop and the
+   attempted-set function cannot drift apart. `usgs_topo` returns
+   `{WHOLE_SOURCE_GROUP_KEY}` — the exception item 1 asked about: it has no
+   per-decade attempted set (INVESTIGATION §3e), so its only attempted group
+   is the whole-source key, and its per-decade rows are a *result*
+   classification, never an attempted one. An unknown source raises
+   `ValueError` rather than returning an empty set, so a new source with no
+   entry here fails loud instead of reading every one of its groups as
+   stale.
+2. **`ledger.is_stale(group)`** (`ledger.py:216-226`) and its use inside
+   `is_retryable` (`ledger.py:236-237`): a group outside its source's
+   attempted set is never retryable, regardless of outcome or flag.
+3. **`ledger_gaps.py`'s `stale` bucket** (`_print_stale`,
+   `scripts/ledger_gaps.py`): a stale group's outcome is unchanged and it is
+   never selected, but it is listed under its own heading rather than
+   silently dropped from the report — the ledger's job is to show, not to
+   hide.
+4. **`--groups` on `requeue_parcels.py`** (`scripts/requeue_parcels.py`):
+   operator scope on top of the retry policy, composable with `--sources`;
+   explicitly not a substitute for item 2 — a stale group stays excluded
+   regardless of `--groups`.
+
+### Delete-the-fix
+
+Reverting the two-line `is_stale` guard inside `is_retryable`
+(`ledger.py:236-237`) makes
+`test_a_stale_group_is_never_selected_even_with_every_flag`
+(`test_ledger_selection.py`) fail exactly as expected: both the retired 1990
+row and the live 2000 row select. Restored and re-verified green.
+
+### Tests
+
+`test_ledger_selection.py`: `attempted_group_keys` excludes a retired year
+and includes a live one; an unknown source raises; a fixture with a
+`census_decennial`/1990 `absent/api_no_data` row and a 2000 one selects only
+2000 under `--include-absent-api`; `is_stale` agrees with
+`attempted_group_keys` directly. `test_ledger_gaps.py` (new): the 1990 row
+reports `stale=True`, 2000 `stale=False`; `_print_stale` lists the retired
+group and is silent when nothing is stale. `test_requeue_parcels.py`:
+`--groups` narrows a dry-run selection within a source; `--groups` without
+`--from-ledger` refuses.
+
+Full suite: 593 passed, 1 skipped (a pre-existing environment-dependent
+skip, unrelated to this batch), plus two pre-existing environment-only
+failures present identically at `ea0f640` before this batch
+(`test_health.py::test_health_survives_missing_build_identity`,
+`test_workflow_pins.py::test_every_action_is_pinned_to_a_commit_sha` — the
+first depends on a build-identity env var this container doesn't set, the
+second on a `.github/workflows` directory not mounted into it). `ruff check
+app/ tests/`, `ruff format --check app/ tests/`, and `mypy app/` are clean.
+Run under `CI=true LOG_LEVEL=WARNING`, `uv sync --locked --all-extras`
+(`--all-extras` needed locally to pull the `dev` dependency group that
+carries `pytest-socket`; CI's own `uv sync --locked` step installs it by a
+different path — not investigated further, out of scope for this batch),
+against a real `TEST_POSTGRES_URL` (the local `docker compose` Postgres,
+not production).
+
+### PREDICTION.md P2, corrected
+
+Neither M3 nor this fix is deployed (`fly image show -a plotline-worker`:
+`GH_SHA=b599c2519c5c29fc8b5e4ab170da1b0021f2c559`, pre-`ae740cf`), so the
+corrected count could not come from running `requeue_parcels.py --dry-run`
+against prod — the deploy gate would refuse it, and pre-M3 code has no
+`services/ledger.py` to run in the first place. What was run instead is a
+read-only SQL query against prod (`fly ssh console -a log0s-plotline-api -C`,
+`SELECT` only, 2026-08-26) reproducing `ledger.py`'s own latest-outcome
+window for `source = 'census_decennial'`, grouped by `group_key`/`outcome`.
+**Corrected: 140 parcels, 140 groups — not 187/327.** Full addendum,
+including the raw query result, is in `PREDICTION.md` under P2. This is a
+scored correction of the 187/327 number, not a rewrite of it; the original
+prediction stood correctly for the code as it existed when it was written.
+
+### STATUS.md
+
+Y3 → resolved, with the hash of the commit carrying this addendum.

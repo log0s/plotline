@@ -55,7 +55,7 @@ _SOURCES: list[dict[str, Any]] = [
         # fleet-wide 2010 histogram floor measures (STATUS.md T4).
         # The end stays open, resolved to the current year at fetch time: the
         # collection's extent end trails the data as new flights land.
-        "start_date": "2010-01-01",
+        "start_date": f"{imagery_service.IMAGERY_SOURCE_START_YEAR['naip']}-01-01",
         "max_items": 50,
         "query": None,
         "selector": stac_service.select_naip_items,
@@ -67,7 +67,7 @@ _SOURCES: list[dict[str, Any]] = [
     {
         "source": "landsat",
         "collection": "landsat-c2-l2",
-        "start_year": 1984,
+        "start_year": imagery_service.IMAGERY_SOURCE_START_YEAR["landsat"],
         "max_items_per_year": 20,
         "query": {"eo:cloud_cover": {"lt": 40}},
         "selector": stac_service.select_landsat_items,
@@ -79,7 +79,7 @@ _SOURCES: list[dict[str, Any]] = [
     {
         "source": "sentinel2",
         "collection": "sentinel-2-l2a",
-        "start_year": 2015,
+        "start_year": imagery_service.IMAGERY_SOURCE_START_YEAR["sentinel2"],
         "max_items_per_year": 20,
         "query": {"eo:cloud_cover": {"lt": 40}},
         "selector": stac_service.select_sentinel_items,

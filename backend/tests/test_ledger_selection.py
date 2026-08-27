@@ -250,6 +250,69 @@ def test_a_suppressed_group_is_never_retried(committing_db: sessionmaker[Session
         assert ledger_service.retryable_groups(db, parcel_id=parcel_id) == []
 
 
+# ── Stale groups: current code no longer attempts them (Y3) ─────────────────
+
+
+def test_attempted_group_keys_excludes_a_retired_year() -> None:
+    """e6afa9b dropped 1990 from DECENNIAL_YEARS; 2000 stayed."""
+    attempted = ledger_service.attempted_group_keys("census_decennial")
+    assert "1990" not in attempted
+    assert "2000" in attempted
+
+
+def test_attempted_group_keys_rejects_an_unknown_source() -> None:
+    with pytest.raises(ValueError, match="Unknown ledger source"):
+        ledger_service.attempted_group_keys("not_a_real_source")
+
+
+def test_a_stale_group_is_never_selected_even_with_every_flag(
+    committing_db: sessionmaker[Session],
+) -> None:
+    """The Y3 fixture: a retired-year row and a live-year row, same outcome.
+
+    Only the live year selects. Delete ``is_stale`` from ``is_retryable`` and
+    both select — 187 parcels' worth of 1990 rows staying "retryable"
+    forever is exactly the defect this guards against.
+    """
+    parcel_id = _parcel(committing_db)
+    tasks = _run(committing_db, parcel_id, sources=("census",), age_hours=2)
+    _record(committing_db, tasks["census"], "census_decennial", "1990", "absent", "api_no_data")
+    _record(committing_db, tasks["census"], "census_decennial", "2000", "absent", "api_no_data")
+
+    with committing_db() as db:
+        selected = ledger_service.retryable_groups(db, parcel_id=parcel_id, include_absent_api=True)
+
+    assert [(g.source, g.group_key) for g in selected] == [("census_decennial", "2000")]
+
+
+def test_is_stale_matches_attempted_group_keys() -> None:
+    stale = _group("absent", "api_no_data")
+    assert ledger_service.is_stale(
+        ledger_service.LedgerGroup(
+            parcel_id=stale.parcel_id,
+            source="census_decennial",
+            group_key="1990",
+            outcome="absent",
+            reason="api_no_data",
+            detail=None,
+            run_at=None,
+            attempts=1,
+        )
+    )
+    assert not ledger_service.is_stale(
+        ledger_service.LedgerGroup(
+            parcel_id=stale.parcel_id,
+            source="census_decennial",
+            group_key="2000",
+            outcome="absent",
+            reason="api_no_data",
+            detail=None,
+            run_at=None,
+            attempts=1,
+        )
+    )
+
+
 # ── Per-source dispatch history ──────────────────────────────────────────────
 
 

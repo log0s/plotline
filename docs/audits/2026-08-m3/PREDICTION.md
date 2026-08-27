@@ -240,6 +240,49 @@ SELECT count(*) FROM census_snapshots WHERE dataset='decennial' AND year=2000;  
 * A `census_decennial`/`1990` row moving. That would mean 1990 is still being
   attempted, i.e. `e6afa9b` is not actually the running code.
 
+### Addendum, 2026-08-26 — Y3 fix, corrected dry-run count: 140, not 187
+
+`docs/audits/2026-08-second-audit/STATUS.md` Y3: the 187/327 figure above
+included 187 stale `census_decennial`/`1990` rows that current code will
+never attempt again (`e6afa9b` dropped 1990 from `DECENNIAL_YEARS`), so
+`--from-ledger` was permanently re-selecting all 187 parcels on the strength
+of a group it can't retry. `services/ledger.is_stale` (paired with the new
+`imagery.attempted_group_keys`) now excludes it; this is a **scored
+correction of the number above, not a rewrite** — the 187/327 prediction
+stands as written and was accurate to the code at the time it was made.
+
+**The corrected number is not from `requeue_parcels.py --dry-run`.** Neither
+M3 nor this Y3 fix is deployed — `fly image show -a plotline-worker` still
+reports `GH_SHA=b599c25...`, pre-`ae740cf` — so running the script against
+prod would execute code that doesn't have `services/ledger.py` at all, and
+the deploy gate would refuse it regardless. What was run instead is a
+read-only SQL query against prod (`fly ssh console -a log0s-plotline-api -C`,
+`SELECT` only, 2026-08-26) reproducing the corrected selection logic by hand
+— the same latest-outcome window `ledger.py`'s `_LATEST_SQL` computes,
+grouped by `group_key`/`outcome`/`reason` for `source = 'census_decennial'`:
+
+```
+('1990', 'absent', 'api_no_data', 187)
+('2000', 'absent', 'api_no_data', 140)
+('2000', 'ok',              None,  47)
+('2010', 'ok',              None, 187)
+('2020', 'ok',              None, 187)
+```
+
+Excluding the stale `1990` row (`attempted_group_keys('census_decennial')`
+= `{2000, 2010, 2020}`), the corrected `--from-ledger --sources
+census_decennial --include-absent-api --dry-run` selection is **140
+parcels, 140 groups** — one `absent/api_no_data` row per parcel, all in
+`group_key = 2000`, none new since the 18:15Z reading this session's prompt
+carried forward (140 then, 140 now). This is closer to the design
+investigation's ~80-parcel estimate than 187 was, though still wider than 80
+— the remaining 60 are the tracts whose four-character form also happens to
+answer 204 (REPORT.md §1.5's 16-tract exception list accounts for some of
+the gap; the rest are simply not among the 80 that end `00`). A real dry-run
+against deployed M3 code, once Ryan deploys it, is the only thing that can
+confirm this number reads the same way through `requeue_parcels.py` itself;
+this addendum stands until that happens.
+
 ---
 
 ## P3 — Crawford County `6563dedf`, 33 groups no self-running code could reach

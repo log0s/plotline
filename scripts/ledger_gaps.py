@@ -80,6 +80,7 @@ class LedgerRow:
     attempts: int
     reasons_seen: tuple[str, ...]
     policy: str
+    stale: bool
 
 
 def _fetch(source: str | None, parcel: str | None, outcome: str | None) -> list[LedgerRow]:
@@ -112,6 +113,7 @@ def _fetch(source: str | None, parcel: str | None, outcome: str | None) -> list[
                 attempts=group.attempts,
                 reasons_seen=tuple(sorted(seen.get(key, ()))),
                 policy=ledger_service.retry_policy(group.outcome, group.reason),
+                stale=ledger_service.is_stale(group),
             )
         )
     return result
@@ -141,6 +143,27 @@ def _print_table(rows: list[LedgerRow]) -> None:
     print("  ".join("-" * w for w in widths))
     for row in table:
         print("  ".join(c.ljust(w) for c, w in zip(row, widths, strict=True)))
+
+
+def _print_stale(rows: list[LedgerRow]) -> None:
+    """Groups current code will never attempt again — the Y3 bucket.
+
+    Never selected by ``ledger_service.retryable_groups`` regardless of
+    outcome or flags; listed here instead of silently excluded, because the
+    ledger's job is to show, not to hide (census 1990/api_no_data after
+    ``e6afa9b`` is the instance this exists for).
+    """
+    stale = [r for r in rows if r.stale]
+    if not stale:
+        return
+
+    print()
+    print(f"{len(stale)} stale (parcel, source, group) triple(s) — never selected, any flag:")
+    by_source_group: dict[tuple[str, str], int] = defaultdict(int)
+    for r in stale:
+        by_source_group[(r.source, r.group_key)] += 1
+    for (src, group_key), count in sorted(by_source_group.items()):
+        print(f"  {src:<18} {group_key:<8} {count}")
 
 
 def _print_summary(rows: list[LedgerRow]) -> None:
@@ -183,6 +206,7 @@ def main() -> None:
 
     _print_table(listed)
     _print_summary(rows)
+    _print_stale(rows)
 
 
 if __name__ == "__main__":
