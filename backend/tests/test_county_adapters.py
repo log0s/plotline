@@ -238,6 +238,150 @@ async def test_arcgis_html_body_raises_arcgis_error() -> None:
         await query_feature_service("https://example.com/FeatureServer/0")
 
 
+def _429_response(retry_after: str | None = None) -> MagicMock:
+    resp = MagicMock()
+    resp.status_code = 429
+    resp.text = "Rate limit exceeded"
+    resp.headers = {"retry-after": retry_after} if retry_after else {}
+    return resp
+
+
+@pytest.mark.asyncio
+async def test_arcgis_retries_a_429_then_succeeds() -> None:
+    """Esri rate-limits hosted feature services; a 429 means slow down."""
+    from app.services.arcgis import query_feature_service
+
+    good = _json_200_response({"features": [{"attributes": {"PERMIT_NUM": "1"}}]})
+
+    with (
+        patch(
+            "httpx.AsyncClient.get",
+            new_callable=AsyncMock,
+            side_effect=[_429_response(), good],
+        ) as get,
+        patch("app.services.arcgis.asyncio.sleep", new_callable=AsyncMock) as sleep,
+    ):
+        rows = await query_feature_service("https://example.com/FeatureServer/0")
+
+    assert rows == [{"PERMIT_NUM": "1"}]
+    assert get.await_count == 2
+    assert sleep.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_arcgis_caps_an_absurd_retry_after() -> None:
+    """A portal free to ask for minutes cannot spend the query's whole budget."""
+    from app.services.arcgis import (
+        _RETRY_AFTER_CAP_S,
+        _RETRY_JITTER_FRACTION,
+        query_feature_service,
+    )
+
+    good = _json_200_response({"features": []})
+
+    with (
+        patch(
+            "httpx.AsyncClient.get",
+            new_callable=AsyncMock,
+            side_effect=[_429_response(retry_after="600"), good],
+        ),
+        patch("app.services.arcgis.asyncio.sleep", new_callable=AsyncMock) as sleep,
+    ):
+        await query_feature_service("https://example.com/FeatureServer/0")
+
+    slept = sleep.await_args_list[0].args[0]
+    assert _RETRY_AFTER_CAP_S <= slept <= _RETRY_AFTER_CAP_S * (1.0 + _RETRY_JITTER_FRACTION)
+
+
+@pytest.mark.asyncio
+async def test_arcgis_exhausted_429_raises_naming_the_status() -> None:
+    """An unclearing 429 is a failed query, never zero rows.
+
+    Delete-the-fix: drop the `if resp.status_code == 429` raise and the
+    generic non-200 branch below it still raises — but drop the retry and a
+    single throttled request fails a query that one sleep would have served.
+    """
+    from app.services.arcgis import _RETRY_ATTEMPTS, ArcGISError, query_feature_service
+
+    with (
+        patch(
+            "httpx.AsyncClient.get",
+            new_callable=AsyncMock,
+            return_value=_429_response(retry_after="1"),
+        ) as get,
+        patch("app.services.arcgis.asyncio.sleep", new_callable=AsyncMock),
+        pytest.raises(ArcGISError, match="429"),
+    ):
+        await query_feature_service("https://example.com/FeatureServer/0")
+
+    assert get.await_count == _RETRY_ATTEMPTS
+
+
+@pytest.mark.asyncio
+async def test_arcgis_429_does_not_outlive_the_query_budget() -> None:
+    """The retry lives inside the caller's 30 s timeout, it does not extend it."""
+    from app.services.arcgis import ArcGISError, query_feature_service
+
+    with (
+        patch(
+            "httpx.AsyncClient.get",
+            new_callable=AsyncMock,
+            return_value=_429_response(retry_after="20"),
+        ) as get,
+        patch("app.services.arcgis.asyncio.sleep", new_callable=AsyncMock) as sleep,
+        pytest.raises(ArcGISError, match="429"),
+    ):
+        await query_feature_service("https://example.com/FeatureServer/0", timeout=5.0)
+
+    assert sleep.await_count == 0, "a 20 s backoff overshoots a 5 s query budget"
+    assert get.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_exhausted_429_marks_the_property_query_failed_not_empty() -> None:
+    """The rollup must see a failed query, not a county with no permits.
+
+    Denver fans out to two permit layers, so one 429-exhausted query leaves
+    the task `complete` under the all-or-nothing rule at
+    tasks/timeline.py:1291 — but `queries_failed` carries it, which is what
+    a reader of the row and any future partial-status rule reads.
+    """
+    adapter = DenverAdapter()
+    good = _json_200_response({"features": []})
+
+    with (
+        patch(
+            "httpx.AsyncClient.get",
+            new_callable=AsyncMock,
+            side_effect=[*[_429_response()] * 3, good],
+        ),
+        patch("app.services.arcgis.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await adapter.fetch_permits("1437", "BANNOCK")
+
+    assert result.queries_attempted == 2
+    assert result.queries_failed == 1
+    assert result.events == []
+
+
+@pytest.mark.asyncio
+async def test_every_query_429_fails_the_property_task() -> None:
+    """All queries throttled is an outage, and `all_queries_failed` says so."""
+    adapter = AdamsCountyAdapter()
+
+    with (
+        patch(
+            "httpx.AsyncClient.get",
+            new_callable=AsyncMock,
+            return_value=_429_response(),
+        ),
+        patch("app.services.arcgis.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await adapter.fetch_permits("100", "MAIN")
+
+    assert result.all_queries_failed
+
+
 @pytest.mark.asyncio
 async def test_socrata_html_body_raises_socrata_error() -> None:
     from app.services.socrata import SocrataError, query_socrata
