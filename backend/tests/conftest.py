@@ -88,6 +88,7 @@ def _create_test_tables() -> None:
                         CHECK (json_array_length(sources) > 0),
                     origin        TEXT NOT NULL DEFAULT 'user'
                         CHECK (origin IN ('user', 'backfill', 'heal')),
+                    deployed_sha  TEXT,
                     created_at    TEXT DEFAULT (datetime('now')),
                     updated_at    TEXT DEFAULT (datetime('now')),
                     completed_at  TEXT,
@@ -194,6 +195,7 @@ def _create_test_tables() -> None:
                     median_gross_rent        INTEGER,
                     raw_data                 TEXT,
                     created_at               TEXT DEFAULT (datetime('now')),
+                    updated_at               TEXT DEFAULT (datetime('now')),
                     UNIQUE (parcel_id, dataset, year)
                 )
             """)

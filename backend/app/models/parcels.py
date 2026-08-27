@@ -153,6 +153,12 @@ class TimelineRequest(Base):
         nullable=False,
         server_default="user",
     )
+    # The build SHA running when this request was created — the same value
+    # /api/v1/health reports. NULL for pre-0013 requests; see 0013's docstring
+    # for why that is not backfilled. Read by services/ledger.py to decide
+    # whether an absent/* outcome was recorded under code that has since
+    # changed.
+    deployed_sha: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -434,6 +440,16 @@ class CensusSnapshot(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
+        nullable=False,
+    )
+    # Refreshed on every upsert conflict (services/demographics.py), even
+    # when the upserted values are identical to what was already stored —
+    # that is what makes it provable a heal touched the row, not just that
+    # the row exists.
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
         nullable=False,
     )
 
