@@ -531,6 +531,15 @@ where the fix commits get cited.
 
 ## Accepted, with reasons
 
+- **PC subscription key — lever unavailable.** Microsoft stopped issuing
+  accounts/keys when the Hub retired (2024-06; microsoft/PlanetaryComputer#347,
+  maintainer comment) and removed the key requirement from every dataset
+  (#351). The APIM portal (planetarycomputer.developer.azure-api.net) exposes
+  no sign-in and no subscribable product as of 2026-08-28; #464 (Dec 2025)
+  asking whether existing keys still work is unanswered. Dropped from the
+  retry/ops batch. N1's retry alignment and container-scoped signing
+  (3b7b10e) carry the 429 regime. The other documented lever — compute in
+  Azure West Europe — does not apply to Fly.
 - **M4 ledger, the empty-year cloud probe costs one extra STAC request per
   empty year.** `eo:cloud_cover < 40` rides in the STAC query itself, so a
   year whose every scene is cloudy and a year the satellite never imaged both
@@ -769,9 +778,9 @@ where the fix commits get cited.
   join runs at geocode time or per request.
 
 - **Retry/ops batch.** Grouped because each is a small, independent retry or
-  allowlist fix rather than a design decision: PC subscription key, N1 5xx
-  retry alignment, N2 census retry, ArcGIS 429 branch, Socrata 404 collapse,
-  `prd-tnm` host allowlist.
+  allowlist fix rather than a design decision: N1 5xx retry alignment, N2
+  census retry, ArcGIS 429 branch, Socrata 404 collapse, `prd-tnm` host
+  allowlist.
 
 - **Y7 + Y8 migration (`deployed_sha` on requests; `updated_at` on census
   snapshots).** Decided 2026-08-27; see the Y7 and Y8 rows above. Scheduled
