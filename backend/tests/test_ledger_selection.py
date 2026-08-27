@@ -265,6 +265,25 @@ def test_attempted_group_keys_rejects_an_unknown_source() -> None:
         ledger_service.attempted_group_keys("not_a_real_source")
 
 
+def test_imagery_start_years_agree_with_the_timeline_task() -> None:
+    """attempted_group_keys' floor and tasks/timeline.py's _SOURCES floor
+    must never drift apart — see IMAGERY_SOURCE_START_YEAR in imagery.py.
+    """
+    from app.services import imagery as imagery_service
+    from app.tasks.timeline import _SOURCES
+
+    by_source = {entry["source"]: entry for entry in _SOURCES}
+    for source, start_year in imagery_service.IMAGERY_SOURCE_START_YEAR.items():
+        attempted = ledger_service.attempted_group_keys(source)
+        assert min(attempted) == imagery_service.encode_group_key("year", start_year)
+
+        entry = by_source[source]
+        if "start_year" in entry:
+            assert entry["start_year"] == start_year
+        else:
+            assert entry["start_date"] == f"{start_year}-01-01"
+
+
 def test_a_stale_group_is_never_selected_even_with_every_flag(
     committing_db: sessionmaker[Session],
 ) -> None:

@@ -725,6 +725,9 @@ different path — not investigated further, out of scope for this batch),
 against a real `TEST_POSTGRES_URL` (the local `docker compose` Postgres,
 not production).
 
+**Resolved (this batch, 2026-08-26):** the two failures named above are no
+longer carried as a footnote. See `STATUS.md`'s M3 section, row Y6.
+
 ### PREDICTION.md P2, corrected
 
 Neither M3 nor this fix is deployed (`fly image show -a plotline-worker`:
