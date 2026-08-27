@@ -338,11 +338,11 @@ cheap half first.
 
 | # | Status | Where it stands |
 |---|---|---|
-| N1 | **MEDIUM — Open** | **SAS signing retries only 429; a transient PC 5xx or connection error is terminal.** `_sas_get` branches on `resp.status_code != 429` and calls `raise_for_status()` on the spot (`stac.py:315-316`), and `httpx.RequestError` is never caught inside the loop at all — so a 503 from `/api/sas/v1/token/…`, or a reset connection, fails on the **first** attempt, with none of the 4 attempts, the semaphore, or the wait budget applying. The function's own docstring argues that a 429 means "slow down", not "this asset is broken" (`stac.py:297-299`); the same is true of a 503, and the code does not act on it. **The worker path is where it costs a year.** `_validate_asset` catches the raised error and returns `False` (`stac.py:1014-1021`); `_validate_selection` reads that as "item is broken" and answers by walking **every** same-period candidate (`stac.py:1111-1127`) — each of which signs against the same unhealthy endpoint — then drops the period with `WARNING "No valid %s item for %s; skipping"` (`stac.py:1130`) under a task that still ends `complete` (`timeline.py:435`). Note the asymmetry with the search path, which does retry `{429, 500, 502, 503, 504}` **and** `RequestError` (`timeline.py:94, 125-130`). Recorded against M4 above as a fourth silent-gap door, not a fourth occurrence. |
-| N2 | **MEDIUM — Open** | **The Census data API client has no retry at all.** `CensusFetcher._request` issues one `GET` and converts any `httpx.HTTPError` — timeout, connect error, read error — straight into `CensusApiError` (`census.py:249-253`). No attempt loop, no backoff, no distinction between a retryable and a permanent failure. The only pacing anywhere on the path is `await asyncio.sleep(0.5)` between years (`timeline.py:689, 715`), which is politeness, not retry. **This is the mechanism behind M4's instance (3):** four `httpx.ReadTimeout`s against `api.census.gov` cost a Maricopa parcel its acs5 2021 and decennial 2020 rows, and **not one of those four would have been retried**. M4 recorded the outcome; nothing on this ledger recorded that the client never tried again. Both the geocoder (`geocoder.py:30, 139-147`) and the STAC search (`timeline.py:97-135`) retry — among our three upstream clients this one is the outlier. |
+| N1 | **Resolved (`70437e6`, 2026-08-27) — pending observation; committed, not deployed.** | **SAS signing retries only 429; a transient PC 5xx or connection error is terminal.** `_sas_get` branches on `resp.status_code != 429` and calls `raise_for_status()` on the spot (`stac.py:315-316`), and `httpx.RequestError` is never caught inside the loop at all — so a 503 from `/api/sas/v1/token/…`, or a reset connection, fails on the **first** attempt, with none of the 4 attempts, the semaphore, or the wait budget applying. The function's own docstring argues that a 429 means "slow down", not "this asset is broken" (`stac.py:297-299`); the same is true of a 503, and the code does not act on it. **The worker path is where it costs a year.** `_validate_asset` catches the raised error and returns `False` (`stac.py:1014-1021`); `_validate_selection` reads that as "item is broken" and answers by walking **every** same-period candidate (`stac.py:1111-1127`) — each of which signs against the same unhealthy endpoint — then drops the period with `WARNING "No valid %s item for %s; skipping"` (`stac.py:1130`) under a task that still ends `complete` (`timeline.py:435`). Note the asymmetry with the search path, which does retry `{429, 500, 502, 503, 504}` **and** `RequestError` (`timeline.py:94, 125-130`). Recorded against M4 above as a fourth silent-gap door, not a fourth occurrence. *2026-08-27, `70437e6`: the retry set is now Microsoft's own — `[429, 500, 502, 503, 504]` from `urllib3.util.retry.Retry` in `planetary_computer/sas.py`, read from source — plus `ConnectError` / `ReadTimeout` / `RemoteProtocolError`. 4xx other than 429 stays terminal. Backoff is jittered upward by <=25%, applied after the budget decision and clamped to the remaining budget so a 54 s `Retry-After` under the 60 s batch budget still sleeps rather than giving up. `SIGN_WAIT_BATCH` / `SIGN_WAIT_REQUEST` are unchanged in value but now bound **elapsed** time rather than sleep alone — see the accepted row below for why, and `../2026-08-ops-batch/REPORT.md` §1 for the request-path worst case (12 s in `_sas_get`, 42 s end to end on a tile, +2 s against before). Committed, not deployed as of 2026-08-27; prediction in `../2026-08-ops-batch/PREDICTION.md`.* |
+| N2 | **Resolved (`8a86fad`, 2026-08-27) — pending observation; committed, not deployed.** | **The Census data API client has no retry at all.** `CensusFetcher._request` issues one `GET` and converts any `httpx.HTTPError` — timeout, connect error, read error — straight into `CensusApiError` (`census.py:249-253`). No attempt loop, no backoff, no distinction between a retryable and a permanent failure. The only pacing anywhere on the path is `await asyncio.sleep(0.5)` between years (`timeline.py:689, 715`), which is politeness, not retry. **This is the mechanism behind M4's instance (3):** four `httpx.ReadTimeout`s against `api.census.gov` cost a Maricopa parcel its acs5 2021 and decennial 2020 rows, and **not one of those four would have been retried**. M4 recorded the outcome; nothing on this ledger recorded that the client never tried again. Both the geocoder (`geocoder.py:30, 139-147`) and the STAC search (`timeline.py:97-135`) retry — among our three upstream clients this one is the outlier. *2026-08-27, `8a86fad`: `_get_with_retry` (`census.py:414`) takes 3 attempts over `ReadTimeout`, `ConnectError` and `{500, 502, 503, 504}`, jittered, honouring `Retry-After`. 4xx stays terminal so `CensusHttpStatusError` from `e6afa9b` keeps doing its job. The 65 s per-request budget is sized against the task that contains it: 3 x `census_api_timeout` (30 s) + backoff = 93 s per request, 9 requests per parcel, ~841 s against `soft_time_limit=1800` (`tasks/timeline.py:1608-1609`); a test pins that arithmetic to both constants. Committed, not deployed as of 2026-08-27.* |
 | N3 | **LOW (record drift) — corrected in this commit** | **The M9 row above stated the `/warmup` limit as 30/min; it has been 60/min since `69b94e1` (2026-08-04).** 56d6647 did ship 30 — `RateLimit(times=30, seconds=60)` at that commit — and `69b94e1` ("perf: warm a snapshot once per session, not once per scrub hop") raised it to 60 without the row following; `api/imagery.py:624` reads `RateLimit(times=60, seconds=60)` at HEAD. The `/{id}/stac` half (600/min) is still accurate (`api/imagery.py:721`). The M9 row is corrected in place in the same commit as this row. It is recorded rather than silently fixed because the drift, not the number, is the finding: the row was true when written and nothing made it false out loud. *2026-08-22: `/warmup` is now 120/min (`api/imagery.py:658`, `52b0223`), and the bucket is per route template rather than per snapshot (SEC-3).* |
-| N4 | **LOW — Open** | **A Photon failure returns an empty suggestion list.** Both `httpx.RequestError` and `httpx.HTTPStatusError` are answered with `return []` (`api/geocode.py:77-82`), so a Photon outage, a 429, and "no US address matches this prefix" reach the caller — and the user — as the same empty dropdown. It is the complete-with-zero shape the second audit named as this system's characteristic reflex, on the one path where **nothing is persisted**: unlike census or property, no backfill, heal or query could ever notice. Contained, which is why it is LOW and not MEDIUM — a typed address still geocodes through the Census geocoder, and the 300 s cache does not store empty-on-failure any differently from empty-on-success. |
-| N5 | **LOW (second-order) — Open** | **The host allowlist guards one of the five paths that hand a stored URL to a fetcher.** `_ALLOWED_STAC_HOSTS` (`api/imagery.py:336-340`) constrains the API's own Landsat item fetch, and the comment above it gives the reason: without it "a `cog_url` written by a compromised upstream would make the API fetch an attacker-chosen URL from inside the network" (`api/imagery.py:330-335`). The same stored values also reach Titiler as the `url` query parameter on four other paths — `_proxy_cog_tile` (`api/imagery.py:484-486`), warmup (`api/imagery.py:646-648, 665-668`), the Landsat callback URL (`api/imagery.py:556-557`) and the preview renderer (`preview_renderer.py:113-116`) — with **no host check on any of them**, for NAIP, Sentinel-2 and USGS topo alike. Topo is the widest case: that URL comes straight out of TNM's `urls.GeoTIFF` and is never inspected (`usgs_topo.py:134-140`). The exposure is the same second-order shape the existing comment already reasons about — it needs a compromised or malicious upstream, and the value is written by our own worker — but the mitigation landed on one path and not the other four. `CPL_VSIL_CURL_ALLOWED_EXTENSIONS = '.tif,.tiff'` (`fly.titiler.toml:19`) narrows what GDAL will open; it does not constrain the host. **2026-08-22: resolved by P5 in `52b0223` — one shared allowlist now guards all five paths; see the security-audit section below.** |
+| N4 | **LOW — Open** | **A Photon failure returns an empty suggestion list.** Both `httpx.RequestError` and `httpx.HTTPStatusError` are answered with `return []` (`api/geocode.py:77-82`), so a Photon outage, a 429, and "no US address matches this prefix" reach the caller — and the user — as the same empty dropdown. It is the complete-with-zero shape the second audit named as this system's characteristic reflex, on the one path where **nothing is persisted**: unlike census or property, no backfill, heal or query could ever notice. *2026-08-27: still open, and deliberately so — it is the same shape as the Socrata 404 collapse fixed in `2c3f468`, and the grep for that shape (`../2026-08-ops-batch/REPORT.md` §4) found it again at `api/geocode.py:80, :83`. It ships with L8 in the frontend pass, not here.* Contained, which is why it is LOW and not MEDIUM — a typed address still geocodes through the Census geocoder, and the 300 s cache does not store empty-on-failure any differently from empty-on-success. |
+| N5 | **LOW (second-order) — Open** | **The host allowlist guards one of the five paths that hand a stored URL to a fetcher.** `_ALLOWED_STAC_HOSTS` (`api/imagery.py:336-340`) constrains the API's own Landsat item fetch, and the comment above it gives the reason: without it "a `cog_url` written by a compromised upstream would make the API fetch an attacker-chosen URL from inside the network" (`api/imagery.py:330-335`). The same stored values also reach Titiler as the `url` query parameter on four other paths — `_proxy_cog_tile` (`api/imagery.py:484-486`), warmup (`api/imagery.py:646-648, 665-668`), the Landsat callback URL (`api/imagery.py:556-557`) and the preview renderer (`preview_renderer.py:113-116`) — with **no host check on any of them**, for NAIP, Sentinel-2 and USGS topo alike. Topo is the widest case: that URL comes straight out of TNM's `urls.GeoTIFF` and is never inspected (`usgs_topo.py:134-140`). The exposure is the same second-order shape the existing comment already reasons about — it needs a compromised or malicious upstream, and the value is written by our own worker — but the mitigation landed on one path and not the other four. `CPL_VSIL_CURL_ALLOWED_EXTENSIONS = '.tif,.tiff'` (`fly.titiler.toml:19`) narrows what GDAL will open; it does not constrain the host. **2026-08-22: resolved by P5 in `52b0223` — one shared allowlist now guards all five paths; see the security-audit section below.** *2026-08-27, re-verified for the retry/ops batch, which had it queued as still-open: `prd-tnm.s3.amazonaws.com` is on the allowlist (`stac.py:293`) and the topo tile path goes through `_refuse_unlisted_host` (`api/imagery.py:486`). Production read: 1183 `usgs_topo` rows in `imagery_snapshots`, **one** distinct host over `cog_url` / `thumbnail_url` / `additional_cog_urls`, and it is that one — nothing needed allowlisting. What was missing was coverage of the route rather than the function: `6daf621` adds both halves, an unlisted host 502ing without reaching Titiler and the real TNM host being served, each verified by deletion.* |
 
 ## Readback (2026-08-19)
 
@@ -529,7 +529,55 @@ where the fix commits get cited.
 | Y7 | **Scheduled — decided 2026-08-27, not yet built.** | `absent` groups are re-selected by every `--include-absent-api` run (76 today, HEAL-3 §4). Not a marker problem: "permanent" is the wrong concept — the 16 known-204 tracts became recoverable when the trim landed. Rule to implement: retry an `absent` group only if the deployed code has changed since it was recorded. Needs `deployed_sha` on `timeline_requests` (absent per `docs/audits/2026-08-m3-design/INVESTIGATION.md` §1c; `/api/v1/health` publishes it). Scheduled with Y8 as one migration, after the retry/ops batch. |
 | Y8 | **Scheduled — decided 2026-08-27, not yet built.** | `census_snapshots` has no `updated_at`, and its upsert rewrites values in place (386f3e3). Row-id checksums cannot prove 2010/2020 values were untouched by heal 3 (HEAL-3 §5); content checksums are recorded there as the interim diff source. Fix: one column, default `now()`, refreshed in the `ON CONFLICT DO UPDATE` set. Same migration as Y7. |
 
+## Retry/ops batch — upstream errors that read as success (2026-08-27)
+
+Five commits, `70437e6` → `6daf621`, plus this one. Nothing pushed, nothing
+deployed; production API and worker both run `GH_SHA=5f3aa7d`. Report
+`../2026-08-ops-batch/REPORT.md`; the prediction for the first full sweep
+after deploy, written before it, `../2026-08-ops-batch/PREDICTION.md`. Tracked
+here for the same reason the ops, geometry, M4 and M3 sections are: it moves
+the N1, N2, N4 and N5 rows above and the Adams row below, and this is where
+the fix commits get cited.
+
+The theme, and the thing to check any future client against: **an exhausted
+retry is a failure, and a failure is never a smaller success.**
+
+| # | Status | Where it stands |
+|---|---|---|
+| Z1 | **Resolved (`533bc3b`, 2026-08-27) — pending observation; committed, not deployed.** | **`arcgis.py` had no 429 branch.** Esri acknowledges server-side rate limiting on hosted feature services with no published number (SOURCE-LANDSCAPE §0.2, §5.6); a 429 fell through the generic non-200 path and became an `ArcGISError` on the first try. Denver and Adams both run on hosted services, and R4/R5 would add traffic to the same client. Now: `Retry-After` capped at 20 s (Esri publishes no bound, and a longer sleep would spend the query's budget without asking again) or a jittered exponential backoff, up to 3 attempts, **inside** the caller's existing `timeout` rather than extending it — an attempt starts only while `spent + wait <= timeout` (`arcgis.py:110-143`). An unclearing 429 raises naming the status, so `_collect` counts a failed query rather than returning rows that were never fetched. |
+| Z2 | **Resolved (`2c3f468`, 2026-08-27) — pending observation; committed, not deployed.** | **`socrata.py:73-78` answered a 404 with `[]`.** A retired or renamed 4x4 resource id — the ids are string constants in `county_adapters.py` — read as "this address has no records", `_collect` counted a success with no rows, and the property task completed with zero. Property has no per-year ledger (m3-design §6), so the task status is the whole record and nothing was left behind for a later reader to correct. Now a 404 raises like any other non-200. Grepped for the shape across all five county adapters, `arcgis.py` and `ckan.py`: this was the only status collapsed to an empty list in the property path (`../2026-08-ops-batch/REPORT.md` §4). |
+| Z3 | **New — open, not fixed.** | **A throttled query thins a property task that still says `complete`.** H4's rule fails a task only when *every* query fails (`tasks/timeline.py:1289-1302`), and there is no `partial` status for a property task — `partial` exists only at the request level. So a 429-exhausted query on Adams (1 query) correctly marks the task `failed`, but one on Denver (2 permit layers) with the other succeeding leaves `complete` with a silently thinner `items_found`; DC's 7 layers are weaker still. Both confirmed by test in `533bc3b`. Recorded rather than fixed because inventing a fourth task status is a design decision, not a retry fix. Z1 at least makes the failed query *counted*, so a future partial rule has something to read. |
+| Z4 | **New — open, not fixed.** | **"Rows returned, all rejected by the address matcher" is invisible in the database, for every county.** `_fetch_property` filters events by `is_address_match` after the adapters return, and `items_found` counts persisted events — so a broad `LIKE` that matched 40 records and kept none looks identical to a portal that returned nothing. The raw/matched split exists only in the worker log line `"Property events filtered"` (`tasks/timeline.py:1314-1321`). This is the one genuinely undistinguished case left in the property path after Z1 and Z2, and it is the residue of the Adams question below. |
+| Z5 | **Deferred — no row existed for it before now.** | **PC STAC search results are never cached.** ~43 Landsat + ~12 S2 year-chunks + 1 NAIP search per parcel per run, every run, cache nothing (SOURCE-LANDSCAPE §5.3; INVENTORY caching ledger). PC's maintainers call the search endpoint a shared resource with 503/504 under load and advise retry-with-backoff, which the search path already does (`timeline.py:97-135`); what the guidance implies and the code lacks is the caching. A Redis cache keyed on (collection, bbox-hash, year) with a 24 h TTL would cut re-run traffic to near zero. Dropped from this batch as a design question, not a retry fix — the TTL interacts with reconciliation and with how a heal decides a year is genuinely absent. **S/M.** This row exists so the item stops being orphaned in a research doc. |
+
 ## Accepted, with reasons
+
+- **The SAS wait budgets now bound elapsed time, not sleep time.**
+  `SIGN_WAIT_BATCH` (60 s) and `SIGN_WAIT_REQUEST` (2 s) keep their values and
+  their split; what changed in `70437e6` is that `_sas_get` measures `spent`
+  with `time.monotonic()` across the whole loop rather than summing its own
+  sleeps. Counting sleep alone was equivalent while only fast 429s were
+  retried. It stopped being equivalent the moment a `ReadTimeout` became
+  retryable: a timed-out attempt costs `_SIGN_CLIENT_TIMEOUT_S` (10 s) of wall
+  clock and no sleep at all, so four of them would have run 40 s on a route
+  whose end-to-end budget is ~30 s. The new rule is strictly tighter than the
+  old one — elapsed is never less than sleep — and it is what makes "give up
+  inside the budget" true rather than nominal. **The assumption it rests on is
+  that the signing client's timeout is 10 s**; that is now the named constant
+  `_SIGN_CLIENT_TIMEOUT_S` used both to build the client and to state the
+  worst case, so the two cannot drift, and the sentence is written at
+  `_sas_get`.
+
+- **ArcGIS retries 429 only; a 5xx there is still terminal on the first try.**
+  Deliberate scope, not an oversight, and the asymmetry with the signing path
+  (which retries 5xx after N1) is recorded rather than assumed away. Two
+  reasons to leave it. A property query has one 30 s budget and several
+  sibling queries, so a failed one costs a thinner result rather than a lost
+  year — the cost that justified N1's 5xx retry does not exist here. And Esri
+  documents the 429 and nothing else, so a 5xx retry set would be invented
+  rather than sourced. Revisit with R4/R5, which add counties to the same
+  client. The reasoning is at `arcgis.py:104-109`, where someone would act on
+  it.
 
 - **PC subscription key — lever unavailable.** Microsoft stopped issuing
   accounts/keys when the Hub retired (2024-06; microsoft/PlanetaryComputer#347,
@@ -777,10 +825,13 @@ where the fix commits get cited.
   the API has no 1990 decennial data to join to — see below), and whether the
   join runs at geocode time or per request.
 
-- **Retry/ops batch.** Grouped because each is a small, independent retry or
-  allowlist fix rather than a design decision: N1 5xx retry alignment, N2
-  census retry, ArcGIS 429 branch, Socrata 404 collapse, `prd-tnm` host
-  allowlist.
+- ~~**Retry/ops batch.**~~ **Built 2026-08-27** — `70437e6` → `6daf621`,
+  committed, not deployed. N1 5xx retry alignment, N2 census retry, ArcGIS 429
+  branch, Socrata 404 collapse; `prd-tnm` was already allowlisted by `52b0223`
+  and needed verification and a route-level test, not an allowlist edit. See
+  the "Retry/ops batch" section above and `../2026-08-ops-batch/REPORT.md`.
+  Two new open rows came out of it (Z3, Z4) and one orphaned research item now
+  has a row (Z5).
 
 - **Y7 + Y8 migration (`deployed_sha` on requests; `updated_at` on census
   snapshots).** Decided 2026-08-27; see the Y7 and Y8 rows above. Scheduled
@@ -1080,6 +1131,24 @@ where the fix commits get cited.
   determines whether this is an adapter bug, a retired endpoint, or a parcel
   with genuinely no records. Santa Clara is weaker but similar: two parcels,
   one event between them. Ops audit MEDIUM-3.
+
+  *2026-08-27, narrowed by the retry/ops batch without any code — and the
+  narrowing is the answer to half the question. Production now shows **8**
+  Adams property tasks, every one `complete` with `items_found: 0`. Adams runs
+  exactly **one** query, through `query_feature_service`, and **every** non-200
+  from that client already raised `ArcGISError` before this batch, a 429
+  included. One query, one failure, `all_queries_failed`, task `failed`. No
+  Adams task has ever been `failed`. **Therefore no Adams query has ever
+  errored: the portal answered 200.** So this was never a swallowed error, and
+  the remaining possibilities are two, not three — the feature service returns
+  zero features for that WHERE clause, or it returns rows the address matcher
+  rejects (Z4 above). The manual portal check is still owed and is now a
+  narrower question: does Eye On Adams return features for this address at
+  all? The batch predicts Adams stays `complete:0`
+  (`../2026-08-ops-batch/PREDICTION.md` P-7) — it changes nothing here, and
+  saying so before the run is the point. Santa Clara is on CKAN, which never
+  collapsed a status either; 16 of its 23 tasks are `complete:0` and this
+  batch does not move them.*
 - **Incidental, from the same finding:** the 2026-08-11 incident parcel
   recorded `property complete:0` during the burst window while its five Denver
   peers hold 10–33 events each. Suggestive, not conclusive.
