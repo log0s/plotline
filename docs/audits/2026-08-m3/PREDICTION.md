@@ -298,6 +298,33 @@ got there first, not that the trim recovers fewer than 64 tracts. The
 scorecard should check parcel-level overlap against Heal 2's affected
 parcel before reading a sub-64 count as a deviation.
 
+### Addendum, 2026-08-27 — P2 run and scored: confirmed, zero deviation
+
+Run 16:50:52Z–17:08:04Z against `5f3aa7d`. Scorecard:
+`../2026-08-m3/HEAL-3-decennial-2000.md`. Nothing above is edited; this
+records the outcome beside the prediction.
+
+The adjusted prediction — 140 selected − 1 ride-along = **139**; 80 ends-`00`
+− 1 (Crawford, taken by the ride-along the addendum above anticipated) − 16
+known-204 = **63** recovered; **76** re-absent; heal admission depth **≤ 25**
+— was written into the scorecard before the run and hit exactly on every
+line. Selection 139 (through `requeue_parcels.py --dry-run` itself, which is
+what the Y3 addendum said was still owed), recovery 63 with **every gained
+row on a tract ending `00`**, re-absence 76 splitting 60 real-suffix / 16
+known-204, max `depth=25` on all 236 admission lines, exit 0, zero unreached.
+
+Predicted-and-confirmed from the original P2: item 4 (no `1990` row changed —
+`is_stale` excluded all 187 from selection), item 5 (**zero imagery churn**,
+`imagery_snapshots` byte-identical by row id) and item 7 (the cap held at 25).
+Item 6's declined prediction stands as declined: `census_acs5`/`2009` rode
+along for **+28 rows**, fleet `absent` 75 → 47, unscored because no claim was
+made. Items 1 and 2 are superseded by the Y3 correction, as that addendum
+said; 139 census-only requests, not 187, and 63 new rows, not 64.
+
+**No falsifier fired.** One gap the run surfaced enters STATUS.md as Y7: the
+76 permanent absences are indistinguishable in the ledger from a request
+since fixed, so `--include-absent-api` re-selects them forever.
+
 ---
 
 ## P3 — Crawford County `6563dedf`, 33 groups no self-running code could reach
