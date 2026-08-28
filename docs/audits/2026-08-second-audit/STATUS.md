@@ -771,6 +771,56 @@ which is why the counts land there. Full report:
 
 ## Scheduled
 
+*2026-08-27: the remediation arc (M4 → M3 → ops batch → Z6 → Y7/Y8 → property
+outcomes) is closed and scored — last scorecard
+`../2026-08-property-outcomes/SCORECARD.md` (014aa1c). The forward sequence
+below was decided the same day; it replaces ad-hoc ordering with a stated one
+so the reasons aren't only in conversation. Note on labels: "R#" is ambiguous
+in this repo — geometry-audit remedies (FINDINGS.md §6) vs SOURCE-LANDSCAPE
+recommendations (§1) — never cite a bare R-number below; qualified by
+document.**
+
+1. **Imagery normalization** (`docs/adr/0001-imagery-normalization.md`) —
+   `scenes` + `parcel_scenes`, four additive steps, each with a prediction
+   before it runs. This is the first structural change to the imagery model;
+   the NAIP-selector coverage item below and any new imagery source wait on
+   it so their waves write against the new shape once instead of twice.
+2. **Census tabular ingest** — ACS5/decennial + TIGER tracts, replacing
+   `tract_for`. Retires the `4ce1822` vintage-map stopgap (Racebrook-class
+   gaps), returns 1990 via NHGIS, and gives AA2's mailing-city-vs-jurisdiction
+   question a spatial answer instead of a string-parse one.
+3. **MCP server v1** — four read-only tools on the normalized schema. AA4
+   (a city-level geocode is not a parcel) is a design input to `lookup_parcel`,
+   not an afterthought bolted on after the tool ships.
+4. **G8** — measure first (the 70.3% Q4 baseline is already on record,
+   `../2026-08-ops-batch/SWEEP-SCORECARD.md` §9), then the remedy, then its
+   sweep. Ordered after normalization so the wave writes `parcel_scenes`
+   rather than the model being retired under it.
+5. **Gap-fill imagery** — NYC 1924/1951 historic orthos and Landsat MSS
+   1972–84 (`../2026-08-source-landscape/SOURCE-LANDSCAPE.md` §1, its R1/R2),
+   ingested as scenes on the new model.
+
+Cut line if timing tightens: after normalization, ship the MCP server and
+defer census ingest — the MCP server does not depend on the census pass.
+
+**Backlog, none blocking:**
+
+- CI diff base = older of the API-health SHA and the worker's
+  `fly image show` SHA (the fix for the 2026-08-27 worker-lag row).
+- `.venv` named-volume compose fix.
+- CHECK-predicate assertion in the Postgres migration test.
+- Cupertino/AA4 decision (gate at geocode, flag, or delete the row).
+- Per-dataset census scope.
+- AA2's structured-city source (Photon's `city`, then TIGER places).
+- AA3 street-name matching (full normalized street line to adapters).
+- Photon 429 handling + the L8 remainder.
+- Prediction baselines come from a stated query at writing time, not a prior
+  document's table (see the property SCORECARD's Denver 9-vs-11 mismatch).
+
+**Portfolio, alongside:** migration-lock post (three steps from publishing),
+"instrument the silences" post (chat opened), scorecard-methodology LinkedIn
+post, Summary-table re-tally.
+
 - **R1, test coverage for the NAIP mosaic selector. HIGH PRIORITY.**
   `select_naip_items`' greedy viewport branch (`stac.py:772-865`) is the only
   path production takes and has **no test coverage at all**; the two existing
@@ -1681,3 +1731,6 @@ which is why the counts land there. Full report:
   `container.querySelectorAll(".recharts-xAxis .recharts-cartesian-axis-tick-value")`,
   never to `screen`. Noted at both sites: `HousingChart.test.tsx` and
   `src/test/setup.ts`.
+- **R-numbers collide across the geometry audit (FINDINGS.md §6 remedies) and
+  SOURCE-LANDSCAPE (§1 recommendations); qualify every R-citation with its
+  document.**
