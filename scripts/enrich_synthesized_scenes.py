@@ -116,7 +116,27 @@ FETCH_CONCURRENCY = 6
 FETCH_ATTEMPTS = 4
 FETCH_TIMEOUT_S = 30.0
 
-_RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+# NORM-10 (docs/audits/2026-08-normalization/ENRICH-PROD-REPORT.md §5): PC
+# answers a throttle on /search with 403, not 429. For the item endpoint 403
+# is a permanent per-item refusal (the geometry audit's six forbidden NAIP
+# items) and must fall through to search immediately rather than burn the
+# retry budget on something that will never succeed. For /search the same
+# 403 is the rate limiter, so it has to be retried like a 429 would be — the
+# two endpoints need different sets, not one shared constant, even though a
+# reader's first instinct is that "403 Forbidden" means the same thing
+# everywhere.
+_ITEM_RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+_SEARCH_RETRYABLE_STATUSES = _ITEM_RETRYABLE_STATUSES | {403}
+
+# NORM-10: ~814 requests in 28s (~29 req/s) at concurrency 6 with no pacing
+# provoked the throttle; the same six searches replayed sequentially with a
+# 2s gap (0.5 req/s) all returned 200. This is a global cap on how often a
+# request is *dispatched*, independent of FETCH_CONCURRENCY, which only
+# bounds how many are in flight awaiting a response — concurrency alone
+# doesn't limit rate when responses are fast. 5 req/s leaves ~6x margin
+# under the observed throttle point while still finishing 505 rows
+# (~814 requests) in a few minutes.
+DEFAULT_MIN_INTERVAL_S = 0.2
 
 
 # ── Reading the queue ─────────────────────────────────────────────────────────
@@ -260,8 +280,16 @@ class StacLookup:
     paths share one limiter, the way ``stac.py``'s signing does.
     """
 
-    def __init__(self, *, concurrency: int = FETCH_CONCURRENCY) -> None:
+    def __init__(
+        self,
+        *,
+        concurrency: int = FETCH_CONCURRENCY,
+        min_interval_s: float = DEFAULT_MIN_INTERVAL_S,
+    ) -> None:
         self._semaphore = asyncio.Semaphore(concurrency)
+        self._min_interval_s = min_interval_s
+        self._pace_lock = asyncio.Lock()
+        self._next_dispatch_at = 0.0
         self._client = httpx.AsyncClient(
             timeout=FETCH_TIMEOUT_S,
             limits=httpx.Limits(
@@ -272,24 +300,51 @@ class StacLookup:
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def _request(self, url: str, *, json_body: dict[str, Any] | None) -> httpx.Response:
-        """One request, retrying 429/5xx and transport errors with backoff.
+    async def _pace(self) -> None:
+        """Space out request dispatches to at most ``1 / min_interval_s`` per second.
+
+        Global across every in-flight request, not per-worker: concurrency
+        bounds how many requests are outstanding, this bounds how often a new
+        one is sent, which is what NORM-10 needed and concurrency alone does
+        not provide.
+        """
+        if self._min_interval_s <= 0:
+            return
+        async with self._pace_lock:
+            now = asyncio.get_event_loop().time()
+            wait = self._next_dispatch_at - now
+            if wait > 0:
+                await asyncio.sleep(wait)
+                now = self._next_dispatch_at
+            self._next_dispatch_at = now + self._min_interval_s
+
+    async def _request(
+        self,
+        url: str,
+        *,
+        json_body: dict[str, Any] | None,
+        retryable_statuses: frozenset[int],
+    ) -> httpx.Response:
+        """One request, retrying the given statuses and transport errors with backoff.
 
         ``Retry-After`` is honoured when the server sends one — PC's rate
         limiter does — and doubling backoff is the fallback. The last response
-        is returned rather than raised for status: a 404 and a 403 are answers
-        this pass records per row, not failures of the run.
+        is returned rather than raised for status: a 404 (and, on the item
+        endpoint, a 403) is an answer this pass records per row, not a
+        failure of the run. ``retryable_statuses`` differs by endpoint — see
+        the NORM-10 comment at the module-level constants.
         """
         delay = 1.0
         last_exc: Exception | None = None
         for attempt in range(FETCH_ATTEMPTS):
             try:
                 async with self._semaphore:
+                    await self._pace()
                     if json_body is None:
                         resp = await self._client.get(url)
                     else:
                         resp = await self._client.post(url, json=json_body)
-                if resp.status_code not in _RETRYABLE_STATUSES:
+                if resp.status_code not in retryable_statuses:
                     return resp
                 last_exc = httpx.HTTPStatusError(
                     f"{resp.status_code} from {url}", request=resp.request, response=resp
@@ -313,7 +368,9 @@ class StacLookup:
     async def get_item(self, collection: str, item_id: str) -> tuple[int, dict[str, Any] | None]:
         """``(status, item)`` for the item endpoint. ``item`` is None off 200."""
         resp = await self._request(
-            f"{STAC_API}/collections/{collection}/items/{item_id}", json_body=None
+            f"{STAC_API}/collections/{collection}/items/{item_id}",
+            json_body=None,
+            retryable_statuses=_ITEM_RETRYABLE_STATUSES,
         )
         if resp.status_code != 200:
             return resp.status_code, None
@@ -334,6 +391,7 @@ class StacLookup:
                 "datetime": datetime_range,
                 "limit": 100,
             },
+            retryable_statuses=_SEARCH_RETRYABLE_STATUSES,
         )
         resp.raise_for_status()
         return [dict(feature) for feature in resp.json().get("features", [])]
@@ -762,12 +820,27 @@ def main() -> None:
         action="store_true",
         help="Write the rows. Without it this is a dry run that still fetches.",
     )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=FETCH_CONCURRENCY,
+        help=f"Max in-flight STAC requests (default {FETCH_CONCURRENCY}).",
+    )
+    parser.add_argument(
+        "--min-interval-s",
+        type=float,
+        default=DEFAULT_MIN_INTERVAL_S,
+        help="Minimum seconds between dispatching successive STAC requests,"
+        f" regardless of concurrency (default {DEFAULT_MIN_INTERVAL_S}, NORM-10)."
+        " 0 disables pacing.",
+    )
     args = parser.parse_args()
 
     from app.db import SessionLocal
 
+    lookup = StacLookup(concurrency=args.concurrency, min_interval_s=args.min_interval_s)
     with SessionLocal() as db:
-        run(db, execute=args.execute, report_path=args.report, lookup=StacLookup())
+        run(db, execute=args.execute, report_path=args.report, lookup=lookup)
 
 
 if __name__ == "__main__":

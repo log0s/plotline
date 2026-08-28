@@ -28,10 +28,22 @@ Delete-the-fix, one clause per test:
 * the ``WHERE provenance = 'mosaic_url'`` filter in ``load_queue`` — remove it
   and ``test_second_run_is_a_no_op`` re-fetches and re-writes rows that are
   already enriched.
+* ``_SEARCH_RETRYABLE_STATUSES`` including 403 — put it back to
+  ``_ITEM_RETRYABLE_STATUSES`` (NORM-10) and
+  ``test_search_403_retries_and_succeeds`` fails: the first 403 would raise
+  straight out of ``search`` instead of being retried.
+* ``_ITEM_RETRYABLE_STATUSES`` *not* including 403 — add it and
+  ``test_item_403_does_not_retry_falls_through_to_search`` fails: the item
+  GET would retry three more times instead of returning ``(403, None)`` on
+  the first response.
+* the ``FETCH_ATTEMPTS`` bound in ``_request``'s retry loop — remove it (loop
+  forever) and ``test_search_403_exhausts_retry_budget_is_an_error`` hangs
+  instead of raising once the budget runs out.
 """
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import sys
 import uuid
@@ -39,6 +51,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+import httpx
+import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -447,3 +461,115 @@ def test_capture_date_disagreement_is_reported(db: Session, tmp_path: Path) -> N
     assert len(out.date_disagreements) == 1
     assert "2023-08-20" in out.date_disagreements[0]
     assert str(_scene(db, synthesized).capture_date) == "2023-08-21"
+
+
+# ── NORM-10: retry policy differs by endpoint, and pacing ─────────────────────
+#
+# These exercise ``StacLookup`` itself rather than the ``FakeStac`` the tests
+# above use — ``FakeStac`` replaces the whole lookup and has no retry logic to
+# get wrong. httpx's transport is mocked at ``_client.get`` / ``_client.post``
+# so no network is touched.
+
+
+def _response(
+    status: int,
+    url: str,
+    *,
+    method: str = "GET",
+    json_body: dict[str, Any] | None = None,
+    retryable: bool = False,
+) -> httpx.Response:
+    """A fake httpx response. ``retryable=True`` sets ``Retry-After: 0`` so a
+
+    retried request's backoff sleep is instant instead of the 1s default —
+    tests assert *that* a retry happened, not how long it waited.
+    """
+    request = httpx.Request(method, url)
+    headers = {"retry-after": "0"} if retryable else None
+    return httpx.Response(
+        status, request=request, json=json_body or {"id": "unused"}, headers=headers
+    )
+
+
+def test_search_403_retries_and_succeeds() -> None:
+    """A /search 403 is the PC throttle (NORM-10), not a permanent refusal."""
+    lookup = script.StacLookup(concurrency=1, min_interval_s=0)
+    calls = 0
+
+    async def fake_post(url: str, *, json: dict[str, Any]) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return _response(403, url, method="POST", retryable=True)
+        return _response(200, url, method="POST", json_body={"features": [{"id": "found"}]})
+
+    lookup._client.post = fake_post
+
+    features = asyncio.run(lookup.search("naip", (-1.0, -1.0, 1.0, 1.0), "2023"))
+
+    assert calls == 2
+    assert [f["id"] for f in features] == ["found"]
+    asyncio.run(lookup.aclose())
+
+
+def test_item_403_does_not_retry_falls_through_to_search() -> None:
+    """A 403 from the item endpoint is a permanent per-item refusal (geometry audit); one try only."""
+    lookup = script.StacLookup(concurrency=1, min_interval_s=0)
+    calls = 0
+
+    async def fake_get(url: str) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return _response(403, url)
+
+    lookup._client.get = fake_get
+
+    status, item = asyncio.run(lookup.get_item("naip", "some_item"))
+
+    assert (status, item) == (403, None)
+    assert calls == 1  # no retry: a second 403 here would mean the fix regressed
+    asyncio.run(lookup.aclose())
+
+
+def test_search_403_exhausts_retry_budget_is_an_error() -> None:
+    """A /search 403 that never clears surfaces as a failure, not a swallowed row."""
+    lookup = script.StacLookup(concurrency=1, min_interval_s=0)
+    calls = 0
+
+    async def fake_post(url: str, *, json: dict[str, Any]) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return _response(403, url, method="POST", retryable=True)
+
+    lookup._client.post = fake_post
+
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(lookup.search("naip", (-1.0, -1.0, 1.0, 1.0), "2023"))
+
+    assert calls == script.FETCH_ATTEMPTS
+    asyncio.run(lookup.aclose())
+
+
+async def test_pacing_does_not_exceed_configured_concurrency() -> None:
+    """More requests than the concurrency cap never run at once, pacing on or off."""
+    lookup = script.StacLookup(concurrency=2, min_interval_s=0)
+    active = 0
+    max_active = 0
+    lock = asyncio.Lock()
+
+    async def fake_get(url: str) -> httpx.Response:
+        nonlocal active, max_active
+        async with lock:
+            active += 1
+            max_active = max(max_active, active)
+        await asyncio.sleep(0)  # yield so other tasks can overlap before this one finishes
+        async with lock:
+            active -= 1
+        return _response(200, url, json_body={"id": "x"})
+
+    lookup._client.get = fake_get
+
+    await asyncio.gather(*(lookup.get_item("naip", f"item-{i}") for i in range(6)))
+    await lookup.aclose()
+
+    assert max_active <= 2
