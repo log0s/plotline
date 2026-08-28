@@ -131,4 +131,90 @@ the frozen-record rule.
 
 ## Observed
 
-*Appended after the local run; see the same-batch entry below.*
+**Local, 2026-08-28.** `docker compose exec api python
+scripts/backfill_scenes.py --execute`, against the post-sweep database at
+`alembic_version = 0015`, script at commit `b3f8e94`:
+
+```
+imagery_snapshots rows: 2945
+duplicate (parcel_id, source, group_key) groups: 0
+
+planned scenes: 1262 (88 synthesized from mosaic URLs)
+planned parcel_scenes: 2945
+
+scenes already present: 0
+
+Written:
+  scenes inserted:        1262 (of which synthesized: 88)
+  scenes already present: 0
+  parcel_scenes inserted: 2945
+  parcel_scenes present:  0
+```
+
+No anomalies were reported: no snapshot rows disagreed about an item's
+attributes, no mosaic URL derived to an already-known item, and no URL
+failed to parse.
+
+### Scorecard
+
+| Quantity | Predicted | Actual | Verdict |
+|---|---|---|---|
+| `scenes` rows | 1262 | 1262 | confirmed |
+| — `provenance = 'snapshot'` | 1174 | 1174 | confirmed |
+| — `provenance = 'mosaic_url'` | 88 | 88 | confirmed |
+| `parcel_scenes` rows | 2945 | 2945 | confirmed |
+| duplicate groups encountered | 0 | 0 | confirmed |
+| `scenes` with `footprint IS NOT NULL` | 0 | 0 | confirmed |
+| `parcel_scenes` with `selected_by IS NOT NULL` | 0 | 0 | confirmed |
+| mosaic URLs that failed to parse | 0 | 0 | confirmed |
+| `imagery_snapshots` rows after the run | 2945 | 2945 | confirmed |
+
+**Every line confirmed; no deviations to explain.**
+
+### Checks run after the write
+
+```sql
+SELECT count(*) FROM (SELECT unnest(mosaic_scene_ids) sid FROM parcel_scenes
+                      WHERE mosaic_scene_ids IS NOT NULL) m
+WHERE NOT EXISTS (SELECT 1 FROM scenes s WHERE s.id = m.sid);
+```
+→ **0** dangling mosaic references. 141 `parcel_scenes` rows carry a mosaic,
+162 references in total — matching the 141 snapshot rows and 162
+`additional_cog_urls` entries exactly, so ADR rule 5 ("every tile in a mosaic
+is a first-class scene") holds with nothing dropped.
+
+```sql
+SELECT count(*) FROM parcel_scenes ps WHERE NOT EXISTS (
+  SELECT 1 FROM imagery_snapshots i
+  JOIN scenes s ON s.collection = i.stac_collection AND s.item_id = i.stac_item_id
+  WHERE i.parcel_id = ps.parcel_id AND i.source = ps.source AND s.id = ps.scene_id);
+```
+→ **0** `parcel_scenes` rows that do not correspond to a snapshot row.
+
+`platform` per source and provenance:
+
+| source | provenance | scenes | with platform | with bbox |
+|---|---|---|---|---|
+| landsat | snapshot | 618 | 618 | 618 |
+| naip | mosaic_url | 88 | 0 | 0 |
+| naip | snapshot | 200 | 0 | 200 |
+| sentinel2 | snapshot | 213 | 213 | 213 |
+| usgs_topo | snapshot | 143 | 0 | 143 |
+
+Every Landsat and Sentinel-2 scene got a platform and no NAIP or topo scene
+did, which is the intended outcome: those two are the only sources whose
+item ids name a satellite.
+
+### Re-run
+
+The script was run a second time with `--execute`, unchanged:
+
+```
+scenes inserted:        0 (of which synthesized: 0)
+scenes already present: 1262
+parcel_scenes inserted: 0
+parcel_scenes present:  2945
+```
+
+No drift reported and both row counts unchanged, so the idempotency claim is
+observed rather than asserted.
