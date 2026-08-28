@@ -419,6 +419,148 @@ class ImagerySnapshot(Base):
         )
 
 
+class Scene(Base):
+    """One catalogued imagery item, stored once however many parcels serve it.
+
+    The item half of docs/adr/0001-imagery-normalization.md. Nothing reads
+    this yet — step 1 creates and backfills it, step 3 cuts the read paths
+    over — so it is additive to ``ImagerySnapshot``, not a replacement for it.
+
+    ``footprint`` is the item's real geometry rather than its bbox envelope,
+    and is NULL on every row the step-1 backfill writes because
+    ``imagery_snapshots`` never held item geometry. ``provenance`` — not
+    ``footprint IS NULL`` — is what says where a row came from.
+
+    Constraint names match ``alembic/versions/0015_scenes_and_parcel_scenes.py``
+    exactly, so this table starts without the ORM/database name drift M7
+    records on ``timeline_request_tasks``.
+    """
+
+    __tablename__ = "scenes"
+
+    VALID_SOURCES = ("naip", "landsat", "sentinel2", "usgs_topo")
+
+    #: ``snapshot`` — copied from an ``imagery_snapshots`` row, so ``item_id``
+    #: is the catalogued STAC id. ``mosaic_url`` — synthesized by parsing a
+    #: mosaic tile URL that no snapshot row served directly, so ``item_id`` is
+    #: a URL-derived candidate that has never been checked against a catalog.
+    VALID_PROVENANCE = ("snapshot", "mosaic_url")
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    collection: Mapped[str] = mapped_column(Text, nullable=False)
+    item_id: Mapped[str] = mapped_column(Text, nullable=False)
+    capture_date: Mapped[date] = mapped_column(Date, nullable=False)
+    footprint: Mapped[str | None] = mapped_column(
+        Geometry(geometry_type="POLYGON", srid=4326),
+        nullable=True,
+    )
+    bbox: Mapped[str | None] = mapped_column(
+        Geometry(geometry_type="POLYGON", srid=4326),
+        nullable=True,
+    )
+    cog_url: Mapped[str] = mapped_column(Text, nullable=False)
+    thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolution_m: Mapped[float | None] = mapped_column(Double, nullable=True)
+    cloud_cover_pct: Mapped[float | None] = mapped_column(Double, nullable=True)
+    platform: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provenance: Mapped[str] = mapped_column(Text, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('naip', 'landsat', 'sentinel2', 'usgs_topo')",
+            name="ck_scenes_source",
+        ),
+        CheckConstraint(
+            "provenance IN ('snapshot', 'mosaic_url')",
+            name="ck_scenes_provenance",
+        ),
+        UniqueConstraint("collection", "item_id", name="uq_scenes_collection_item"),
+        Index("idx_scenes_footprint", "footprint", postgresql_using="gist"),
+        Index("idx_scenes_source_capture", "source", "capture_date"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Scene {self.collection}/{self.item_id} {self.capture_date}>"
+
+
+class ParcelScene(Base):
+    """Which scene a parcel serves for one selection period.
+
+    The selection half of docs/adr/0001-imagery-normalization.md. The unique
+    constraint is the point: G3 (two Sentinel-2 rows in one period for one
+    parcel) becomes impossible by schema instead of by reconciliation
+    discipline.
+
+    ``group_key`` carries exactly the string ``encode_group_key`` produces —
+    the same token the M4 ledger stores — so a heal that reads
+    ``timeline_task_years`` can join straight through to the row that got
+    served, without either table referencing the other.
+    """
+
+    __tablename__ = "parcel_scenes"
+
+    VALID_SOURCES = ("naip", "landsat", "sentinel2", "usgs_topo")
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    parcel_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("parcels.id", ondelete="CASCADE", name="fk_parcel_scenes_parcel_id"),
+        nullable=False,
+    )
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    group_key: Mapped[str] = mapped_column(Text, nullable=False)
+    scene_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("scenes.id", name="fk_parcel_scenes_scene_id"),
+        nullable=False,
+    )
+    # Additional NAIP tiles only; the primary scene is ``scene_id`` and is not
+    # a member. SQLite has no array type, so the test DB stores the same list
+    # as JSON — the variant TimelineRequest.sources already uses.
+    mosaic_scene_ids: Mapped[list[uuid.UUID] | None] = mapped_column(
+        ARRAY(UUID(as_uuid=True)).with_variant(JSON, "sqlite"),
+        nullable=True,
+    )
+    selected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    selected_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('naip', 'landsat', 'sentinel2', 'usgs_topo')",
+            name="ck_parcel_scenes_source",
+        ),
+        CheckConstraint(
+            r"group_key ~ '^[0-9]{4}(Q[1-4]|s)?$'",
+            name="ck_parcel_scenes_group_key",
+        ),
+        UniqueConstraint(
+            "parcel_id",
+            "source",
+            "group_key",
+            name="uq_parcel_scenes_parcel_source_group",
+        ),
+        Index("idx_parcel_scenes_scene", "scene_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ParcelScene parcel={self.parcel_id} {self.source} {self.group_key}>"
+
+
 class CensusSnapshot(Base):
     """A single census data point for a parcel's tract in a given year."""
 

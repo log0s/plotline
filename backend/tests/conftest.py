@@ -182,6 +182,71 @@ def _create_test_tables() -> None:
         )
         conn.execute(
             text("""
+                -- `footprint` and `bbox` are geometry(POLYGON,4326) on
+                -- PostgreSQL and plain TEXT here, the same way
+                -- imagery_snapshots.bbox already is: no spatial SQL runs
+                -- against this database.
+                CREATE TABLE IF NOT EXISTS scenes (
+                    id               TEXT PRIMARY KEY,
+                    source           TEXT NOT NULL
+                        CHECK (source IN ('naip', 'landsat', 'sentinel2', 'usgs_topo')),
+                    collection       TEXT NOT NULL,
+                    item_id          TEXT NOT NULL,
+                    capture_date     TEXT NOT NULL,
+                    footprint        TEXT,
+                    bbox             TEXT,
+                    cog_url          TEXT NOT NULL,
+                    thumbnail_url    TEXT,
+                    resolution_m     REAL,
+                    cloud_cover_pct  REAL,
+                    platform         TEXT,
+                    provenance       TEXT NOT NULL
+                        CHECK (provenance IN ('snapshot', 'mosaic_url')),
+                    fetched_at       TEXT NOT NULL,
+                    UNIQUE (collection, item_id)
+                )
+            """)
+        )
+        conn.execute(
+            text("""
+                CREATE INDEX IF NOT EXISTS idx_scenes_source_capture
+                ON scenes (source, capture_date)
+            """)
+        )
+        conn.execute(
+            text("""
+                -- ck_parcel_scenes_group_key is a POSIX regex on PostgreSQL,
+                -- which SQLite has no operator for; GLOB expresses the same
+                -- three shapes exactly, so the constraint is mirrored rather
+                -- than dropped.
+                -- `mosaic_scene_ids` is UUID[] on PostgreSQL and a JSON array
+                -- here, per ParcelScene.mosaic_scene_ids' with_variant.
+                CREATE TABLE IF NOT EXISTS parcel_scenes (
+                    id               TEXT PRIMARY KEY,
+                    parcel_id        TEXT NOT NULL
+                        REFERENCES parcels(id) ON DELETE CASCADE,
+                    source           TEXT NOT NULL
+                        CHECK (source IN ('naip', 'landsat', 'sentinel2', 'usgs_topo')),
+                    group_key        TEXT NOT NULL
+                        CHECK (group_key GLOB '[0-9][0-9][0-9][0-9]'
+                            OR group_key GLOB '[0-9][0-9][0-9][0-9]Q[1-4]'
+                            OR group_key GLOB '[0-9][0-9][0-9][0-9]s'),
+                    scene_id         TEXT NOT NULL REFERENCES scenes(id),
+                    mosaic_scene_ids TEXT,
+                    selected_at      TEXT NOT NULL,
+                    selected_by      TEXT,
+                    UNIQUE (parcel_id, source, group_key)
+                )
+            """)
+        )
+        conn.execute(
+            text("""
+                CREATE INDEX IF NOT EXISTS idx_parcel_scenes_scene
+                ON parcel_scenes (scene_id)
+            """)
+        )
+        conn.execute(
+            text("""
                 CREATE TABLE IF NOT EXISTS census_snapshots (
                     id                       TEXT PRIMARY KEY,
                     parcel_id                TEXT NOT NULL REFERENCES parcels(id),
@@ -263,6 +328,8 @@ def db() -> Generator[Session, None, None]:
 # Tables the committing fixture below truncates, children first.
 _LEDGER_TEST_TABLES = (
     "timeline_task_years",
+    "parcel_scenes",
+    "scenes",
     "imagery_snapshots",
     "census_snapshots",
     "timeline_request_tasks",
