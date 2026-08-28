@@ -530,3 +530,15 @@ constraint step 3 inherits and step 3 is the step that breaks.
   `scripts/backfill_scenes.py` has never been run against production. Nothing
   in production has changed. A mitigation that isn't running isn't mitigating,
   and none of this is running.
+
+**Later — 2026-08-28, same day:** the paragraph above is superseded and left
+unedited. Migration 0015 was deployed (both apps on
+`GH_SHA=4de57282c8692b9787564b62b0019fda149c2ba4`, alembic head `0015`) and
+`scripts/backfill_scenes.py --execute` ran **once** against production,
+writing 6,661 `scenes` and 12,884 `parcel_scenes`. Every predicted quantity
+confirmed, idempotence observed. Production has changed, and this is running.
+See `STEP1-PROD-REPORT.md`, the "Observed — production" section of
+`PREDICTION-STEP1.md`, and STATUS.md NORM-1 / NORM-7 / NORM-8. Two figures in
+this report are entries-level where the production run needed distinct URLs:
+F1's and F3's "540 production" unmatched is **505 distinct of 578**, which is
+the number of synthesized rows production actually holds.

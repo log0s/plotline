@@ -1,0 +1,46 @@
+# Production EXECUTE — scripts/backfill_scenes.py --execute
+# Host: fly ssh console -a log0s-plotline-api
+# Deploy sha: 4de57282c8692b9787564b62b0019fda149c2ba4
+# Prediction committed as: 93ee2ff (before this run)
+# Started (local UTC): 2026-08-28T17:05:22Z
+
+No machine specified, using 825d69b7e46618 in region lax
+Connecting to fdaa:58:2ead:a7b:2bf:226b:8984:2...
+
+# ── NOTE, appended 2026-08-28 ────────────────────────────────────────────
+# This capture is TRUNCATED, and the truncation is a client-side artifact,
+# not a failed run.
+#
+# The local `fly ssh console` client was killed by a 2-minute tool timeout
+# at 17:07:22. The remote process was NOT killed: it kept running as pid
+# 655 inside the machine, holding the single transaction it opened at
+# 17:05:26, and it committed normally. Everything after the "Connecting to"
+# line above was written to the dead client's stdout and is unrecoverable.
+# `fly logs -a log0s-plotline-api` does not contain it either — Fly's log
+# stream carries the app's main process (uvicorn), not an SSH session's.
+# So the structlog summary at scripts/backfill_scenes.py:622 is lost too.
+#
+# The run was NOT re-run. Evidence gathered read-only while it was still
+# executing, from inside the machine:
+#
+#   17:07:50  scenes 0, parcel_scenes 0   (transaction uncommitted, not empty)
+#   17:08:31  /proc: pid=655 state=S cmd=python scripts/backfill_scenes.py --execute
+#             pg_stat_activity: pid 1389 'idle in transaction',
+#               xact_start 2026-08-28T17:05:26.297067+00:00,
+#               query "INSERT INTO scenes (id, source, collection, item_id, ..."
+#             pg_locks: RowExclusiveLock on scenes, granted
+#   17:08:53  same transaction, query now "INSERT INTO parcel_scenes (..."
+#   17:09:14 .. 17:14:47  pid 655 alive, same transaction, tables still 0
+#   17:15:35  pid 655 GONE; scenes 6661, parcel_scenes 12884; no open transaction
+#
+# The script's single db.commit() is at scripts/backfill_scenes.py:620,
+# after both _insert_scenes and _insert_parcel_scenes, so the write is
+# all-or-nothing. The observed 0 -> 6661/12884 step at commit is that
+# transaction landing, and it matches the dry run's plan exactly.
+#
+# The run's outcome is therefore reconstructed from the database rather
+# than read from its own stdout. See STEP1-PROD-REPORT.md and the Observed
+# section of PREDICTION-STEP1.md. The idempotence re-run in
+# prod-backfill-recheck.txt is the independent confirmation that the
+# committed state equals the planned state: it reports 6661 scenes already
+# present and 0 to insert on either table.

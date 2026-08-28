@@ -207,3 +207,50 @@ chose a given snapshot is not recorded anywhere in the database or the audit
 trail, and synthesizing one — the deploy SHA at backfill time, say — would
 make an unattributed selection look attributed. Step 2's dual-write is where
 the column starts carrying a real value.
+
+
+---
+
+## Amendment — 2026-08-28, step 1 in production
+
+Appended the day step 1's backfill ran against production. Everything above
+is unedited. Source: `docs/audits/2026-08-normalization/STEP1-PROD-REPORT.md`
+and the "Observed — production" section of `.../PREDICTION-STEP1.md`.
+Commits: `93ee2ff` (prediction, before the write) and the scoring commit
+alongside it.
+
+**Step 1 is done.** Migration 0015 deployed and applied;
+`scripts/backfill_scenes.py --execute` ran once, 17:05–17:15 UTC, writing
+**6,661 `scenes`** (6,156 from distinct `(stac_collection, stac_item_id)` +
+505 synthesized) and **12,884 `parcel_scenes`** over 189 parcels. Every
+predicted quantity confirmed; the immediate re-run plans the identical
+totals and writes zero.
+
+**The change condition did not trip.** "Step 1's backfill surfaces more
+duplicate groups than G3" required a nonzero count; production measured
+**0** duplicate `(parcel_id, source, group_key)` groups, against a 24-hour
+ledger window carrying **zero `failed`** outcomes — so it is a real zero and
+not one resting on an unretried upstream failure (the NORM-3 reading rule).
+
+**A units correction to the amendment above.** That section says "540 of 613
+entries in production" for unmatched mosaic URLs. 613 is an *entries* count;
+Phase B synthesizes from *distinct* URLs, of which production has **578, with
+505 unmatched**. So production holds 505 `provenance = 'mosaic_url'` rows,
+not 540. The earlier sentence is left as written.
+
+**Rule 5 held at production scale.** 613 mosaic references across 576
+`parcel_scenes` rows — matching `imagery_snapshots`' 613 entries across 576
+rows exactly, with zero dangling references.
+
+**A step 2 precondition the ADR did not anticipate.** `UNIQUE (collection,
+item_id)` does not protect against the collision the synthesized rows set
+up. A synthesized `item_id` is a URL-derived candidate (the amendment above,
+F1), so a later dual-write of the *real* catalogued item for the same
+physical tile differs in `item_id`, satisfies the constraint, and lands a
+second `scenes` row for one item silently. The constraint is on the wrong
+key: it catches duplicate ids, and this failure is one item under two ids.
+**Step 2 must either reconcile by `cog_url` before insert** — the tile's
+actual address, and the key the backfill matched on — **or run the STAC
+enrichment pass over `WHERE provenance = 'mosaic_url'` first**, so
+`(collection, item_id)` is trustworthy table-wide before dual-write begins.
+Enrichment-first is the more durable choice. Recorded as STATUS.md NORM-7.

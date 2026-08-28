@@ -345,3 +345,162 @@ for the same parcels and sources. An overshoot the record cannot account for
 is a finding, not drift. A count *below* 12884 is a deviation in either
 direction — the script never deletes, so rows disappearing means something
 else did.
+
+---
+
+## Observed — production
+
+**2026-08-28.** `python scripts/backfill_scenes.py --execute` inside
+`log0s-plotline-api` machine `825d69b7e46618`, image
+`GH_SHA=4de57282c8692b9787564b62b0019fda149c2ba4`. Started 17:05:22 UTC,
+transaction opened 17:05:26, committed between 17:14:47 and 17:15:35 — about
+ten minutes for 19,545 row-by-row inserts through pgbouncer. Run **once**.
+
+### The run's own stdout was lost, and the outcome is reconstructed
+
+Stated before the numbers because it changes what the numbers rest on. The
+local `fly ssh console` client was killed by a 2-minute client-side timeout at
+17:07:22. The remote process was not: it continued as pid 655 and committed
+normally. Its printed report and its structlog summary
+(`scripts/backfill_scenes.py:622`) both went to the dead client's stdout and
+are unrecoverable — `fly logs` carries the app's main uvicorn process, not an
+SSH session's output.
+
+So this scorecard is **not** a transcription of the script's own report. It is
+measured from the database afterwards, plus the read-only observations taken
+while the run was still in flight, all recorded in
+`prod-backfill-run.txt`'s appended note. Two consequences worth being explicit
+about:
+
+* **What is fully verified:** every row count, every distribution, and the
+  idempotence result. These are direct measurements and are stronger evidence
+  than the script's own printout would have been.
+* **What is not directly verified:** the `anomalies` and `drift` lists the
+  script would have printed. Predicted zero for both. The evidence for that
+  prediction is indirect but not weak — an anomaly (a snapshot-attribute
+  disagreement, or a synthesized id colliding with a Phase A key) reduces the
+  scene total below plan, and the total came out at exactly the planned 6661;
+  `drift` is empty by construction on a first run into empty tables, since it
+  reports only pre-existing `parcel_scenes` rows that disagree, and there were
+  none. Recorded as finding **F5** in `STEP1-PROD-REPORT.md`, because "the
+  capture is incomplete" is exactly the thing that must not be smoothed over.
+
+The run was **not** re-run to recover the output. Re-running is not free of
+consequence, the prompt authorized exactly one write, and the state was
+already recoverable by reading.
+
+### Scorecard
+
+| Quantity | Predicted | Actual | Verdict |
+|---|---|---|---|
+| `scenes` rows | 6661 | **6661** | confirmed |
+| — `provenance = 'snapshot'` | 6156 | **6156** | confirmed |
+| — `provenance = 'mosaic_url'` | 505 | **505** | confirmed |
+| `parcel_scenes` rows | 12884 | **12884** | confirmed |
+| duplicate groups encountered | 0 | **0** | confirmed |
+| `scenes` with `footprint IS NOT NULL` | 0 | **0** | confirmed |
+| `parcel_scenes` with `selected_by IS NOT NULL` | 0 | **0** | confirmed |
+| mosaic URLs that failed to parse | 0 | **0** | confirmed |
+| `imagery_snapshots` rows after the run | 12884 | **12884** | confirmed |
+| dangling `mosaic_scene_ids` references | 0 | **0** | confirmed |
+| anomalies reported | 0 | **0 (inferred, see above)** | confirmed, indirectly |
+
+**Every line confirmed. No deviations.**
+
+### The drift assumption held, and it was checked rather than assumed
+
+The prediction made `parcel_scenes = 12884` conditional on no intervening
+writes and named the evidence that would have to account for an overshoot.
+There was no overshoot, and the window was genuinely quiet:
+
+```sql
+SELECT count(*) FROM imagery_snapshots
+WHERE created_at >= TIMESTAMPTZ '2026-08-28 17:00:00+00';        -- 0
+
+SELECT outcome, count(*) FROM timeline_task_years
+WHERE created_at >= TIMESTAMPTZ '2026-08-28 17:00:00+00'
+GROUP BY outcome;                                                 -- 0 rows
+
+SELECT max(created_at) FROM timeline_task_years;   -- 2026-08-27 22:00:44+00
+SELECT count(*), max(created_at) FROM imagery_snapshots;
+                                       -- 12884, 2026-08-27 19:41:01+00
+```
+
+No `imagery_snapshots` row and no M4 ledger row was written during the
+execution window. The newest row in either table predates the run by 19 and 21
+hours respectively, so the 17:03:37 measurement and the 17:15 commit describe
+the same table.
+
+**Reading the ledger alongside the count, per NORM-3.** The last 24 hours of
+`timeline_task_years` are 15,179 `ok`, 2,181 `absent`, 9 `indeterminate`, 9
+`suppressed` — and **zero `failed`**. NORM-3's warning is that a duplicate-group
+count measured after a sweep is only as complete as that sweep's upstream
+success rate: a `failed` year is a period reconciliation could not collapse, so
+it can hide a duplicate that a later retry would expose. There are no `failed`
+rows behind this measurement. The 0 duplicate groups at 17:03:38 is therefore a
+real zero, not a zero standing on an unretried failure, and the ADR's change
+condition ("step 1's backfill surfaces more duplicate groups than G3") did not
+trip. The 9 `indeterminate` rows are `usgs_topo` whole-source (`'*'`) keys — the
+same shape as local's three, which the local run established carry no duplicate
+groups and no bearing on the backfill.
+
+### Post-write checks
+
+| Check | Result |
+|---|---|
+| `scenes` with `footprint IS NOT NULL` | 0 of 6661 |
+| `parcel_scenes` with `selected_by IS NOT NULL` | 0 of 12884 |
+| dangling `mosaic_scene_ids` references | 0 |
+| `parcel_scenes` rows with no corresponding snapshot row | 0 |
+| `parcel_scenes` rows carrying a mosaic / total references | 576 / 613 |
+| `imagery_snapshots` rows, and distinct items, after the run | 12884 / 6156 — both unchanged |
+| distinct parcels in `parcel_scenes` | 189 |
+
+The mosaic figures match the source table exactly: `imagery_snapshots` holds
+613 `additional_cog_urls` entries across 576 rows, and `parcel_scenes` holds
+613 references across 576 rows. ADR rule 5 holds on production with nothing
+dropped and nothing invented.
+
+`parcel_scenes` by source equals `imagery_snapshots` by source, row for row:
+landsat 8127, naip 1305, sentinel2 2259, usgs_topo 1193.
+
+| source | provenance | scenes | with platform | with bbox | with resolution_m |
+|---|---|---|---|---|---|
+| landsat | snapshot | 3174 | 3174 | 3174 | 3174 |
+| naip | mosaic_url | 505 | 0 | 0 | 0 |
+| naip | snapshot | 1102 | 0 | 1102 | 1102 |
+| sentinel2 | snapshot | 1111 | 1111 | 1111 | 1111 |
+| usgs_topo | snapshot | 769 | 0 | 769 | 0 |
+
+Every Landsat and Sentinel-2 scene got a platform and no NAIP or topo scene
+did — the same result as local, and the intended one: those two are the only
+sources whose item ids name a satellite. Synthesized NAIP rows carry neither
+bbox nor `resolution_m`, as designed (STEP1-REPORT §6 item 8).
+
+`usgs_topo`'s 769 rows having no `resolution_m` is a property of the source
+data, not of the backfill — the column is copied straight from
+`imagery_snapshots`, which does not carry one for topo.
+
+### Idempotence
+
+Immediately after the commit, the dry run again (`prod-backfill-recheck.txt`,
+17:16:10–17:16:15):
+
+```
+imagery_snapshots rows: 12884
+duplicate (parcel_id, source, group_key) groups: 0
+
+planned scenes: 6661 (505 synthesized from mosaic URLs)
+planned parcel_scenes: 12884
+
+scenes already present: 6661
+
+Dry run — would insert 0 scene(s) and 0 parcel_scene(s). Nothing written.
+```
+
+**Zero to write on both tables**, and no drift reported. The plan is identical
+to the pre-run plan (6661 / 505 / 12884), which is the second, independent
+confirmation that what committed is exactly what was planned — the check does
+not depend on the lost stdout. No live-traffic rows had to be distinguished
+from re-run non-idempotence, because there were none: 0 `imagery_snapshots`
+rows created after 17:00Z.
