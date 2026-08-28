@@ -222,3 +222,128 @@ local.
 ## Observed — local sweep, 2026-08-28
 
 *(appended after the run; the half above is unedited)*
+
+The sweep ran 23:17:25–23:22:25Z: 43 requests queued, 43 complete, **3,373
+fresh ledger rows**. It was then extended by two probe runs and one
+idempotence re-run, for the reason §4 predicted would be needed. All four
+runs are scored together below; the sweep's own numbers are separated where
+they differ.
+
+### Scorecard
+
+| # | Quantity | Predicted | Observed | Verdict |
+|---|---|---|---|---|
+| P1 | Parity violations, both directions | 0 | **0 / 0** over 3,082 rows | confirmed |
+| P2 | Duplicate `(parcel_id, source, group_key)` groups | 0 | **0** | confirmed |
+| P3 | Duplicate `(collection, item_id)` in `scenes` | 0 | **0** | confirmed |
+| P4 | Dangling `mosaic_scene_ids` references | 0 | **0** | confirmed |
+| P5 | `parcel_scenes` = `imagery_snapshots` | equal | **3,082 = 3,082** | confirmed |
+| P6 | `scenes` = 1,262 + N, N in 0–60 (likely 0–25) | band | **N = 80** | **deviation — band exceeded, cause identified, see below** |
+| P7 | `scenes` rows deleted | 0 | **0** | confirmed |
+| P8 | `provenance = 'mosaic_url'` | 0 | **0** | confirmed |
+| P9 | `selected_by = 'dev'` = rows inserted or changed | — | **137**, all inserts; 0 changes | confirmed |
+| P10 | NAIP `resolution_m` still 1.0 on pre-existing rows | yes | **all 306 still 1.0**; new rows 0.3/0.6/1.0 | confirmed |
+| P11 | `imagery_snapshots` after | no prediction | 3,082 (2,945 + 137) | — |
+
+### The sweep itself took the idempotent branch §4 named
+
+Over the 43 swept parcels the run selected **exactly the items already
+served**: `scenes` unchanged at 1,262, `parcel_scenes` unchanged at 2,945,
+`selected_by` NULL on all 2,945, NAIP `resolution_m` still 1.0 on all 306.
+Every one of the 2,943 `ok` groups passed through the dual-write and found
+its scene present and its selection unchanged, so nothing was written. That
+is the correct behaviour and it is also, on its own, weak evidence — a
+dual-write that never runs produces the same table.
+
+**So the insert path was forced, additively.** §4 anticipated needing to;
+what it did not anticipate is that the 20 `stac_403` groups would not supply
+it. They mostly cleared (11 landsat → 2, 9 sentinel2 → 0) and the successes
+landed on items `scenes` already held, because Landsat and Sentinel-2 scenes
+are shared between nearby parcels — which is the ADR's premise, observed.
+
+Two probe parcels were **inserted** (never deleted; a delete was not
+attempted):
+
+| Probe | Location | Result |
+|---|---|---|
+| `1111…5555` | 1600 Pennsylvania Ave NW, DC | 71 snapshots / **71 `parcel_scenes`, all `selected_by = 'dev'`**; **0 new `scenes`** — every item was already catalogued by one of the five DC parcels the database already held, 329 shared rows |
+| `2222…6666` | 38.5 N, 98.5 W (Great Bend, KS); nearest existing parcel > 100 km | 66 snapshots / **66 `parcel_scenes`**; **80 new `scenes`, all `provenance = 'selection'`** |
+
+The DC probe is the sharper of the two: 71 lookups by `(collection,
+item_id)`, 71 hits, 0 inserts. That is the insert-only rule and the
+one-row-per-item promise, both observed rather than argued.
+
+### P6's deviation, explained
+
+80 new scenes against a predicted 0–60. The prediction's derivation was built
+around the *swept* parcels and never assigned a number to a parcel that does
+not exist yet — the Kansas probe was invented after the prediction was
+committed, to reach the write path the sweep could not. Its 80 rows are 43
+landsat + 21 naip + 11 sentinel2 + 5 usgs_topo, which is one parcel's whole
+imagery history. **The prediction is not edited to fit**; the deviation is
+scope, not behaviour, and P6's mechanism (`scenes` grows only by items not
+already held) held exactly.
+
+### What the `selection` rows carry
+
+| source | rows | footprint | bbox | resolution_m | platform | cloud |
+|---|---|---|---|---|---|---|
+| landsat | 43 | 43 | 43 | 43 (all 30) | 43 | 43 |
+| naip | 21 | 21 | 21 | 21 — **0.3 (3), 0.6 (6), 1.0 (12)** | 0 | 0 |
+| sentinel2 | 11 | 11 | 11 | 11 (all 10) | 11 | 11 |
+| usgs_topo | 5 | **0** | 5 | 0 | 0 | 0 |
+
+All 75 STAC-sourced footprints are `ST_Polygon`. The five NULL footprints are
+exactly the topo rows, which is designed: a TNM product carries no geometry
+(§5.4's shape, one row further than it stated). **Requirement met: a
+pipeline-written scene has its footprint from birth**, so the
+synthesized-candidate class cannot grow — `mosaic_url` stayed at 0 through
+four pipeline runs that catalogued 21 NAIP tiles.
+
+### NORM-9 and NORM-11, observed end to end
+
+New NAIP `imagery_snapshots` rows carry the item's gsd: **0.3 (2), 0.6 (4),
+1.0 (11)** across the two probes — 6 of 17 are not 1.0, against a
+pre-sweep table where 306 of 306 were. No noisy value appeared in this
+sample, so the rounding rule was not exercised by live data here; it is
+covered by `test_the_rounding_rule_normalizes_every_observed_gsd` against all
+seven production spellings. The 306 pre-existing rows are unchanged, exactly
+as §5.2 said they would be.
+
+### Idempotence, observed
+
+The Kansas parcel was run a second time through the full pipeline. An md5
+over `(source, group_key, scene_id, mosaic_scene_ids, selected_at,
+selected_by)` for all 66 of its rows is **identical before and after**
+(`eb608d8aec7feafa9aa09f75e9992a94`), and the three table counts did not
+move. A re-selection of the same scene writes nothing and does not bump
+`selected_at` — §5.3's rule, observed.
+
+### Mosaics
+
+| | `imagery_snapshots` | `parcel_scenes` |
+|---|---|---|
+| rows carrying a mosaic | 148 | 148 |
+| entries / references | 176 | 176 |
+
+And a check the prediction did not name: every one of the 176 references
+resolves to a `scenes` row whose `cog_url` is a member of the same group's
+`additional_cog_urls` array — **176 of 176**. The two representations name
+the same tiles, not merely the same count.
+
+### The ledger, read alongside (NORM-3)
+
+The sweep's own window: landsat 1,847 `ok` / **2 `failed`/`stac_403`**, naip
+306 `ok` / 420 `absent`/`no_scenes` / 5 `suppressed`, sentinel2 516 `ok` / 0
+failed, usgs_topo 274 `ok` / 3 `indeterminate` (TNM row cap, pre-existing).
+
+The two failures are single Landsat years on two parcels — Death Valley 1996
+and 1600 Amphitheatre Pkwy 2004. Neither left a duplicate group (P2 = 0), and
+under the absent-group rule neither cost a row in either table. So **P2 = 0
+is a real zero and not one resting on an unretried upstream failure** — the
+reading NORM-3 requires.
+
+### Stop conditions
+
+None fired. P3 = 0, P2 = 0, `scenes` never fell, and the single deviation
+(P6) is scope rather than a parity violation.
