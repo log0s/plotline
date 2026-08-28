@@ -270,3 +270,148 @@ read nor written (2,945 rows, unchanged); `parcel_scenes` was not touched
 (2,945 rows, 0 dangling references); the 1,174 `provenance = 'snapshot'` rows
 are unchanged, footprints still NULL — that full-table enrichment is a
 separate pass and is explicitly deferred (STATUS.md NORM-7).
+
+---
+
+## Prediction — production, second attempt, 2026-08-28
+
+Written and committed **before** `--execute` runs against production. The
+local prediction above and the local Observed section are untouched; so is
+`ENRICH-PROD-REPORT.md`, which records the first attempt's STOP.
+
+This prediction is derived from **this session's own dry run**
+(`enrich-prod-dryrun-2.md`, 22:19:29–22:22:59Z, pid 658 on machine
+`825d69b7e46618`) — the first production resolution under the NORM-10 fix
+(`f2d6cc3`, deployed as `1cc7cb7`): split retry policy plus
+`--min-interval-s 0.2` pacing. The first attempt's dry run
+(196 / 303 / 0 / 0 / **6 error**) is corroborating evidence, not the basis:
+it ran under the unpaced client whose throttle NORM-10 describes.
+
+The dry run and the execute share one `apply_resolutions`
+(`enrich_synthesized_scenes.py:628`), so a plan that differs from the write
+would be a bug, not a surprise. What the execute does *not* share is the
+fetch: it re-issues all ~814 requests against the live catalog. Every number
+below is therefore a prediction about a **second** conversation with
+Planetary Computer, not a replay of the first.
+
+### 1. The run
+
+| Quantity | Predicted | Basis |
+|---|---|---|
+| Queue at start | **505** | measured 22:19:01Z, and again by the dry run at 22:19:32Z |
+| `already-exact` | **196** | dry run |
+| `id-corrected` | **309** | dry run |
+| — of which `_h_` spelling class | **17** of the queue's 22 (`5` are `already-exact`) | dry run; refines `ENRICH-PROD-REPORT.md` §7 |
+| `merged` | **0** | dry run, and both structural queries return 0 in production (§3's form, re-run 22:19:01Z) |
+| `unmatched` | **0** | dry run |
+| `error` | **0** | dry run |
+| Rows enriched in place | **505** | |
+| **Queue after the run** | **0** | |
+| Capture-date disagreements | **0** | dry run; F1's strongest claim, now measured over 505 rows |
+| PC requests | **~814** | 505 item GETs + 309 searches |
+| Wall time | **3–5 min** | dry run took 3.4 min at 0.2 s pacing; the execute adds one `commit()` over 505 UPDATEs |
+
+Falsified if the queue after the run is not 0 with no explanation, or if the
+starting queue is not 505.
+
+### 2. Post-run state
+
+| Quantity | Before (22:19:01Z) | Predicted after |
+|---|---|---|
+| `scenes` `provenance = 'snapshot'` | 6156 | **6156** — untouched, not this pass's queue |
+| `scenes` `provenance = 'mosaic_url'` | 505 | **0** |
+| `scenes` `provenance = 'enriched'` | 0 (value absent) | **505** |
+| `scenes` total | 6661 | **6661** — 505 updates in place, 0 deletes because 0 merges |
+| `enriched` rows with non-NULL `footprint` / `bbox` / `resolution_m` | 0 / 0 / 0 | **505 / 505 / 505** |
+| footprint geometry type | — | `ST_Polygon` on all 505, as locally |
+| `parcel_scenes` total | 12884 | **12884** |
+| `parcel_scenes` carrying a mosaic / total mosaic refs | 576 / 613 | **576 / 613** |
+| Dangling `mosaic_scene_ids` references | 0 | **0** |
+| `imagery_snapshots` | 12884 rows / 6156 distinct `stac_item_id` | **unchanged** — this pass neither reads nor writes it |
+
+**The `parcel_scenes` invariant, stated because it is the one a reader is
+most likely to get wrong: 12884 is unchanged even if merges are nonzero.** A
+merge deletes the *synthesized `scenes` row* and rewrites the offending
+`parcel_scenes.mosaic_scene_ids` **array element** to point at the surviving
+scene (`_merge_scene`, `enrich_synthesized_scenes.py:580-625`). It repoints
+references; it never deletes a `parcel_scenes` row. The count that *can* move
+under a merge is the **total mosaic references** (613), because the merge
+de-duplicates: if one `parcel_scenes` row already referenced both the
+synthesized row and its merge target, the two collapse to one
+(`if replacement not in merged`). So: `parcel_scenes` rows **= 12884
+unconditionally**; mosaic references **= 613 given 0 merges**, and ≤ 613 if
+merges occur.
+
+### 3. The two branches that have never run
+
+Both are predicted **zero**, and both being nonzero is **expected territory,
+not a deviation** — this is the largest population either has ever faced.
+
+**a. 403-on-item-GET falls through to search.** Predicted **0 occurrences**.
+Zero across 88 local rows, zero across the first production dry run's 505,
+and zero across this dry run's 505: all 309 non-exact rows returned `item GET
+404`, and the 196 exact ones returned 200. The branch would enter 1,098 rows
+without being taken. The geometry audit's six forbidden NAIP items are not in
+this queue (checked locally in §4; production's queue is all-NAIP but none of
+the six ids appear in the dry run's per-row table). A nonzero count here is
+**new knowledge**, not a failure: it would be the first live evidence that the
+design assumption "a 403 on the item endpoint is recoverable via the search"
+holds — or, if such a row lands `unmatched-403`, the first evidence it does
+not. Either way it gets reported, not smoothed.
+
+**b. Collision-merge.** Predicted **0**. `_merge_scene` has never run outside
+its unit tests. Production's own structural queries return 0 (both re-run
+22:19:01Z: candidate ids prefix-overlapping another `scenes` row's `item_id`
+in the same collection → 0; queue `cog_url` also held by another `scenes` row
+→ 0; and all 505 queue `cog_url`s are distinct). The dry run planned 0 merges
+over the same 505 rows. This is a claim about the table, not a guess about the
+catalog. A nonzero merge would mean a corrected id landed on an existing row
+by a route none of those queries covers — worth stopping to explain, per §7
+above.
+
+**If both finish at zero, neither is upgraded to "proven".** They stay
+"tested by unit tests, never observed live," and that is what the record will
+say.
+
+### 4. NORM-9 — the `resolution_m` distribution this run finally measures
+
+`gsd` reaches `scenes.resolution_m` only through an enrichment write, so this
+run produces production's first real NAIP resolution numbers. Predicted, by
+scaling the local 88-row distribution (`ENRICH-LOCAL-REPORT.md` F2) to 505:
+
+| `resolution_m` | Local (of 88) | Predicted prod (of 505) | Band |
+|---|---|---|---|
+| 0.3 | 9 (10.2%) | ~52 | 15–120 |
+| 0.5 | 1 (1.1%) | ~6 | 0–30 |
+| 0.6 | 30 (34.1%) | ~172 | 100–260 |
+| 1.0 | 48 (54.5%) | ~275 | 180–360 |
+
+The bands are wide on purpose and the point estimates are weak: resolution is
+a property of the **state-year vintage**, and production's queue spans far
+more states than the local one (which is heavily CA/ID). The one claim worth
+falsifying is the qualitative one: **`1.0` will no longer be the universal
+value**, and materially more than zero rows will carry 0.6 or 0.3 — which is
+what makes NORM-9's "every NAIP snapshot row says 1.0 m and most are wrong"
+true at production scale. The 6,156 `snapshot` rows are **not** corrected by
+this run and will still all say 1.0; that disagreement-by-provenance is
+NORM-9's open consequence, not this run's defect. Nothing here is fixed by
+this pass.
+
+### 5. What would stop the run
+
+Unchanged from §7 above, restated for this attempt:
+
+* The starting queue is not 505.
+* Any `error` outcome. The NORM-10 class specifically should not recur — a
+  search 403 now retries — so an `error` in the execute is either a genuinely
+  permanent search 403 (a 403 surviving four paced attempts) or something new.
+  Either is a finding.
+* A capture-date disagreement, after 593 rows and two production dry runs
+  produced none.
+* A merge the three structural queries do not explain.
+
+A STOP here is an outcome, not a failure. But note the asymmetry the execute
+introduces and the dry run did not have: **the write commits once, at the
+end** (`enrich_synthesized_scenes.py:763`). There is no partial state to stop
+into — the run either commits all 505 or raises and rolls back. So "stop"
+after `--execute` starts means "observe and report", not "intervene".
