@@ -447,9 +447,14 @@ class Scene(Base):
     #: ``enriched`` — was ``mosaic_url``, and a catalogued item whose image
     #: asset href equals this row's ``cog_url`` exactly has since replaced the
     #: candidate id and filled the item facts
-    #: (``scripts/enrich_synthesized_scenes.py``). "Is this ``item_id``
-    #: catalogued" is ``provenance <> 'mosaic_url'``.
-    VALID_PROVENANCE = ("snapshot", "mosaic_url", "enriched")
+    #: (``scripts/enrich_synthesized_scenes.py``). ``selection`` — written by
+    #: the pipeline at selection time from the STAC item itself
+    #: (``reconcile_source_snapshots``' dual-write, ADR step 2), so it carries
+    #: ``footprint`` from birth and was never an ``imagery_snapshots`` copy.
+    #: "Is this ``item_id`` catalogued" is ``provenance <> 'mosaic_url'``;
+    #: "was this copied out of ``imagery_snapshots``" is
+    #: ``provenance = 'snapshot'``, which is also NORM-7's footprint queue.
+    VALID_PROVENANCE = ("snapshot", "mosaic_url", "enriched", "selection")
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -486,7 +491,7 @@ class Scene(Base):
             name="ck_scenes_source",
         ),
         CheckConstraint(
-            "provenance IN ('snapshot', 'mosaic_url', 'enriched')",
+            "provenance IN ('snapshot', 'mosaic_url', 'enriched', 'selection')",
             name="ck_scenes_provenance",
         ),
         UniqueConstraint("collection", "item_id", name="uq_scenes_collection_item"),
