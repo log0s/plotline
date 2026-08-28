@@ -201,7 +201,7 @@ def _create_test_tables() -> None:
                     cloud_cover_pct  REAL,
                     platform         TEXT,
                     provenance       TEXT NOT NULL
-                        CHECK (provenance IN ('snapshot', 'mosaic_url')),
+                        CHECK (provenance IN ('snapshot', 'mosaic_url', 'enriched')),
                     fetched_at       TEXT NOT NULL,
                     UNIQUE (collection, item_id)
                 )

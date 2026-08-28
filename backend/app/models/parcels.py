@@ -444,7 +444,12 @@ class Scene(Base):
     #: is the catalogued STAC id. ``mosaic_url`` — synthesized by parsing a
     #: mosaic tile URL that no snapshot row served directly, so ``item_id`` is
     #: a URL-derived candidate that has never been checked against a catalog.
-    VALID_PROVENANCE = ("snapshot", "mosaic_url")
+    #: ``enriched`` — was ``mosaic_url``, and a catalogued item whose image
+    #: asset href equals this row's ``cog_url`` exactly has since replaced the
+    #: candidate id and filled the item facts
+    #: (``scripts/enrich_synthesized_scenes.py``). "Is this ``item_id``
+    #: catalogued" is ``provenance <> 'mosaic_url'``.
+    VALID_PROVENANCE = ("snapshot", "mosaic_url", "enriched")
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -481,7 +486,7 @@ class Scene(Base):
             name="ck_scenes_source",
         ),
         CheckConstraint(
-            "provenance IN ('snapshot', 'mosaic_url')",
+            "provenance IN ('snapshot', 'mosaic_url', 'enriched')",
             name="ck_scenes_provenance",
         ),
         UniqueConstraint("collection", "item_id", name="uq_scenes_collection_item"),
