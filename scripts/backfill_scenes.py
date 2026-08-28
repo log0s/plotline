@@ -78,7 +78,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.logging_config import configure_script_logging
-from app.services.imagery import encode_group_key
+from app.services.imagery import encode_group_key, platform_for
 
 # The scope map is read from the fetch configuration rather than restated, so
 # a source that changes its grouping cannot leave this script bucketing by the
@@ -92,13 +92,6 @@ SELECTION_SCOPE_BY_SOURCE: dict[str, str] = {
     str(cfg["source"]): str(cfg["selection_scope"]) for cfg in _TIMELINE_SOURCES
 }
 SELECTION_SCOPE_BY_SOURCE["usgs_topo"] = "decade"
-
-# Platform prefixes that name a satellite unambiguously. Anything else is
-# NULL — a platform column that guesses is worse than one that is empty.
-# LT04 and S2C are here because both appear in real rows; the ADR's list
-# predates Sentinel-2C's 2024 launch.
-_LANDSAT_PLATFORMS = frozenset({"LT04", "LT05", "LE07", "LC08", "LC09"})
-_SENTINEL_PLATFORMS = frozenset({"S2A", "S2B", "S2C"})
 
 # NAIP filename stems end in the capture date, optionally followed by the
 # publication date: ``m_4007424_ne_18_030_20230920`` or
@@ -280,15 +273,6 @@ def parse_naip_tile_url(url: str) -> ParsedTile:
         raise BackfillError(f"unparseable capture date in tile filename: {url}") from exc
 
     return ParsedTile(collection=collection, item_id=f"{state}_{stem}", capture_date=capture_date)
-
-
-def platform_for(item_id: str) -> str | None:
-    """The satellite the item id names, or None when it does not name one."""
-    if item_id[:4] in _LANDSAT_PLATFORMS:
-        return item_id[:4]
-    if item_id[:3] in _SENTINEL_PLATFORMS:
-        return item_id[:3]
-    return None
 
 
 # ── Planning ──────────────────────────────────────────────────────────────────

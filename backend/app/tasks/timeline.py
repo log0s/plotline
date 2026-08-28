@@ -12,7 +12,7 @@ import logging
 import time
 import uuid
 from datetime import date
-from typing import Any, cast
+from typing import Any
 
 import httpx
 from celery.exceptions import SoftTimeLimitExceeded
@@ -638,7 +638,7 @@ async def _search_and_persist_source(
     # Persist snapshots — one row per group, with primary cog_url and
     # additional_cog_urls for mosaic components.
     items_saved = 0
-    selected_refs: list[tuple[str, date]] = []
+    selected_refs: list[imagery_service.SelectedScene] = []
     persisted: set[str] = set()
     with SessionLocal() as db:
         task_id = year_ledger.get_task_id(db, timeline_request_id, source_name)
@@ -669,21 +669,41 @@ async def _search_and_persist_source(
                     )
                 continue
 
-            additional_urls: list[str] = []
+            # Every tile of the mosaic becomes a SelectedScene, not just a
+            # URL: the selector has the real STAC items in hand, so the
+            # normalized shape can catalogue each tile as a first-class scene
+            # with its own footprint. That is what closes the synthesized-
+            # candidate class STEP1-REPORT F1 describes — no later pass has to
+            # guess an item id out of a tile URL for a row written here.
+            tiles: list[imagery_service.SelectedScene] = []
             for extra_item in group[1:]:
                 extra_url = stac_service.extract_cog_url(extra_item, collection)
                 if extra_url:
-                    additional_urls.append(extra_url)
+                    tiles.append(
+                        imagery_service.SelectedScene.from_stac_item(
+                            extra_item,
+                            source=source_name,
+                            collection=collection,
+                            cog_url=extra_url,
+                            default_resolution_m=source_cfg["resolution_m"],
+                        )
+                    )
 
-            thumbnail_url = stac_service.extract_thumbnail_url(primary)
-            capture_date = stac_service.extract_capture_date(primary)
-            props = primary.get("properties")
-            cloud_cover = (
-                cast(dict[str, Any], props).get("eo:cloud_cover")
-                if isinstance(props, dict)
-                else None
+            # One object, both write shapes. resolution_m is the item's own
+            # gsd wherever the item carries one (NORM-9), normalized by
+            # imagery_service.normalize_resolution_m (NORM-11), and the
+            # snapshot row below is written from the same field so the two
+            # tables cannot disagree about a row they were written from
+            # together.
+            selection = imagery_service.SelectedScene.from_stac_item(
+                primary,
+                source=source_name,
+                collection=collection,
+                cog_url=primary_cog_url,
+                default_resolution_m=source_cfg["resolution_m"],
+                mosaic=tiles,
             )
-            bbox_wkt = stac_service.extract_bbox_wkt(primary)
+            additional_urls = [tile.cog_url for tile in tiles]
 
             # Written before the upsert, uncommitted: the upsert commits for
             # itself, so the ledger row and the snapshot it describes land in
@@ -703,18 +723,18 @@ async def _search_and_persist_source(
                 db,
                 parcel_id=parcel_id,
                 source=source_name,
-                capture_date=capture_date,
-                stac_item_id=str(primary["id"]),
-                stac_collection=collection,
-                cog_url=primary_cog_url,
+                capture_date=selection.capture_date,
+                stac_item_id=selection.item_id,
+                stac_collection=selection.collection,
+                cog_url=selection.cog_url,
                 additional_cog_urls=additional_urls or None,
-                thumbnail_url=thumbnail_url,
-                resolution_m=source_cfg["resolution_m"],
-                cloud_cover_pct=float(cloud_cover) if cloud_cover is not None else None,
-                bbox_wkt=bbox_wkt,
+                thumbnail_url=selection.thumbnail_url,
+                resolution_m=selection.resolution_m,
+                cloud_cover_pct=selection.cloud_cover_pct,
+                bbox_wkt=selection.bbox_wkt,
             )
             items_saved += 1
-            selected_refs.append((str(primary["id"]), capture_date))
+            selected_refs.append(selection)
             if group_key is not None:
                 persisted.add(group_key)
 
@@ -729,6 +749,14 @@ async def _search_and_persist_source(
         # to move inside that transaction. Ordering is the safety property —
         # an interruption between persist and reconcile leaves duplicates,
         # which the next run cleans up, never an empty source.
+        #
+        # It is also where the normalized shape is written: passing
+        # SelectedScene objects rather than (id, date) tuples makes this call
+        # write scenes and parcel_scenes in the same transaction as the
+        # deletes (ADR step 2). An interruption before it leaves the new
+        # snapshot rows with no parcel_scenes row, which the next run's
+        # reconcile writes — the same recoverable direction the ordering above
+        # already chose.
         imagery_service.reconcile_source_snapshots(
             db,
             parcel_id,
@@ -841,7 +869,7 @@ async def _search_and_persist_topo(
     )
 
     items_saved = 0
-    selected_refs: list[tuple[str, date]] = []
+    selected_refs: list[imagery_service.SelectedScene] = []
     with SessionLocal() as db:
         task_id = year_ledger.get_task_id(db, timeline_request_id, source_name)
         if task_id is not None:
@@ -933,21 +961,35 @@ async def _search_and_persist_topo(
                 year_ledger.record_year_outcome(
                     db, task_id, source_name, decade_key, "ok", commit=False
                 )
+            # Topo products are TNM records, not STAC items: no geometry, no
+            # gsd, no platform. The dual-write still runs — parcel_scenes has
+            # to hold every group imagery_snapshots holds, or the two tables
+            # disagree about which periods a parcel serves — with the fields
+            # the source does not have left NULL, exactly as the step-1
+            # backfill wrote them.
+            selection = imagery_service.SelectedScene(
+                source=source_name,
+                collection="usgs-historical-topo",
+                item_id=source_id,
+                capture_date=publication_date,
+                cog_url=cog_url,
+                bbox_wkt=topo_service.extract_bbox_wkt(item),
+            )
             imagery_service.upsert_imagery_snapshot(
                 db,
                 parcel_id=parcel_id,
                 source=source_name,
-                capture_date=publication_date,
-                stac_item_id=source_id,
-                stac_collection="usgs-historical-topo",
-                cog_url=cog_url,
-                thumbnail_url=None,
-                resolution_m=None,
-                cloud_cover_pct=None,
-                bbox_wkt=topo_service.extract_bbox_wkt(item),
+                capture_date=selection.capture_date,
+                stac_item_id=selection.item_id,
+                stac_collection=selection.collection,
+                cog_url=selection.cog_url,
+                thumbnail_url=selection.thumbnail_url,
+                resolution_m=selection.resolution_m,
+                cloud_cover_pct=selection.cloud_cover_pct,
+                bbox_wkt=selection.bbox_wkt,
             )
             items_saved += 1
-            selected_refs.append((source_id, publication_date))
+            selected_refs.append(selection)
 
         # Same persist-then-reconcile ordering as the STAC sources, scoped to
         # the decade select_topo_items groups by: a later run that picks a

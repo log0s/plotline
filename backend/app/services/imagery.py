@@ -10,10 +10,11 @@ test databases.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
@@ -1067,11 +1068,372 @@ def _parse_key_year(text: str, key: str) -> int:
     return int(text)
 
 
+# ── The dual-write: one selection, two shapes ─────────────────────────────────
+
+# Step 2 of docs/adr/0001-imagery-normalization.md. Everything below writes
+# `scenes` and `parcel_scenes` alongside `imagery_snapshots`; nothing below is
+# read by any serving path. Step 3 owns the cutover.
+
+#: What a `scenes` row written by the pipeline says about itself: the facts
+#: came from the STAC item at selection time, so `footprint` is populated from
+#: birth and the row was never an `imagery_snapshots` copy. Migration 0017.
+SCENE_PROVENANCE_SELECTION = "selection"
+
+# Platform prefixes that name a satellite unambiguously. Anything else is
+# NULL — a platform column that guesses is worse than one that is empty.
+# LT04 and S2C are here because both appear in real item ids; the ADR's list
+# predates Sentinel-2C's launch. `scripts/backfill_scenes.py` imports this so
+# the backfilled and pipeline-written rows cannot disagree about a prefix.
+_LANDSAT_PLATFORMS = frozenset({"LT04", "LT05", "LE07", "LC08", "LC09"})
+_SENTINEL_PLATFORMS = frozenset({"S2A", "S2B", "S2C"})
+
+
+def platform_for(item_id: str) -> str | None:
+    """The satellite the item id names, or None when it does not name one."""
+    if item_id[:4] in _LANDSAT_PLATFORMS:
+        return item_id[:4]
+    if item_id[:3] in _SENTINEL_PLATFORMS:
+        return item_id[:3]
+    return None
+
+
+# NORM-11. Planetary Computer's `properties.gsd` carries float-representation
+# noise: the 505-row production enrichment found seven distinct spellings of
+# 0.6 m — 0.5999999999999901 through 0.6000000000000097 — across eight rows
+# (ENRICH-PROD-REPORT-2.md F2, confirmed against PC's own item JSON). Stored
+# verbatim, `WHERE resolution_m = 0.6` silently misses those rows, a GROUP BY
+# invents buckets, and MapView's resolution chip renders the noise.
+#
+# The rule: round to two decimals, once, at write time, in this one function.
+# Two decimals is chosen against the values that actually occur — NAIP 0.3 /
+# 0.5 / 0.6 / 1.0, Landsat 30, Sentinel-2 10 — whose closest pair is 0.1 m
+# apart, so rounding can never merge two real resolutions, and it absorbs
+# noise four orders of magnitude larger than the ~1e-14 observed.
+#
+# What it costs, stated because it is a real loss: the upstream double is not
+# recoverable from the column. `resolution_m` answers "how fine is this
+# image", whose honest answer is a nominal resolution; anyone needing the
+# exact `gsd` is one STAC fetch from it, and it was never true that the column
+# held it — for NAIP it held the constant 1.0 (NORM-9).
+_RESOLUTION_DECIMALS = 2
+
+
+def normalize_resolution_m(value: object) -> float | None:
+    """A STAC ``gsd`` as a nominal resolution, or None if it is not a number."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return round(float(value), _RESOLUTION_DECIMALS)
+
+
+@dataclass(frozen=True)
+class SelectedScene:
+    """One item this run selected, with every fact both write shapes need.
+
+    Built once per item and used for both writes, so ``imagery_snapshots`` and
+    ``scenes`` cannot disagree about a row they were written from together —
+    the reason ``resolution_m`` lands here rather than being derived twice.
+
+    ``mosaic`` holds the *additional* NAIP tiles only. The primary is this
+    object and is never a member of its own mosaic, matching
+    ``parcel_scenes.mosaic_scene_ids``.
+    """
+
+    source: str
+    collection: str
+    item_id: str
+    capture_date: date
+    cog_url: str
+    thumbnail_url: str | None = None
+    resolution_m: float | None = None
+    cloud_cover_pct: float | None = None
+    bbox_wkt: str | None = None
+    footprint_wkt: str | None = None
+    platform: str | None = None
+    mosaic: tuple[SelectedScene, ...] = ()
+
+    @classmethod
+    def from_stac_item(
+        cls,
+        item: dict[str, object],
+        *,
+        source: str,
+        collection: str,
+        cog_url: str,
+        default_resolution_m: float | None = None,
+        mosaic: Sequence[SelectedScene] = (),
+    ) -> SelectedScene:
+        """Read one STAC item into the facts both tables store.
+
+        ``cog_url`` is passed in rather than re-extracted: the caller has
+        already had to decide what to do with an item carrying no COG asset,
+        and deriving it twice invites the two answers to differ.
+
+        ``default_resolution_m`` is the per-source constant, and is used
+        **only** when the item carries no ``gsd``. NORM-9 is that NAIP's
+        constant 1.0 was written even when the item said 0.3, so the item wins
+        wherever it speaks; Landsat and Sentinel-2 items that carry no
+        item-level ``gsd`` keep the constant they have always had.
+        """
+        from app.services import stac as stac_service
+
+        raw_props = item.get("properties")
+        props: Mapping[str, object] = raw_props if isinstance(raw_props, dict) else {}
+        item_id = str(item.get("id"))
+
+        footprint_wkt, complaint = stac_service.extract_footprint_wkt(item)
+        if complaint is not None:
+            # Not a refusal: a scene with a NULL footprint is the state every
+            # backfilled row is already in, and the item's identity is not in
+            # question. Logged so the population stays countable.
+            logger.warning(
+                "Selected item has no storable footprint",
+                extra={
+                    "source": source,
+                    "collection": collection,
+                    "stac_item_id": item_id,
+                    "reason": complaint,
+                },
+            )
+
+        cloud_cover = props.get("eo:cloud_cover")
+        return cls(
+            source=source,
+            collection=collection,
+            item_id=item_id,
+            capture_date=stac_service.extract_capture_date(item),
+            cog_url=cog_url,
+            thumbnail_url=stac_service.extract_thumbnail_url(item),
+            resolution_m=normalize_resolution_m(props.get("gsd")) or default_resolution_m,
+            cloud_cover_pct=float(cloud_cover) if isinstance(cloud_cover, (int, float)) else None,
+            bbox_wkt=stac_service.extract_bbox_wkt(item),
+            footprint_wkt=footprint_wkt,
+            platform=platform_for(item_id),
+            mosaic=tuple(mosaic),
+        )
+
+
+def _ensure_scene(db: Session, selection: SelectedScene, fetched_at: datetime) -> str:
+    """Return this item's ``scenes.id``, inserting the row if it is absent.
+
+    Insert-only, per the ADR step-2 decision: a catalogued item keeps every
+    fact it was first written with. Re-encountering an item is not evidence
+    that its stored facts are stale — the pipeline sees the same item across
+    every parcel that serves it — and refreshing item facts is a separate
+    mechanism that does not exist yet. ``ON CONFLICT DO NOTHING`` rather than a
+    check-then-insert so a concurrent worker inserting the same item is an
+    ordinary outcome rather than an IntegrityError that aborts the
+    reconciler's transaction.
+    """
+    postgres = _is_postgres(db)
+    footprint_expr = "ST_GeomFromEWKT(:footprint)" if postgres else ":footprint"
+    bbox_expr = "ST_GeomFromEWKT(:bbox)" if postgres else ":bbox"
+    scene_id = str(uuid.uuid4())
+    returned = db.execute(
+        sa_text(
+            "INSERT INTO scenes"
+            " (id, source, collection, item_id, capture_date, footprint, bbox,"
+            "  cog_url, thumbnail_url, resolution_m, cloud_cover_pct, platform,"
+            "  provenance, fetched_at)"
+            " VALUES (:id, :source, :collection, :item_id, :capture_date,"
+            f" {footprint_expr}, {bbox_expr},"
+            " :cog_url, :thumbnail_url, :resolution_m, :cloud_cover_pct,"
+            " :platform, :provenance, :fetched_at)"
+            " ON CONFLICT (collection, item_id) DO NOTHING"
+            " RETURNING id"
+        ),
+        {
+            "id": scene_id,
+            "source": selection.source,
+            "collection": selection.collection,
+            "item_id": selection.item_id,
+            "capture_date": selection.capture_date.isoformat(),
+            "footprint": selection.footprint_wkt,
+            "bbox": selection.bbox_wkt,
+            "cog_url": selection.cog_url,
+            "thumbnail_url": selection.thumbnail_url,
+            "resolution_m": selection.resolution_m,
+            "cloud_cover_pct": selection.cloud_cover_pct,
+            "platform": selection.platform,
+            "provenance": SCENE_PROVENANCE_SELECTION,
+            "fetched_at": fetched_at.isoformat(),
+        },
+    ).scalar()
+    if returned is not None:
+        return str(returned)
+
+    existing = db.execute(
+        sa_text("SELECT id FROM scenes WHERE collection = :collection AND item_id = :item_id"),
+        {"collection": selection.collection, "item_id": selection.item_id},
+    ).scalar()
+    return str(existing)
+
+
+def _mosaic_ids(value: object) -> list[str]:
+    """A stored ``mosaic_scene_ids`` as a list of id strings.
+
+    PostgreSQL hands back ``uuid[]`` as a list; the SQLite variant stores the
+    same list as JSON text and hands back the text.
+    """
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        return [str(item) for item in decoded] if isinstance(decoded, list) else []
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value]
+    return []
+
+
+def _upsert_parcel_scene(
+    db: Session,
+    *,
+    parcel_id: uuid.UUID,
+    source: str,
+    group_key: str,
+    scene_id: str,
+    mosaic_scene_ids: list[str],
+    selected_at: datetime,
+    selected_by: str | None,
+) -> None:
+    """Insert or update the one row for (parcel, source, group_key).
+
+    UNIQUE (parcel_id, source, group_key) makes replacement an update: the row
+    keeps its primary key and gains the new scene rather than being deleted
+    and re-inserted.
+
+    An unchanged selection is left alone entirely. ``selected_at`` then means
+    "when this parcel first came to serve this scene for this period", which is
+    an answer; bumping it on every sweep would make the column mean "when the
+    last sweep ran", which every task's ``completed_at`` already says.
+    """
+    postgres = _is_postgres(db)
+    mosaic_expr = "CAST(:mosaic AS uuid[])" if postgres else ":mosaic"
+    if postgres:
+        mosaic_param: object = mosaic_scene_ids or None
+    else:
+        mosaic_param = json.dumps(mosaic_scene_ids) if mosaic_scene_ids else None
+
+    existing = db.execute(
+        sa_text(
+            "SELECT id, scene_id, mosaic_scene_ids FROM parcel_scenes"
+            " WHERE parcel_id = :parcel_id AND source = :source AND group_key = :group_key"
+        ),
+        {"parcel_id": str(parcel_id), "source": source, "group_key": group_key},
+    ).first()
+
+    if existing is None:
+        db.execute(
+            sa_text(
+                "INSERT INTO parcel_scenes"
+                " (id, parcel_id, source, group_key, scene_id, mosaic_scene_ids,"
+                "  selected_at, selected_by)"
+                " VALUES (:id, :parcel_id, :source, :group_key, :scene_id,"
+                f" {mosaic_expr}, :selected_at, :selected_by)"
+            ),
+            {
+                "id": str(uuid.uuid4()),
+                "parcel_id": str(parcel_id),
+                "source": source,
+                "group_key": group_key,
+                "scene_id": scene_id,
+                "mosaic": mosaic_param,
+                "selected_at": selected_at.isoformat(),
+                "selected_by": selected_by,
+            },
+        )
+        return
+
+    unchanged = str(existing.scene_id) == scene_id and _mosaic_ids(
+        existing.mosaic_scene_ids
+    ) == list(mosaic_scene_ids)
+    if unchanged:
+        return
+
+    db.execute(
+        sa_text(
+            "UPDATE parcel_scenes SET scene_id = :scene_id,"
+            f" mosaic_scene_ids = {mosaic_expr},"
+            " selected_at = :selected_at, selected_by = :selected_by"
+            " WHERE id = :id"
+        ),
+        {
+            "id": str(existing.id),
+            "scene_id": scene_id,
+            "mosaic": mosaic_param,
+            "selected_at": selected_at.isoformat(),
+            "selected_by": selected_by,
+        },
+    )
+
+
+def _write_selection_shapes(
+    db: Session,
+    parcel_id: uuid.UUID,
+    source: str,
+    selections: Sequence[SelectedScene],
+    scope: str,
+) -> None:
+    """Write the normalized shape of everything this run selected."""
+    now = datetime.now(UTC)
+    # The image that made the selection, so a row's provenance is a deploy
+    # rather than a date. Backfilled rows stay NULL; that distinction is the
+    # audit trail working (ADR amendment, "Selection provenance is not
+    # recoverable"). A local image reports "dev" and says so honestly.
+    selected_by = get_settings().git_sha
+    for selection in selections:
+        scene_id = _ensure_scene(db, selection, now)
+        mosaic_ids = [_ensure_scene(db, tile, now) for tile in selection.mosaic]
+        _upsert_parcel_scene(
+            db,
+            parcel_id=parcel_id,
+            source=source,
+            group_key=encode_group_key(scope, selection.capture_date),
+            scene_id=scene_id,
+            mosaic_scene_ids=mosaic_ids,
+            selected_at=now,
+            selected_by=selected_by,
+        )
+
+
+def _delete_parcel_scene_for_item(
+    db: Session,
+    parcel_id: uuid.UUID,
+    source: str,
+    group_key: str,
+    collection: str,
+    item_id: str,
+) -> None:
+    """Mirror a suppressed-delete into ``parcel_scenes``.
+
+    Only when the row for that group actually serves the deleted item: a
+    different scene the group has since moved to is a selection this run said
+    nothing about, and the two tables agreeing about which groups exist is the
+    property that must hold, not "delete whatever is there".
+    """
+    db.execute(
+        sa_text(
+            "DELETE FROM parcel_scenes"
+            " WHERE parcel_id = :parcel_id AND source = :source"
+            "   AND group_key = :group_key"
+            "   AND scene_id IN (SELECT id FROM scenes"
+            "                    WHERE collection = :collection AND item_id = :item_id)"
+        ),
+        {
+            "parcel_id": str(parcel_id),
+            "source": source,
+            "group_key": group_key,
+            "collection": collection,
+            "item_id": item_id,
+        },
+    )
+
+
 def reconcile_source_snapshots(
     db: Session,
     parcel_id: uuid.UUID,
     source: str,
-    selected: Iterable[tuple[str, date]],
+    selected: Iterable[tuple[str, date] | SelectedScene],
     *,
     scope: str = "year",
     suppressed: Mapping[str, set[str]] | None = None,
@@ -1137,10 +1499,33 @@ def reconcile_source_snapshots(
     Returns the number of rows deleted. Call after persisting the new
     selection, never before — an interruption then leaves duplicates,
     which is recoverable, rather than an empty timeline, which isn't.
+
+    **The dual-write (ADR step 2).** An element of ``selected`` that is a
+    :class:`SelectedScene` rather than a bare ``(item_id, capture_date)``
+    tuple also gets the normalized shape written: a ``scenes`` row per item
+    (insert-only, mosaic tiles included) and the ``parcel_scenes`` row for its
+    group. Deletions are mirrored under the same rules, absent-group rule
+    included, so the two shapes cannot disagree about which groups exist.
+    Both writes and the deletes above commit together at the end of this
+    function or not at all. The tuple form writes ``imagery_snapshots`` only
+    and is what a caller with no item in hand passes.
     """
     keep: set[str] = set()
     groups: set[str] = set()
-    for stac_item_id, capture_date in selected:
+    selections: list[SelectedScene] = []
+    for entry in selected:
+        if isinstance(entry, SelectedScene):
+            # Only the primary joins ``keep``. A mosaic's additional tiles are
+            # not ``imagery_snapshots`` rows of their own — they live in that
+            # row's ``additional_cog_urls`` — so keeping a row whose id is
+            # this run's *second* tile would leave two rows in one group,
+            # which is G3's shape. They are first-class ``scenes`` rows and
+            # nothing more.
+            selections.append(entry)
+            keep.add(entry.item_id)
+            groups.add(encode_group_key(scope, entry.capture_date))
+            continue
+        stac_item_id, capture_date = entry
         keep.add(stac_item_id)
         groups.add(encode_group_key(scope, capture_date))
 
@@ -1150,14 +1535,18 @@ def reconcile_source_snapshots(
 
     rows = db.execute(
         sa_text(
-            "SELECT id, stac_item_id, capture_date FROM imagery_snapshots"
+            "SELECT id, stac_item_id, stac_collection, capture_date FROM imagery_snapshots"
             " WHERE parcel_id = :parcel_id AND source = :source"
         ),
         {"parcel_id": str(parcel_id), "source": source},
     ).all()
 
     stale: list[object] = []
-    suppressed_deleted = 0
+    # (group_key, collection, item_id) per suppressed delete — the deletions
+    # parcel_scenes has to mirror. A stale row whose group this run *selected*
+    # is not in here: its parcel_scenes row is replaced by the upsert below,
+    # not deleted, which is what keeps the two tables agreeing.
+    suppressed_rows: list[tuple[str, str, str]] = []
     for row in rows:
         if row.stac_item_id in keep:
             continue
@@ -1169,7 +1558,7 @@ def reconcile_source_snapshots(
             stale.append(row.id)
         elif row.stac_item_id in suppressed.get(group_key, ()):
             stale.append(row.id)
-            suppressed_deleted += 1
+            suppressed_rows.append((group_key, row.stac_collection, row.stac_item_id))
             logger.warning(
                 "Deleting a served snapshot this run suppressed",
                 extra={
@@ -1180,7 +1569,7 @@ def reconcile_source_snapshots(
                 },
             )
 
-    if not stale:
+    if not stale and not selections:
         return 0
 
     for snapshot_id in stale:
@@ -1188,7 +1577,16 @@ def reconcile_source_snapshots(
             sa_text("DELETE FROM imagery_snapshots WHERE id = :id"),
             {"id": str(snapshot_id)},
         )
+
+    for group_key, collection, item_id in suppressed_rows:
+        _delete_parcel_scene_for_item(db, parcel_id, source, group_key, collection, item_id)
+
+    _write_selection_shapes(db, parcel_id, source, selections, scope)
+
     db.commit()
+
+    if not stale:
+        return 0
 
     logger.info(
         "Replaced superseded imagery snapshots",
@@ -1196,7 +1594,7 @@ def reconcile_source_snapshots(
             "parcel_id": str(parcel_id),
             "source": source,
             "deleted": len(stale),
-            "suppressed_deleted": suppressed_deleted,
+            "suppressed_deleted": len(suppressed_rows),
             "scope": scope,
             "groups": sorted(groups),
         },

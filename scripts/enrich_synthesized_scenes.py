@@ -91,6 +91,7 @@ from app.services.stac import (
     extract_bbox_wkt,
     extract_capture_date,
     extract_cog_url,
+    extract_footprint_wkt,
     point_to_bbox,
 )
 
@@ -508,23 +509,14 @@ class Outcome:
 def _footprint_ewkt(item: dict[str, Any]) -> tuple[str | None, str | None]:
     """``(ewkt, complaint)`` for ``item["geometry"]`` as a POLYGON.
 
-    ``scenes.footprint`` is ``geometry(POLYGON,4326)``, so a MultiPolygon item
-    cannot be stored in it. That is reported and the footprint left NULL
-    rather than either dropping the row's enrichment — the identity is
-    established by ``cog_url`` regardless of the geometry's shape — or
-    silently flattening a multipart footprint into one of its parts.
+    Delegates to ``stac.extract_footprint_wkt``, which the step-2 dual-write
+    also calls: a MultiPolygon rejected here and accepted there would put two
+    different geometries in one column depending on which writer got to the
+    item first. The identity of an enriched row is established by ``cog_url``
+    regardless of the geometry's shape, so a complaint leaves the footprint
+    NULL and does not drop the enrichment.
     """
-    from shapely.geometry import shape
-
-    geometry = item.get("geometry")
-    if not isinstance(geometry, dict) or not geometry.get("type"):
-        return None, "item carries no geometry"
-    if geometry.get("type") != "Polygon":
-        return None, f"item geometry is {geometry.get('type')}, not Polygon"
-    try:
-        return f"SRID=4326;{shape(geometry).wkt}", None
-    except (AttributeError, KeyError, TypeError, ValueError) as exc:
-        return None, f"unparseable item geometry: {exc}"
+    return extract_footprint_wkt(item)
 
 
 def _item_capture_date(item: dict[str, Any]) -> date | None:

@@ -1412,3 +1412,28 @@ def extract_bbox_wkt(item: dict[str, object]) -> str | None:
         return None
     w, s, e, n = bbox[0], bbox[1], bbox[2], bbox[3]
     return f"SRID=4326;POLYGON(({w} {s},{e} {s},{e} {n},{w} {n},{w} {s}))"
+
+
+def extract_footprint_wkt(item: dict[str, object]) -> tuple[str | None, str | None]:
+    """``(ewkt, complaint)`` for ``item["geometry"]`` as a POLYGON.
+
+    The item's real geometry, not its bbox envelope — the distinction the
+    2026-08 geometry audit was built on, and what ``scenes.footprint`` stores.
+
+    ``scenes.footprint`` is ``geometry(POLYGON,4326)``, so a MultiPolygon item
+    cannot be stored in it. That is reported through ``complaint`` and the
+    footprint left NULL, rather than silently flattening a multipart footprint
+    into one of its parts. A missing footprint is a gap a later pass can fill;
+    a wrong one is a claim about where an image is.
+    """
+    from shapely.geometry import shape
+
+    geometry = item.get("geometry")
+    if not isinstance(geometry, dict) or not geometry.get("type"):
+        return None, "item carries no geometry"
+    if geometry.get("type") != "Polygon":
+        return None, f"item geometry is {geometry.get('type')}, not Polygon"
+    try:
+        return f"SRID=4326;{shape(geometry).wkt}", None
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        return None, f"unparseable item geometry: {exc}"
