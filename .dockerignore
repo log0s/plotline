@@ -5,6 +5,7 @@
 # Not part of the backend image
 media
 prompts
+docs
 .github
 
 # Python
