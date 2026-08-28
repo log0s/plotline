@@ -1,6 +1,6 @@
 # ADR: Normalize imagery records into scenes and per-parcel selections
 
-**Status:** Proposed — 2026-08-25
+**Status:** Accepted — 2026-08-28 (proposed 2026-08-25)
 **Deciders:** Ryan
 **Sequencing:** after the M4 per-year ledger and M3 per-source backfill; before the MCP server and any new imagery source.
 
@@ -99,3 +99,111 @@ Revisit this decision if:
 - The M4 ledger's `group_key` encoding turns out not to be shared cleanly with selection scopes (the two would then need separate keys and rule 2 fails).
 - Step 1's backfill surfaces more duplicate groups than G3 — that would mean reconciliation has been failing silently and the audit record is incomplete; stop and investigate before step 2.
 - A source arrives whose items are not addressable by `(collection, item_id)` — the NYC tile service (SOURCE-LANDSCAPE R1) is the candidate: it is a URL template per year, not a catalogued item, and may need a `scenes` row per year with a synthetic `item_id`, or a separate kind. Decide when R1 is scoped, not now.
+---
+
+## Amendment — 2026-08-28, accepting the ADR and building step 1
+
+Added when the status moved Proposed → Accepted and step 1 was built and run
+locally. Everything above this line is the 2026-08-25 record and is unedited;
+this section carries the corrections. Sources: the pre-flight verification
+`docs/audits/2026-08-normalization-pre/VERIFICATION.md`, and step 1's own
+report `docs/audits/2026-08-normalization/STEP1-REPORT.md` with its scored
+prediction `.../PREDICTION-STEP1.md`.
+
+Commits: `822faca` (migration 0015), `0fc0f64` (ORM models + test DDL),
+`b3f8e94` (`scripts/backfill_scenes.py`), `ea98325` (prediction),
+`d13026e` (scoring), `382329e` (tests).
+
+### Context numbers have moved
+
+The Context section's **14,534 rows across 184 parcels** is a 2026-08-24
+snapshot. Read-only on **2026-08-28** production holds **12,884 rows** across
+**6,156 distinct `(stac_collection, stac_item_id)` pairs**, with **zero**
+duplicate `(parcel_id, source, group_key)` groups and 613
+`additional_cog_urls` entries (73 matching some row's `cog_url`, 540 not).
+The drop is consistent with the G8 completion sweep's Sentinel-2
+quarter-deduplication deletions. The original figure stands as written; this
+is the current one.
+
+### Rule 2 had already shipped
+
+`encode_group_key` / `decode_group_key` (`app/services/imagery.py:1023-1048`)
+is the single encoding and all five sites INVESTIGATION §6 found hand-inlining
+the rules now call it. So rule 2 is not work this migration does:
+`parcel_scenes.group_key` only has to *store* the string that function already
+produces. Migration 0015's CHECK admits exactly its three outputs — `'YYYY'`,
+`'YYYYQn'`, `'YYYYs'` — and deliberately excludes `WHOLE_SOURCE_GROUP_KEY`
+(`'*'`), which is a ledger token for an untimed whole-source search and can
+never describe a served row.
+
+### Synthesized scenes, and why `provenance` exists
+
+Rule 5 says every tile in a mosaic is a first-class scene. Most tiles were
+never persisted as their own row — 88 of 115 distinct mosaic URLs locally, 540
+of 613 entries in production — so step 1 synthesizes a `scenes` row for each
+unmatched URL by parsing it. No network calls; a URL that will not parse, or
+is not a NAIP tile URL, refuses the whole run.
+
+**The premise that a NAIP filename is the STAC item id is wrong.** Measured
+across 312 local NAIP rows on 2026-08-28: the state-prefixed filename stem
+equals the item id in **99**, is a proper prefix of it in **204** more (the id
+carries a trailing publication date the filename omits), and in **8** is
+neither, because the id and the filename spell the resolution differently
+(`_.6_` / `_.5_` versus `_h_`). A synthesized `item_id` is therefore a
+*candidate*, not a catalogued identifier. Its `capture_date` is not a guess —
+it is the first of the filename's date fields under either naming.
+
+`scenes` consequently gains a column the schema block above does not list:
+
+```
+  provenance       TEXT NOT NULL  -- 'snapshot' | 'mosaic_url'
+```
+
+`'snapshot'` means the row was copied from an `imagery_snapshots` row and its
+`item_id` is catalogued. `'mosaic_url'` means it was parsed out of a tile URL
+and its `item_id` has never been checked against a catalog.
+
+The obvious alternative — enumerate synthesized rows by `footprint IS NULL` —
+does not work, and the reason is worth stating because it looks like it should.
+Nothing in `imagery_snapshots` holds item geometry (the finding behind the
+geometry audit's 1,239-item refetch), so **every** row step 1 writes has a
+NULL footprint, Phase A included. `footprint IS NULL` selects the whole table,
+not the synthesized part of it. A "does any snapshot row carry this item id"
+query would work today and stop working at step 4, when `imagery_snapshots` is
+retired. A column is the only form of the answer that survives its own
+migration path.
+
+`footprint` is nullable for the same reason. A later STAC enrichment pass
+fills it, and `WHERE provenance = 'mosaic_url'` is that pass's work queue.
+
+### `mosaic_scene_ids` includes synthesized rows
+
+`mosaic_scene_ids` stays `UUID[]` as written, and **every entry references a
+`scenes` row, synthesized ones included**. There is no second array, no
+fallback to a URL, and no null-padding for a tile that lacks a catalogued
+identity: a tile the pipeline served is a scene, and a tile whose id is a
+URL-derived candidate is a scene with `provenance = 'mosaic_url'`. Locally
+this is 141 rows carrying 162 references, matching the 141 snapshot rows and
+162 `additional_cog_urls` entries exactly, with zero dangling references.
+
+The array holds the *additional* tiles only; the primary is `scene_id` and is
+not repeated in it.
+
+### Step 1's prediction, as actually written
+
+The migration-path text predicts `parcel_scenes` = `imagery_snapshots` row
+count "minus known duplicate groups (G3, and any others the backfill
+surfaces)". In practice the backfill does not collapse duplicates at all — it
+**refuses to run** while any exist, because `UNIQUE (parcel_id, source,
+group_key)` cannot represent them and quietly keeping one row of each is the
+silent collapse this ADR's change condition forbids. Duplicates are cleared
+by a sweep first, and then `parcel_scenes` = the row count exactly. That is
+how step 1 ran locally: 269 duplicate groups → sweep → 0 → backfill.
+
+### Selection provenance is not recoverable
+
+`selected_by` is NULL on every backfilled row. The SHA of the selector that
+chose a given snapshot is not recorded anywhere in the database or the audit
+trail, and synthesizing one — the deploy SHA at backfill time, say — would
+make an unattributed selection look attributed. Step 2's dual-write is where
+the column starts carrying a real value.
