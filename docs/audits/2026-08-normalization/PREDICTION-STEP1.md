@@ -218,3 +218,130 @@ parcel_scenes present:  2945
 
 No drift reported and both row counts unchanged, so the idempotency claim is
 observed rather than asserted.
+
+---
+
+## Production prediction
+
+Written **2026-08-28**, after the production dry run and **before**
+`scripts/backfill_scenes.py --execute` has been run against production. This
+section is committed before the execute step and is never edited afterwards;
+the production Observed section is appended below it.
+
+The Production section further up this file was written on 2026-08-28 from
+figures *given* to the previous session. Everything here was measured by this
+session, read-only, against production. Where the two differ the measured
+value governs and the earlier one is left in place unedited.
+
+### Deploy gates (all passed before any of this was measured)
+
+| Gate | Evidence |
+|---|---|
+| API sha | `GET /api/v1/health` → `sha 4de57282c8692b9787564b62b0019fda149c2ba4`, `built 2026-08-28T17:00:32Z`. `git merge-base --is-ancestor 4de5728 4de5728…` → 0 |
+| `log0s-plotline-api` image | `fly image show` — both machines label `GH_SHA=4de57282c8692b9787564b62b0019fda149c2ba4` |
+| `plotline-worker` image | `fly image show` — both machines label the same SHA |
+| migration head | `SELECT version_num FROM alembic_version` → `0015`, which is the `revision` id declared in `alembic/versions/0015_scenes_and_parcel_scenes.py:3`, not an assumption from the filename |
+| tables exist and are empty | `scenes` 0 rows, `parcel_scenes` 0 rows; all ten constraints from 0015 present, including `uq_scenes_collection_item` and `uq_parcel_scenes_parcel_source_group` |
+
+### Measured inputs, with timestamps
+
+Every query below ran read-only (`conn.set_session(readonly=True)`) inside
+the `log0s-plotline-api` Fly machine.
+
+| Timestamp (UTC) | Query | Result |
+|---|---|---|
+| 17:03:01 | gate probe (alembic, table existence, row counts, constraints) | `0015`; `scenes` 0; `parcel_scenes` 0 |
+| 17:03:37 | `count(DISTINCT (stac_collection, stac_item_id)), count(*), max(created_at)` on `imagery_snapshots` | **6156**, **12884**, `2026-08-27T19:41:01Z` |
+| 17:03:38 | duplicate `(parcel_id, source, group_key)` groups, VERIFICATION 6b encoding | **0** groups, 0 rows |
+| 17:03:38 | the same query returning group detail | 0 rows |
+| 17:03:41 | `additional_cog_urls` cross-reference | 613 entries over 576 rows; **578 distinct URLs**, **73 matched**, **505 unmatched**, **0 unmatched non-NAIP** |
+| 17:03:41 | rows by source | landsat 8127, naip 1305, sentinel2 2259, usgs_topo 1193 |
+| 17:04:03–17:04:10 | dry run, `python scripts/backfill_scenes.py` | see `prod-backfill-dryrun.txt` |
+
+Two of these correct the figures the earlier Production section carried. The
+duplicate-group count is 0 as given, so the ADR's change condition (step 1
+surfacing more duplicate groups than G3) did **not** trip. But the "540
+unmatched" figure was an *entries* count; the distinct-URL population is
+**505 unmatched of 578 distinct**, and 505 is what Phase B synthesizes from.
+D — left unpredicted by the earlier section, deliberately — is therefore
+**505**.
+
+The grouping SQL is the same encoding the script uses, not a parallel
+reimplementation that happens to agree: all three entries in
+`app/tasks/timeline.py`'s `_SOURCES` carry `"selection_scope": "year"`
+(`timeline.py:66,78,94`) and `usgs_topo` is given `"decade"` at
+`scripts/backfill_scenes.py:94`, which is exactly `CASE WHEN source =
+'usgs_topo' THEN decade ELSE year END`.
+
+### Dry run
+
+```
+imagery_snapshots rows: 12884
+duplicate (parcel_id, source, group_key) groups: 0
+
+planned scenes: 6661 (505 synthesized from mosaic URLs)
+planned parcel_scenes: 12884
+
+scenes already present: 0
+
+Dry run — would insert 6661 scene(s) and 12884 parcel_scene(s). Nothing written.
+```
+
+Exit status 0, no anomalies section printed. **Phase B did not abort.** All
+505 unmatched URLs parsed as NAIP `v002` tile URLs — the prompt's plausible
+STOP (prod's unmatched population being 5x local's and finally exercising the
+refusal) did not fire, and the SQL agrees with the script: 0 unmatched
+non-NAIP URLs. F3's local finding extends to the production population.
+
+### Predicted
+
+| Quantity | Predicted | Derivation |
+|---|---|---|
+| `scenes` rows | **6661** | 6156 distinct `(stac_collection, stac_item_id)` + 505 distinct unmatched mosaic URLs |
+| — of which `provenance = 'snapshot'` | **6156** | one per distinct catalogued item |
+| — of which `provenance = 'mosaic_url'` | **505** | one per distinct unmatched mosaic URL |
+| `parcel_scenes` rows | **12884** | one per `imagery_snapshots` row |
+| duplicate groups encountered | **0** | measured 0 at 17:03:38; a nonzero count aborts before any write |
+| `scenes` with `footprint IS NOT NULL` | **0** | `imagery_snapshots` holds no item geometry, Phase A or B |
+| `parcel_scenes` with `selected_by IS NOT NULL` | **0** | history never recorded the selecting SHA |
+| mosaic URLs that fail to parse | **0** | the dry run parsed all 505 without refusing |
+| `imagery_snapshots` rows after the run | **12884** | the script only reads that table |
+| dangling `mosaic_scene_ids` references | **0** | every entry, synthesized included, is a `scenes` row (ADR amendment, rule 5) |
+| anomalies reported | **0** | no attribute disagreement, no synthesized-id collision |
+
+`scenes` can come out **below** 6661 in two ways the script reports rather
+than swallows: a synthesized `(collection, item_id)` colliding with a Phase A
+key, or two distinct unmatched URLs deriving to the same candidate id. Given
+F1 — a NAIP filename is a *prefix* of its item id far more often than it
+equals it — both are likelier here than locally, where neither occurred over
+88 URLs. 505 URLs is a 5.7x larger population. Neither is predicted, but a
+shortfall accompanied by an anomalies list is an explained deviation, and a
+shortfall without one is a finding.
+
+### The no-intervening-writes assumption, stated explicitly
+
+`parcel_scenes = 12884` assumes `imagery_snapshots` does not change between
+the 17:03:37 reading and the execute step. That assumption is **not**
+guaranteed: production takes live traffic, and any timeline request that
+fetches imagery inserts and reconciles rows in that table.
+
+Two things bound the risk, and neither eliminates it:
+
+* The newest `created_at` in `imagery_snapshots` at 17:03:37 was
+  **2026-08-27T19:41:01Z** — 21 hours before the reading. No imagery row had
+  been written that day.
+* The measurement-to-execution window is minutes, and the script re-reads
+  `imagery_snapshots` itself at execute time; it does not replay the 12884.
+
+So the quantity actually being scored is: **`parcel_scenes` equals the
+`imagery_snapshots` row count the execute run reads and prints in its own
+header.** If that header prints 12884, the prediction is confirmed outright.
+
+If it prints more, that is an **overshoot**, and scoring treats it as
+explainable drift **if and only if** the ledger and request records for the
+17:03:37 → execute window account for it: new `imagery_snapshots` rows whose
+`created_at` falls inside the window, matched by `timeline_task_years` rows
+for the same parcels and sources. An overshoot the record cannot account for
+is a finding, not drift. A count *below* 12884 is a deviation in either
+direction — the script never deletes, so rows disappearing means something
+else did.

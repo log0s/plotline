@@ -1,0 +1,19 @@
+# Production dry run — scripts/backfill_scenes.py (no --execute)
+# Host: fly ssh console -a log0s-plotline-api
+# Deploy sha: 4de57282c8692b9787564b62b0019fda149c2ba4
+# Started (local UTC): 2026-08-28T17:04:03Z
+
+No machine specified, using 48e0de9a713918 in region lax
+Connecting to fdaa:58:2ead:a7b:73d:4f2b:87a6:2...
+imagery_snapshots rows: 12884
+duplicate (parcel_id, source, group_key) groups: 0
+
+planned scenes: 6661 (505 synthesized from mosaic URLs)
+planned parcel_scenes: 12884
+
+scenes already present: 0
+
+Dry run — would insert 6661 scene(s) and 12884 parcel_scene(s). Nothing written.
+
+# exit status: 0
+# Finished (local UTC): 2026-08-28T17:04:10Z
