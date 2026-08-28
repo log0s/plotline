@@ -105,4 +105,9 @@ Production is read-only from any session, and reads go through Fly:
   written exception in its prompt that names the SHA the worker must be on,
   verified first with `fly image show -a plotline-worker` (`GH_SHA` label) before
   invoking anything.
+- Any production command expected to outlive the ssh client timeout writes its
+  report to a file on the machine, or runs detached. **A killed client neither
+  kills nor rolls back the remote process** — it only takes the output with it,
+  so a timeout is neither an abort nor a rollback, and re-running risks a double
+  write (STATUS.md NORM-8).
 - If `fly ssh` is denied, stop and say so. Do not find another route.

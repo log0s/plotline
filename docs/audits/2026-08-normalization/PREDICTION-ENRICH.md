@@ -196,3 +196,77 @@ exactly that reason, and a ~850-request run will outlive the ssh client's
 * Any `error` outcome: a transport failure surviving four attempts with
   Retry-After backoff is an unhealthy endpoint, and the honest response is to
   stop and report rather than to run the remainder against it.
+
+---
+
+## Observed — local run, 2026-08-28
+
+Appended after the run. The prediction half above is unedited. Captures:
+`enrich-local-dryrun.md` (18:03:28Z) and `enrich-local-run.md` (18:03:52Z),
+both written by the script itself. Report: `ENRICH-LOCAL-REPORT.md`.
+
+### Scorecard
+
+| Quantity | Predicted | Actual | Verdict |
+|---|---|---|---|
+| Queue at start | 88 | **88** | confirmed |
+| Rows enriched in place | 88 | **88** | confirmed |
+| Rows merged | 0 | **0** | confirmed |
+| Rows unmatched | 0 | **0** | confirmed |
+| Errors | 0 | **0** | confirmed |
+| Queue after the run | 0 | **0** | confirmed |
+| `already-exact` | 28 (band 12–45) | **31** | confirmed, inside the band |
+| `id-corrected` | 58 (band 41–74) | **57** | confirmed, inside the band |
+| — `_h_` resolution class, `id-corrected` | exactly 2 | **2** | confirmed |
+| `unmatched-403` / `unmatched-404` / `unmatched-nomatch` | 0 / 0 / 0 | **0 / 0 / 0** | confirmed |
+| Capture-date disagreements | 0 | **0** | confirmed |
+| `scenes` rows after | 1262 | **1262** | confirmed |
+| `parcel_scenes` rows touched | 0 | **0** (2,945, unchanged) | confirmed |
+| Dangling `mosaic_scene_ids` after | 0 | **0** | confirmed |
+| `footprint IS NOT NULL` after | 88 | **88**, all `ST_Polygon` | confirmed |
+| NAIP `resolution_m IS NOT NULL` after | 288 | **288** | confirmed |
+| `provenance = 'enriched'` | 88 | **88** | confirmed |
+| PC requests | ~146 | **145** (88 GETs + 57 searches) | confirmed |
+| Second run: queue 0, nothing fetched, nothing written | yes | **yes** | confirmed |
+
+**Every line confirmed. No deviations, no falsifications.** One new finding
+the prediction did not anticipate, in the "not predicted, not contradicted"
+sense: `ENRICH-LOCAL-REPORT.md` F2, on `resolution_m`.
+
+### The three predictions that could have been wrong
+
+**The split (§2).** 31 exact / 57 corrected against 28 / 58 predicted. The
+measured exact rate is 35.2% against F1's 31.7% — a 3.5-point difference over
+88 rows, which is inside the noise and says nothing on its own. The two
+structural sub-claims both held exactly:
+
+* all **12** pubdate-carrying candidates were `already-exact`, as predicted by
+  construction;
+* **19 of the 76** single-date candidates (25.0%) were `already-exact` too —
+  the shape the `ca_m_3712230_se_10_060_20200524` probe warned about, so the
+  filename-shape floor of 12 was indeed a floor and not the estimate.
+
+**Merges (§3).** 0, as the three structural queries said. Nothing arrived at
+an id another row already held, by any route.
+
+**The 403s (§4).** **Zero item-GET 403s across all 88 requests** — the string
+`item GET 403` does not appear in the run report. The three
+`va_m_3807708_se_18` rows on the quad carrying four of the geometry audit's
+six 403s all enriched normally, all `already-exact`. So **403 is item-scoped,
+not quad-scoped**, on the one quad in this queue that could have shown
+otherwise.
+
+The consequence for the production session: the branch predicted in §4 — "a
+403 on the item endpoint is recoverable, because the search does not
+necessarily withhold the item" — was **never exercised**, because no 403
+occurred. It remains an untested prediction, not a confirmed one, and
+production's 505-row queue is where it gets tested.
+
+### Nothing was left behind
+
+One transaction, committed once, then a re-run that found an empty queue,
+issued zero PC requests and wrote nothing. `imagery_snapshots` was neither
+read nor written (2,945 rows, unchanged); `parcel_scenes` was not touched
+(2,945 rows, 0 dangling references); the 1,174 `provenance = 'snapshot'` rows
+are unchanged, footprints still NULL — that full-table enrichment is a
+separate pass and is explicitly deferred (STATUS.md NORM-7).

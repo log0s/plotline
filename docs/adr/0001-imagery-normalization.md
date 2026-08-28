@@ -254,3 +254,63 @@ actual address, and the key the backfill matched on — **or run the STAC
 enrichment pass over `WHERE provenance = 'mosaic_url'` first**, so
 `(collection, item_id)` is trustworthy table-wide before dual-write begins.
 Enrichment-first is the more durable choice. Recorded as STATUS.md NORM-7.
+
+
+---
+
+## Amendment — 2026-08-28, the enrichment pass, run locally
+
+Appended after `scripts/enrich_synthesized_scenes.py` was built and run
+against the local database. Everything above is unedited. Sources:
+`docs/audits/2026-08-normalization/ENRICH-LOCAL-REPORT.md` and the "Observed"
+section of `.../PREDICTION-ENRICH.md`. Commits: `aa23709` (migration 0016),
+`008d7b2` (script + tests), `ce810d5` (prediction, before the run).
+
+**`provenance` now has three values, not two.** The block in the first
+amendment reads `-- 'snapshot' | 'mosaic_url'` and is left as written; the
+current vocabulary is:
+
+```
+  provenance       TEXT NOT NULL  -- 'snapshot' | 'mosaic_url' | 'enriched'
+```
+
+`'enriched'` means the row was synthesized from a tile URL and a catalogued
+STAC item whose image asset href equals its `cog_url` *exactly* has since
+replaced the candidate id and filled `footprint`, `bbox` and `resolution_m`.
+It is a third value rather than a flip to `'snapshot'` because `'snapshot'`
+means "copied from an `imagery_snapshots` row", which an enriched row never
+was — it exists precisely because no snapshot row carried that tile's URL as
+its own `cog_url`. The reader's question, "is this `item_id` catalogued", is
+`provenance <> 'mosaic_url'` under either vocabulary. Migration 0016 is pure
+DDL: one CHECK dropped and recreated.
+
+**`cog_url` equality is the acceptance criterion, and the candidate id is
+never evidence.** The pass addresses a first lookup with the candidate id
+because it is cheap and sometimes right — 31 of 88 locally — but accepts an
+item only when `extract_cog_url(item, collection)` equals the row's `cog_url`.
+On any non-200, and on a 200 whose href does not match, it falls back to a
+search over the capture year with the same `point_to_bbox(parcel, 1500 m)` the
+NAIP pipeline searched with. No fuzzy matching, no nearest-date fallback: an
+unmatchable row stays as it is and is reported.
+
+**Local result:** queue 88 → 0. 31 already-exact, 57 id-corrected, 0 merged,
+0 unmatched, 0 errors, 0 capture-date disagreements; 88 footprints written,
+all `ST_Polygon`; `parcel_scenes` untouched; the re-run fetches nothing and
+writes nothing. Every predicted quantity confirmed.
+
+**What this does *not* yet do.** Production is untouched — 505 rows still
+carry candidate ids and NULL footprints, and 0016 is not deployed, so the
+step-2 collision the previous amendment describes is still live there.
+And the 6,156 `provenance = 'snapshot'` production rows (1,174 local) still
+have NULL footprints: **rule 4's "the next geometry audit is a query over
+`scenes`, not a refetch" is not true yet**, and the pass that makes it true
+is a separate one over a different population. STATUS.md NORM-7.
+
+**One finding the pass surfaced about the pipeline, not about `scenes`.**
+NAIP `resolution_m` has always been the per-source constant `1.0`
+(`app/tasks/timeline.py:67,712`), never the item's `gsd`. The enriched rows
+carry the real values — 0.3 m (9), 0.5 m (1), 0.6 m (30), 1.0 m (48) — so 40
+of 88 tiles were recorded at a resolution they do not have, as is every NAIP
+row in `imagery_snapshots`. Until it is fixed, NAIP `scenes` rows disagree
+about resolution by provenance. STATUS.md NORM-9; the fix belongs with step
+2's dual-write.
