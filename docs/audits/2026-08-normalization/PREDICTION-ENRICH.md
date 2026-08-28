@@ -415,3 +415,122 @@ introduces and the dry run did not have: **the write commits once, at the
 end** (`enrich_synthesized_scenes.py:763`). There is no partial state to stop
 into — the run either commits all 505 or raises and rolls back. So "stop"
 after `--execute` starts means "observe and report", not "intervene".
+
+---
+
+## Observed — production, second attempt, 2026-08-28
+
+Appended after the run. Both prediction halves above are unedited. Captures:
+`enrich-prod-dryrun-2.md` / `-stdout.txt` (`83964ef`), `enrich-prod-run.md` /
+`-stdout.txt` (`f446c11`). Prediction committed `f3a31e1`, before the execute.
+Report: `ENRICH-PROD-REPORT-2.md`.
+
+### Scorecard — the run
+
+| Quantity | Predicted | Actual | Verdict |
+|---|---|---|---|
+| Queue at start | 505 | **505** | confirmed |
+| `already-exact` | 196 | **196** | confirmed |
+| `id-corrected` | 309 | **309** | confirmed |
+| — `_h_` class: corrected / exact | 17 / 5 | **17 / 5** | confirmed |
+| `merged` | 0 | **0** | confirmed |
+| `unmatched` | 0 | **0** | confirmed |
+| `error` | 0 | **0** | confirmed |
+| Rows enriched in place | 505 | **505** | confirmed |
+| Queue after the run | 0 | **0** | confirmed |
+| Capture-date disagreements | 0 | **0** | confirmed |
+| Wall time | 3–5 min | **3.2 min** (22:25:19 → 22:28:22Z) | confirmed |
+
+### Scorecard — post-run state, read-only at 22:30:08Z
+
+| Quantity | Predicted | Actual | Verdict |
+|---|---|---|---|
+| `snapshot` / `mosaic_url` / `enriched` | 6156 / 0 / 505 | **6156 / 0 / 505** | confirmed |
+| `scenes` total | 6661 | **6661** | confirmed |
+| `enriched` with footprint / bbox / resolution_m | 505 / 505 / 505 | **505 / 505 / 505** | confirmed |
+| footprint geometry type | `ST_Polygon` on all | **`POLYGON`, all 505** | confirmed |
+| `parcel_scenes` total | 12884 | **12884** | confirmed |
+| mosaic refs (rows / total) | 576 / 613 | **576 / 613** | confirmed |
+| Dangling `mosaic_scene_ids` | 0 | **0** | confirmed |
+| `imagery_snapshots` | 12884 / 6156, untouched | **12884 / 6156**, `max(created_at)` still 2026-08-27T19:41:01.190156Z | confirmed |
+| Second run: queue 0, nothing fetched, nothing written | yes | **yes** — `queue: 0 row(s)` / `Nothing to enrich.` at 22:30:22Z | confirmed |
+
+Two checks the prediction did not name, taken because they are what a
+skeptical reader asks after a 505-row id rewrite:
+
+* **Duplicate `(collection, item_id)` pairs across all 6,661 `scenes` rows:
+  0.** The rewrite did not create a collision it then failed to notice.
+* **`snapshot` rows with a footprint: 0**, unchanged — the deferred full-table
+  footprint pass (NORM-7) was not started by accident.
+
+### The dry run and the execute agreed row for row
+
+`diff` over the per-row sections of `enrich-prod-dryrun-2.md` and
+`enrich-prod-run.md` is **empty**: all 505 rows, same outcome, same detail
+string, same corrected id. The two runs are separate conversations with
+Planetary Computer three minutes apart, ~814 requests each, and they agreed
+completely. That is the strongest available evidence that the resolution is a
+property of the catalog rather than of a moment.
+
+### The two branches: both zero, and both stay untested
+
+**a. 403-on-item-GET falls through to search — 0 occurrences, as predicted.**
+All 309 non-exact rows recorded `item GET 404`; the string `item GET 403` does
+not appear in either capture. Across 88 local + 505 + 505 + 505 production
+resolutions, the branch has never been entered. **It is not proven. It is
+tested by unit tests and never observed live**, and the record says exactly
+that. The geometry audit's six forbidden NAIP items are still outside this
+population, so this queue never had the chance to exercise it.
+
+**b. Collision-merge — 0, as predicted.** `_merge_scene` has still never run
+outside its tests. The `parcel_scenes` invariant the prediction stated held
+trivially rather than being tested: 12884 rows and 576/613 mosaic references
+are unchanged, which is what 0 merges implies. **The invariant that a merge
+repoints rather than deletes is therefore still an argument from the code
+(`enrich_synthesized_scenes.py:580-625`), not an observation.**
+
+### NORM-9: the production distribution, and one thing the prediction got wrong
+
+| `resolution_m` | Predicted (band) | Actual | Verdict |
+|---|---|---|---|
+| 0.3 | ~52 (15–120) | **38** | confirmed, inside the band |
+| 0.5 | ~6 (0–30) | **6** | confirmed |
+| 0.6 (all spellings, see below) | ~172 (100–260) | **200** | confirmed, inside the band |
+| 1.0 | ~275 (180–360) | **261** | confirmed, inside the band |
+
+The qualitative claim held: **1.0 is no longer the universal value.** 244 of
+505 enriched rows (48.3%) carry a resolution other than 1.0, while all 1,102
+NAIP `provenance = 'snapshot'` rows still carry the `1.0` constant — NORM-9's
+"most vintages are recorded at a resolution they do not have," now measured at
+production scale.
+
+**What the prediction did not anticipate — a new finding, recorded as
+NORM-11.** `SELECT resolution_m, count(*) … GROUP BY 1` returns **11 buckets,
+not 4.** Eight rows carry a value that is *near* 0.6 but not equal to it:
+
+```
+0.5999999999999901  (2)   0.6000000000000011  (1)
+0.5999999999999975  (1)   0.6000000000000012  (1)
+0.5999999999999994  (1)   0.600000000000007   (1)
+                          0.6000000000000097  (1)
+```
+
+This is **upstream data, faithfully stored**, not a conversion artifact.
+`_gsd` (`enrich_synthesized_scenes.py:544`) reads `properties["gsd"]`
+verbatim into a `Double` column (`app/models/parcels.py:474`), and a `Double`
+holding 0.6 reads back as 0.6 — so a different double means a different source
+value. Confirmed by fetching one from PC read-only at 22:31Z:
+`GET …/collections/naip/items/az_m_3311151_nw_12_.6_20170604_20171128` → 200,
+`properties.gsd = 0.6000000000000011`. The consequence is small but sharp:
+`WHERE resolution_m = 0.6` misses 8 of the 200 0.6 m rows, and any
+`GROUP BY resolution_m` over NAIP shows spurious buckets. The local 88-row run
+never showed it because none of its 30 0.6 m rows carried a noisy value.
+
+### Nothing else was touched
+
+One transaction, committed once (`enrich_synthesized_scenes.py:763`), then a
+dry re-run that found an empty queue, issued zero PC requests and wrote
+nothing. `imagery_snapshots` was neither read nor written. `parcel_scenes` was
+not touched at all, merges being zero. The 6,156 `provenance = 'snapshot'`
+rows are unchanged, footprints still NULL — that full-table pass is separate
+and still deferred (NORM-7).
