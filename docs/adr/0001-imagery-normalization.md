@@ -552,3 +552,187 @@ The harness needs both read paths alive, so it can only run against
 production from `160e7ba`. A production session deploys that, runs
 `scripts/compare_read_paths.py` read-only with a prediction written first, and
 only then deploys the cutover. `STEP3-REPORT.md` §9.
+
+
+---
+
+## Amendment — 2026-08-29, step 4's retirement, built locally as two deploys
+
+Appended after `imagery_snapshots` was removed from every code path and the
+DROP migration was written and gated. Everything above is unedited. Sources:
+`docs/audits/2026-08-normalization/STEP4-REPORT.md` and the "Observed" half of
+`.../PREDICTION-STEP4.md`, with the captures `step4-pre-sweep*.json`,
+`step4-post-sweep.json`, `step4-post-drop*.json` and `step4-reads-t{0..5}.json`.
+Commits: `329a8a6` (the code cutover), `41f7e76` (the probe helper), `03867c4`
+(migration 0018), `cb088f8` (migration 0019, the drop), `87bf025` (the
+prediction, before the sweep).
+
+**Not deployed, and nothing is dropped in production.** Both deploys' commits
+are on `main`, local only. Production still runs the step-3 code, still has
+the table, and its reconciler still reads and writes it.
+
+### Step 4 is two deploys, and the ordering amends NORM31-PROD-REPORT §6d
+
+The migration-path text says "Retire `imagery_snapshots` after one cooling
+period with no reads (measured, not assumed — log every read; expect zero)"
+and "step 4 does not run in the same batch as step 3". Both hold. What the
+text did not settle is whether the *code* stops touching the table before or
+after the cooling period, and §6d assumed after: the table stays wired to the
+reconciler through the span, and the span's question is "is the reconciler the
+*only* reader".
+
+**The code ships first.** With no caller left, the expected access count over
+the cooling span is **exactly zero, from anything** — a claim a counter can
+carry alone. §6d's condition 1 instead asked for `idx_scan` "moving only by
+the reconciler's own pulls, accounted for row by row", which is an accounting
+exercise over a nonzero number, and one §6d itself found hard: the step-3
+reading's +15 `seq_scan` had to be *explained* by arithmetic rather than
+*attributed*, because ad-hoc probes leave counters moved and no trace of who
+moved them.
+
+So: deploy-1 is the code cutover, the cooling span with a fleet sweep follows,
+and deploy-2 is the DROP alone. **The drop ships with no code change on the
+same push** — the basis for running it is a span measured against deployed
+deploy-1 code, and a code change riding along means the code running at the
+moment of the drop is not the code that was measured. STATUS.md carries the
+five gate conditions in their amended form.
+
+**§6d's condition 2 is dropped rather than met, and that is a removal of an
+instrument.** `log_imagery_snapshots_read` named the one legitimate caller so
+a cooling period could count it; deploy-1 deletes that caller. An event that
+never fires is not a measurement, and its absence proves nothing about an
+uninstrumented reader — which is exactly the half `pg_stat_user_tables` covers
+and always did. The counter instrument survives and now answers the harder
+question. Recorded as a decision so it does not read as an oversight.
+
+### Rule 1 held to the end, and this is where it paid
+
+"The M4 ledger does not reference either table." `timeline_task_years`
+references neither, and this batch did not make it: the model's docstring lost
+only the phrase naming the retired table, and
+`tests/test_no_imagery_snapshots_references.py` would fail if a reference
+appeared. **The ledger survived the storage being created, dual-written, cut
+over and dropped, without one migration of its own** — which is the property
+rule 1 was written to buy, now observed rather than asserted.
+
+### NORM-14 closes, and the ADR's own text is why it was open
+
+Step 2's amendment recorded that the reconciler's transaction "does **not**
+carry the snapshot *inserts*, which happen earlier in the persist loop and
+commit per row", and accepted the resulting window because "it would be spent
+closing a window step 4 removes anyway". Step 4 removes it.
+
+The design point is what the `ok` ledger row rides now. It was written
+uncommitted immediately before `upsert_imagery_snapshot`, so the per-row
+commit carried both and an `ok` could not outlive the row it claimed. Deleting
+that write deletes that commit. **The `ok` row now rides the reconciler's
+transaction** — the same one that writes `scenes`, `parcel_scenes` and the
+suppressed deletes — and nothing in the persist loop commits at all. A
+per-group commit of its own was rejected: it would have recreated the window
+in a smaller form, with the ledger committing ahead of the served row again.
+
+Measured rather than argued. `timeline_task_years.created_at` defaults to
+`now()`, which in PostgreSQL is transaction start time, so distinct values
+among one task's `ok` rows counts the transactions that wrote them. Six
+Landsat tasks from each of two local sweeps on the same day, 43 `ok` rows
+each: pre-step-4 code **43** distinct timestamps, cutover code **1**.
+
+The cost is real and accepted at the call site: a source that dies at group 40
+of 45 keeps none of the 40, where before it kept them in the old table only.
+Nothing between the loop's start and the commit performs I/O, so the
+transaction is short whatever the group count.
+
+### The tuple form of `selected` stopped being implementable
+
+`reconcile_source_snapshots` accepted a bare `(item_id, capture_date)` for a
+caller that knew a group was superseded but held no item facts. Superseding is
+now an upsert of the one row for the period, and an upsert needs the new
+scene, so such a caller would have matched a superseded row, had nothing to
+replace it with, and returned having changed nothing. The old shape hid this
+because superseding was a DELETE, which needs no facts about the replacement.
+Removed rather than left as a signature that silently does nothing.
+
+Rule 3's `UNIQUE (parcel_id, source, group_key)` is what turned the delete
+into an upsert, so this is rule 3's consequence arriving three steps later.
+
+### `CHECK (ST_IsValid(footprint))` — the rider, and what it is not
+
+Migration 0018, pure DDL, independently revertable. Its precondition — no
+invalid footprints — was met by the NORM-31 production heal and holds locally.
+
+**It is bypass detection, not the rule.** The rule is repair-loudly:
+`normalize_footprint` repairs whatever an item's geometry turns out to be and
+complains about what it did, and every write path goes through it. The CHECK
+fires only for a row that reached the table without that function — which is
+NORM-31's exact history, two Sentinel-2 footprints written by a path that
+predated the repair. **If it fires, the fix is routing the writer through
+`normalize_footprint`, never loosening the constraint.**
+
+This makes rule 4 — "item facts are refreshable independently" — safer rather
+than merely available: a refresh that wrote a bad geometry is now refused at
+the database rather than discovered by a later sweep.
+
+Not mirrored in the SQLite test schema, with the reason stated at the DDL:
+SQLite has no PostGIS, so an imitation there would be a predicate the test
+file invented. Exercised against a real server instead.
+
+### The drop's downgrade restores schema, not data
+
+Migration 0019's `downgrade()` rebuilds the table exactly as 0002, 0007 and
+0008 left it, and it comes back empty. There is no backfill and there cannot
+be one: a snapshot row carried per-parcel copies of item facts that this ADR's
+whole purpose was to collapse to one copy, and one copy won (the step-3
+amendment's "the cutover decides which copy wins"). Reconstructing the others
+would mean inventing rows.
+
+**The recovery path for the data is Neon PITR.** The downgrade exists so the
+revision graph is reversible, not so the drop is — an empty table with the
+right shape is a *worse* failure than a missing one, because a serving read
+against it returns nothing rather than failing.
+
+### What the local sweep measured
+
+Three fleet sweeps over the 45 local parcels. The scored one ran with the
+worker on `329a8a6` and the table still physically present, which is
+deploy-1's production state exactly.
+
+* `imagery_snapshots`: **+0 on all seven counters** — `seq_scan`,
+  `seq_tup_read`, `idx_scan`, `idx_tup_fetch`, `n_tup_ins`, `n_tup_upd`,
+  `n_tup_del`.
+* Its control, in the same window: `parcel_scenes.idx_scan` **+3,787** and
+  `scenes.idx_scan` **+8,081**. A window in which nothing read anything proves
+  nothing about which table is read.
+* Rules 3, 4 and 5 all held: 0 duplicate groups, 0 duplicate
+  `(collection, item_id)`, 0 dangling mosaic references, 0 invalid or
+  non-polygon footprints. Landsat conserved at 43 rows on every one of the 45
+  parcels.
+* The sweep **wrote nothing** — 0 inserts, 0 updates, 0 deletes on both
+  tables — which is NORM-12 again: a current database cannot exercise an
+  insert path, and a production step-4 sweep should expect the same.
+
+**The first sweep was run against a stale worker and falsified the zero.** The
+`worker` container bind-mounts the source but Celery does not reload modules,
+so the pre-step-4 pipeline ran and wrote the old table 3,085 times. It is
+recorded as STATUS.md NORM-32, and it left behind a control the prediction had
+not thought to ask for: the same measurement, same fleet, same day, under the
+old code, loudly nonzero.
+
+### One consequence changed shape and is now latent rather than absent
+
+The reconciler diffs on the **stored** `group_key` — the encoding a row was
+written under — rather than re-deriving one from a capture date. A `scope`
+that disagrees with the source's selector therefore leaves the superseded row
+*and inserts a second row under the other key*: one decade, two cards, which
+`UNIQUE (parcel_id, source, group_key)` cannot catch because the two keys
+genuinely differ. Under the old shape the same mistake left one stale row and
+added nothing. `scope` is per-source configuration and constant, so this is
+latent; it is pinned by a test and recorded as STATUS.md NORM-33.
+
+### The change conditions
+
+Rule 1: held, and discharged — the ledger outlived the storage. Rule 2:
+`encode_group_key` is now not merely the shared encoding but the *stored* one,
+which is what NORM-33 is about. Rule 3: enforced by schema and now
+load-bearing for replacement, not only for uniqueness. Rule 4: true of every
+`scenes` row that carries a footprint, and 0018 now defends it. Rule 5:
+unchanged. **No change condition tripped.**
