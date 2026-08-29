@@ -807,3 +807,115 @@ old value.
    defect in the pass, not in the data.
 6. Any existing `bbox` observed to have moved → stop and report. Nothing in
    this pass may touch a non-NULL bbox.
+
+---
+
+## Observed — production, DRY RUN ONLY
+
+*(Appended after the dry run. Everything above this line is as committed in
+`93ff05c`, `c16f570` and `82cbda9` and has not been edited.)*
+
+**Partial by necessity: `--execute` did not run.** The dry run exited 1 and
+the prompt's item-3 gate is "errors beyond plan: STOP"
+(`SNAPSHOT-ENRICH-PROD-REPORT.md` F2). The quantities below are the ones the
+dry run settles; **PP6, PP11, PP14, PP15, PP17, PP18, PP20 are unscored** and
+stay that way until the write runs.
+
+One run, 2026-08-29, machine `825d69b7e46618`, 07:44:19Z → 08:02:19Z (1,080 s).
+Captures committed unedited: `snapshot-enrich-prod-dryrun.md`,
+`snapshot-enrich-prod-dryrun.txt`.
+
+### Scorecard — 12 scoreable, 11 confirmed, 1 falsified
+
+| # | Predicted | Observed | Verdict |
+|---|---|---|---|
+| PP1 | 5,387 fetched | **5,387** | confirmed |
+| PP2 | 5,387 requests | **5,387** | confirmed |
+| PP3 | 0 × 403 | **0** | **confirmed** |
+| PP4 | 0 × 404 | **0** | **confirmed** |
+| PP5 | 5,387 matched | **5,387** | confirmed |
+| PP7 | 527 NAIP rewrites | **527** | confirmed in total, **falsified in composition** — see below |
+| PP8 | 0 landsat rewrites | **0** over 3,174 rows | confirmed |
+| PP9 | 0 sentinel2 rewrites / 1,111 with no `gsd` | **0** / **1,111** | confirmed |
+| PP10 | 0 bboxes filled | **0** | confirmed |
+| PP12 | 0 capture-date disagreements | **0** over 5,387 | confirmed |
+| PP13 | 0 non-Polygon anomalies | **0** | confirmed |
+| PP16 | 0 errors, exit 0 | **0 errors**, **exit 1** | **errors confirmed; exit code FALSIFIED** |
+| PP19 | 18–23 min | **18 min 0 s** (1,080 s) | confirmed |
+| PP6, PP11, PP14, PP15, PP17, PP18, PP20 | — | **unscored** | `--execute` did not run |
+
+### PP3 and PP4 — the two that were predicted from nothing, both zero
+
+**403: zero over 5,387 catalogued ids.** NORM-23 is confirmed in production,
+not merely locally: the class Appendix C opened on 2026-08-12 is empty against
+a queue 5.2× the local one, including all four of its items that are present
+here. The prediction was derived rather than inherited (§P2) and it was right;
+had it been wrong, the enumeration was ready. **`enrich_synthesized_scenes.py`'s
+item-403 fall-through branch has still never fired live**, now across
+1,515 + 88 + 1,031 + 5,387 resolutions.
+
+**404: zero.** **The gate has now met real data and found nothing.** 5,387
+ids spanning 1984–2026, against a catalogue that demonstrably moves. The named
+mechanism — Sentinel-2 L2A reprocessing republishing granules under new ids —
+**did not occur on a single one of the 1,111 sentinel-2 rows**, 82 of them
+from 2015. The stop-and-think threshold (>10, or any outside
+`sentinel-2-l2a`) was never approached, and no id the pipeline once served has
+left the catalogue.
+
+### PP7 — 527 exactly, and the `h` token is 0.6, not 0.5
+
+**The total is confirmed to the row. The 13-row sub-forecast is falsified.**
+
+| `resolution_m` | predicted | planned by the dry run |
+|---|---|---|
+| 1.0 | 575 | **575** |
+| 0.6 | 426 | **439** |
+| 0.5 | 24 | **11** |
+| 0.3 | 77 | **77** |
+| total | 1,102 | **1,102** |
+
+Rewrites planned: `1.0 → 0.3` **77**, `1.0 → 0.5` **11**, `1.0 → 0.6` **439**.
+575 + 527 = 1,102, and 527 is the predicted number.
+
+**`h` means 0.6, not "half metre".** All 13 rows land in the 0.6 bucket:
+439 − (395 `060` + 31 `.6`) = 13, and 0.5's bucket is exactly the 11 `.5`
+rows with nothing added. The reading in §PP7 — that `h` is the only token
+whose plain meaning is a resolution, therefore half a metre — was wrong about
+the meaning while right about the position: **it is a resolution field, and
+its value is 0.6 m**, the 2016 NAIP product. The alternatives were named in
+advance (1.0 or 0.6) and the outcome is one of them.
+
+**The substantive claim PP7 was testing is confirmed at 1,102 of 1,102:** the
+filename token *is* the item's `gsd`, for six distinct token spellings across
+two filename conventions. The miss moved 13 rows between two buckets and
+changed no total, which is why PP7's headline number survived a wrong
+sub-forecast — and the sub-forecast was written down separately precisely so
+this would be legible rather than absorbed.
+
+### PP16 — errors 0, exit code 1, and the two halves disagree
+
+**`errors=0` is confirmed. `exit 0` is falsified, and not by a row.** The run
+completed batch 27, rendered its report, emitted its structlog summary
+(`errors=0 footprints=5387 written=5387`) and *then* died in
+`Session.__exit__` on a reaped connection —
+`sqlalchemy.exc.OperationalError: SSL connection has been closed unexpectedly`
+— so `sys.exit(1 if out.errors else 0)` at `enrich_snapshot_scenes.py:622` was
+never reached and the process exited 1 from an unhandled traceback.
+
+**This is the first exit status this arc has read from a production run, and
+it is false.** PP16 predicted the two halves would agree; they do not. The
+report says the run succeeded, the `.rc` says it failed, both are this run's
+own output, and only the third artifact — the stdout capture — explains which
+is right. Full mechanism and consequences: `SNAPSHOT-ENRICH-PROD-REPORT.md`
+F2.
+
+### Gates (§P5)
+
+| Gate | Result |
+|---|---|
+| 1. Any `error` outcome → stop | **0 errors.** Not tripped — the stop came from the *process* exit, not from a row |
+| 2. >10 404s or any outside `sentinel-2-l2a` → stop | **0 404s.** Never approached |
+| 3. Any 403 → enumerate + STATUS.md line | **0 403s.** NORM-23 confirmed in production instead |
+| 4. Any landsat/sentinel-2 rewrite → report per row | **0 of 3,174 landsat, 0 of 1,111 sentinel-2** |
+| 5. Dry-run and execute totals must agree | **unscored** — no execute |
+| 6. Any existing `bbox` moved → stop | **0 bboxes filled, 0 rows written at all**; the whole table re-read identical at 08:04:57Z |
