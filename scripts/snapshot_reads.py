@@ -1,21 +1,34 @@
 #!/usr/bin/env python3
-"""Read PostgreSQL's own access counters for ``imagery_snapshots``.
+"""Read PostgreSQL's own access counters for the imagery tables.
 
-ADR 0001 step 4 retires the table "after one cooling period with no reads
-(**measured, not assumed**)". Two instruments are needed for that, because
-neither is sufficient alone:
+ADR 0001 step 4 retires the denormalized table "after one cooling period with
+no reads (**measured, not assumed**)".
 
-* ``app/services/imagery.py``'s ``imagery_snapshots_read`` structlog event
-  names *which* caller read the table. After the step-3 cutover the only
-  legitimate one is ``reconcile_source_snapshots.existing_rows``. It cannot
-  see a reader that does not call it.
-* **This script**, which reads ``pg_stat_user_tables`` — the database's own
-  count of every scan of the table, by anything, instrumented or not. It
-  cannot name a caller.
+**This is the only instrument left, and that is the point.** Step 3 needed
+two, because the table still had one legitimate reader — the reconciler's
+existing-rows pull — and a bare counter delta could not tell that reader apart
+from an unexpected one. So the application logged an
+``imagery_snapshots_read`` event naming its caller, and this script counted
+every access by anything, and the difference between them was the population
+the cooling period was looking for.
 
-Together they answer step 4's question: the counters say how many reads
-happened, the log says how many of them were the reconciler, and the
-difference is the population the cooling period is looking for.
+Step 4's code cutover deleted the last caller. The expected count is now
+**exactly zero, from anything**, which a counter can express on its own and a
+per-caller log cannot improve on: there is no caller to name, and the event's
+absence would prove nothing about an uninstrumented reader. The log half was
+therefore deleted with the reader it named, and the claim this script supports
+got stronger rather than weaker — "no application code reads it" became "the
+database recorded no access at all".
+
+**This script never touches the tables it reports on.** It reads
+``pg_stat_user_tables``, so its own scans do not appear in the numbers it
+prints. Ad-hoc ``count(*)`` probes *do* — that is exactly the +15 seq_scan the
+step-3 reading had to explain by arithmetic (NORM31-PROD-REPORT.md §6c) — so
+an audit that wants to count rows should go through
+``scripts/shared/probe.probe_count``, which logs an ``audit_probe`` event
+naming the table and the reason before it scans. This script emits the same
+event for the statistics views it reads, so a reading is attributable by the
+same grep as everything else.
 
 **How to use it.** Take a reading at the start of the cooling period and
 another at the end, and difference them::
@@ -28,10 +41,12 @@ another at the end, and difference them::
 
 **What the counters mean, and their one trap.** ``seq_scan`` and ``idx_scan``
 count *scans*, not rows, and they are incremented by the planner for writes
-too: the ``DELETE ... WHERE id = :id`` the reconciler issues costs an
-``idx_scan``, and so does the upsert's conflict probe. So a nonzero delta is
-not by itself a read — it is "something touched this table", and the log is
-what splits it. **The counters reset** on ``pg_stat_reset()`` and are not
+too: a ``DELETE ... WHERE id = :id`` costs an ``idx_scan``, and so does an
+upsert's conflict probe. So a nonzero delta is not by itself a read — it is
+"something touched this table". For ``parcel_scenes`` and ``scenes`` that
+ambiguity is why ``n_tup_ins``/``upd``/``del`` are printed alongside; for the
+retired table the expected value of every counter is zero and the distinction
+does not arise. **The counters reset** on ``pg_stat_reset()`` and are not
 guaranteed to survive a server restart, so a *smaller* number than the
 baseline means the counter reset, not that reads went backwards; the script
 says so rather than reporting a negative delta.
@@ -61,7 +76,13 @@ from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
 from app.logging_config import configure_script_logging
+from scripts.shared.probe import audit_probe
 
+# ``imagery_snapshots`` stays in this list while the table exists. It is the
+# subject of the cooling measurement — the whole reading is "did anything
+# touch it" — and ``render`` prints "not present" rather than failing once
+# migration 0019 has dropped it, which is what turns this script from the
+# instrument that gates the drop into the one that confirms it.
 TABLES = ("imagery_snapshots", "parcel_scenes", "scenes")
 
 # Transaction-scoped read-only. Exported so tests/test_pooler_safe_reads.py can
@@ -81,6 +102,11 @@ _COUNTERS = (
 
 
 def read_counters(db: Session) -> dict[str, Any]:
+    audit_probe(
+        "pg_stat_user_tables",
+        purpose="ADR 0001 step-4 cooling reading",
+        subjects=list(TABLES),
+    )
     placeholders = ",".join(f":t{i}" for i in range(len(TABLES)))
     params = {f"t{i}": name for i, name in enumerate(TABLES)}
     rows = db.execute(
@@ -135,7 +161,7 @@ def render(now: dict[str, Any], baseline: dict[str, Any] | None) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Read imagery_snapshots access counters")
+    parser = argparse.ArgumentParser(description="Read imagery table access counters")
     parser.add_argument("--out", help="Write the raw reading here as JSON")
     parser.add_argument("--baseline", help="An earlier --out file to difference against")
     args = parser.parse_args()
