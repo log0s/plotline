@@ -1703,16 +1703,20 @@ def _is_postgres(db: Session) -> bool:
         return False
 
 
-def _bbox_select_sql() -> str:
+def _bbox_select_sql(column: str = "bbox") -> str:
     """SQL fragment for the four bbox component columns.
 
     On PostgreSQL, uses PostGIS ``ST_XMin``/``ST_YMin``/``ST_XMax``/``ST_YMax``.
     On SQLite (test DB, no PostGIS), returns NULL columns so the query still
     executes and the Python-side bbox tuple is None.
+
+    ``column`` is the geometry expression to decompose — ``bbox`` for an
+    unaliased ``imagery_snapshots`` query, ``s.bbox`` for the joined
+    ``scenes`` read.
     """
     return (
-        "ST_XMin(bbox) AS bbox_w, ST_YMin(bbox) AS bbox_s, "
-        "ST_XMax(bbox) AS bbox_e, ST_YMax(bbox) AS bbox_n"
+        f"ST_XMin({column}) AS bbox_w, ST_YMin({column}) AS bbox_s, "
+        f"ST_XMax({column}) AS bbox_e, ST_YMax({column}) AS bbox_n"
     )
 
 
@@ -1819,3 +1823,241 @@ def _row_bbox(row: RowMapping) -> tuple[float, float, float, float] | None:
     if w is None or s is None or e is None or n is None:
         return None
     return (float(w), float(s), float(e), float(n))
+
+
+# ── The served-scene read path (ADR 0001 step 3) ──────────────────────────────
+#
+# The serving reads above pull item facts out of ``imagery_snapshots``, where
+# every fact is copied once per parcel. These read the normalized shape
+# instead: ``parcel_scenes`` says which scene a parcel serves for a period,
+# ``scenes`` holds the item's facts once. Both paths exist while
+# ``scripts/compare_read_paths.py`` proves they agree; the cutover commit
+# deletes the ones above.
+#
+# **Still raw SQL, and for the same reason the old reads were.** ``scenes``
+# carries two ``Geometry`` columns, so ``select(Scene)`` makes GeoAlchemy2 emit
+# ``ST_AsEWKB(bbox)`` — a function the SQLite test database does not have, and
+# a payload the serving path would then have to decode only to throw away.
+# ``ST_XMin``/``ST_YMin``/``ST_XMax``/``ST_YMax`` hand back the four floats the
+# response actually carries, and ``_bbox_select_sql_sqlite`` hands back NULLs so
+# the same query runs on the test database. The dodge is inherited deliberately,
+# not by copy-paste.
+
+_SERVED_SCENE_COLUMNS = (
+    "ps.id AS id, ps.parcel_id AS parcel_id, ps.source AS source,"
+    " ps.mosaic_scene_ids AS mosaic_scene_ids,"
+    " s.capture_date AS capture_date, s.item_id AS stac_item_id,"
+    " s.collection AS stac_collection, s.cog_url AS cog_url,"
+    " s.thumbnail_url AS thumbnail_url, s.resolution_m AS resolution_m,"
+    " s.cloud_cover_pct AS cloud_cover_pct"
+)
+
+
+def _mosaic_cog_urls(db: Session, rows: Sequence[RowMapping]) -> dict[str, list[str]]:
+    """``{parcel_scenes.id: [cog_url, ...]}`` for the rows that carry a mosaic.
+
+    One query for the whole page, then ordered in Python. Resolving the array
+    in SQL would need ``unnest ... WITH ORDINALITY`` to keep its order, which
+    SQLite has no answer to — and this is the ordering the old shape's
+    ``additional_cog_urls`` array carried, so it is worth having in one place
+    that a test can point at on either database.
+
+    A reference that resolves to no ``scenes`` row is logged and dropped from
+    that row's list. Production has never held one (0 dangling references
+    across 613, `STEP2-PROD-REPORT.md` §5.1), and the alternative — refusing
+    the whole listing — turns one missing mosaic tile into a dead timeline,
+    where the primary COG still renders and the gap is the same one an
+    unsignable component already leaves (`api/v1/imagery.py`).
+    """
+    wanted: dict[str, list[str]] = {}
+    needed: set[str] = set()
+    for row in rows:
+        ids = _mosaic_ids(row["mosaic_scene_ids"])
+        if not ids:
+            continue
+        wanted[str(row["id"])] = ids
+        needed.update(ids)
+    if not needed:
+        return {}
+
+    ordered = sorted(needed)
+    placeholders = ",".join(f":m{i}" for i in range(len(ordered)))
+    params = {f"m{i}": sid for i, sid in enumerate(ordered)}
+    url_by_id = {
+        str(sid): url
+        for sid, url in db.execute(
+            sa_text(f"SELECT id, cog_url FROM scenes WHERE id IN ({placeholders})"),
+            params,
+        ).all()
+    }
+
+    out: dict[str, list[str]] = {}
+    for served_id, ids in wanted.items():
+        urls = []
+        for sid in ids:
+            url = url_by_id.get(sid)
+            if url is None:
+                logger.error(
+                    "Mosaic reference resolves to no scene",
+                    extra={"parcel_scene_id": served_id, "scene_id": sid},
+                )
+                continue
+            urls.append(url)
+        if urls:
+            out[served_id] = urls
+    return out
+
+
+def _served_scene_rows(db: Session, where_sql: str, params: dict[str, object]) -> list[RowMapping]:
+    bbox_select = _bbox_select_sql("s.bbox") if _is_postgres(db) else _bbox_select_sql_sqlite()
+    sql = sa_text(
+        f"""
+        SELECT {_SERVED_SCENE_COLUMNS},
+               {bbox_select}
+        FROM parcel_scenes ps
+        JOIN scenes s ON s.id = ps.scene_id
+        WHERE {where_sql}
+        ORDER BY s.capture_date ASC, ps.source ASC
+        """
+    )
+    return list(db.execute(sql, params).mappings().all())
+
+
+def _to_served_row(row: RowMapping, mosaic: dict[str, list[str]]) -> ImagerySnapshotRow:
+    return ImagerySnapshotRow(
+        id=uuid.UUID(str(row["id"])),
+        parcel_id=uuid.UUID(str(row["parcel_id"])),
+        source=row["source"],
+        capture_date=date.fromisoformat(str(row["capture_date"])),
+        stac_item_id=row["stac_item_id"],
+        stac_collection=row["stac_collection"],
+        cog_url=row["cog_url"],
+        additional_cog_urls=mosaic.get(str(row["id"])),
+        thumbnail_url=row["thumbnail_url"],
+        cloud_cover_pct=row["cloud_cover_pct"],
+        resolution_m=row["resolution_m"],
+        bbox=_row_bbox(row),
+    )
+
+
+def get_served_scenes(
+    db: Session,
+    parcel_id: uuid.UUID,
+    source: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> list[ImagerySnapshotRow]:
+    """What this parcel serves, sorted by capture_date ascending.
+
+    The normalized replacement for ``get_imagery_snapshots``: same row shape,
+    same filters, read from ``parcel_scenes`` joined to ``scenes``.
+    ``additional_cog_urls`` is reconstructed from ``mosaic_scene_ids`` in array
+    order.
+
+    **The sort adds a tie-break the old query did not have.** Both queries say
+    ``capture_date ASC``, which leaves rows sharing a date in whatever order
+    the plan produced — and two sources really can land on one date, so the
+    listing's order among them was never stable, on either shape. Ordering by
+    ``source`` after the date makes it stable. Within a source a tie is
+    impossible: ``group_key`` is derived from ``capture_date``, so one date is
+    one group is one row.
+    """
+    where = ["ps.parcel_id = :parcel_id"]
+    params: dict[str, object] = {"parcel_id": str(parcel_id)}
+    if source:
+        where.append("ps.source = :source")
+        params["source"] = source
+    if start_date:
+        where.append("s.capture_date >= :start_date")
+        params["start_date"] = start_date.isoformat()
+    if end_date:
+        where.append("s.capture_date <= :end_date")
+        params["end_date"] = end_date.isoformat()
+
+    rows = _served_scene_rows(db, " AND ".join(where), params)
+    mosaic = _mosaic_cog_urls(db, rows)
+    return [_to_served_row(row, mosaic) for row in rows]
+
+
+def get_served_scene_by_id(db: Session, served_id: uuid.UUID) -> ImagerySnapshotRow | None:
+    """One served scene by its ``parcel_scenes`` id, or None.
+
+    The normalized replacement for ``get_snapshot_by_id``. The id the API
+    hands out and the id it resolves are both this table's primary key, so
+    the two move together.
+    """
+    rows = _served_scene_rows(db, "ps.id = :id", {"id": str(served_id)})
+    if not rows:
+        return None
+    mosaic = _mosaic_cog_urls(db, rows)
+    return _to_served_row(rows[0], mosaic)
+
+
+def count_served_scenes(db: Session, parcel_id: uuid.UUID, source: str) -> int:
+    """How many periods this parcel serves for one source.
+
+    The normalized replacement for ``count_imagery_snapshots``, and the same
+    semantics: **rows, not scenes.** A NAIP mosaic is one served period
+    however many tiles it composites, exactly as it was one
+    ``imagery_snapshots`` row with a populated ``additional_cog_urls``.
+    """
+    row = db.execute(
+        sa_text(
+            "SELECT COUNT(*) FROM parcel_scenes WHERE parcel_id = :parcel_id AND source = :source"
+        ),
+        {"parcel_id": str(parcel_id), "source": source},
+    ).scalar()
+    return int(row or 0)
+
+
+def served_scene_bounds(db: Session, parcel_id_strs: Sequence[str]) -> dict[str, tuple[str, str]]:
+    """``{parcel_id: (earliest_served_id, latest_served_id)}`` for the featured cards.
+
+    The normalized replacement for ``featured._snapshot_ids_for_parcels``, and
+    a move out of the route handler while it is being rewritten anyway
+    (CLAUDE.md: business logic lives in services). One query for any number of
+    parcels, ordered so the bucketing below is a single pass.
+
+    Ties are broken by whatever order the database returns, exactly as the old
+    query left them: two rows sharing a capture_date are both defensible
+    answers to "earliest", and inventing a tie-break here would be a
+    behaviour change smuggled into a cutover.
+    """
+    if not parcel_id_strs:
+        return {}
+    placeholders = ",".join(f":p{i}" for i in range(len(parcel_id_strs)))
+    params = {f"p{i}": pid for i, pid in enumerate(parcel_id_strs)}
+    rows = db.execute(
+        sa_text(
+            f"""
+            SELECT ps.parcel_id, ps.id, s.capture_date
+            FROM parcel_scenes ps
+            JOIN scenes s ON s.id = ps.scene_id
+            WHERE ps.parcel_id IN ({placeholders})
+            ORDER BY ps.parcel_id, s.capture_date ASC
+            """
+        ),
+        params,
+    ).all()
+    out: dict[str, tuple[str, str]] = {}
+    for pid, sid, _capture_date in rows:
+        pid_str = str(pid)
+        sid_str = str(sid)
+        if pid_str not in out:
+            out[pid_str] = (sid_str, sid_str)
+        else:
+            out[pid_str] = (out[pid_str][0], sid_str)
+    return out
+
+
+def parcels_serving_source(db: Session, source: str) -> list[uuid.UUID]:
+    """Every parcel that serves at least one period of ``source``.
+
+    The normalized replacement for ``revalidate_landsat.landsat_parcels``'
+    ``GROUP BY parcel_id`` over ``imagery_snapshots``.
+    """
+    rows = db.execute(
+        sa_text("SELECT DISTINCT parcel_id FROM parcel_scenes WHERE source = :source"),
+        {"source": source},
+    ).scalars()
+    return [uuid.UUID(str(pid)) for pid in rows]
