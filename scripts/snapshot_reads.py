@@ -36,8 +36,16 @@ guaranteed to survive a server restart, so a *smaller* number than the
 baseline means the counter reset, not that reads went backwards; the script
 says so rather than reporting a negative delta.
 
-Read-only and safe for production: two SELECTs against the statistics views
-inside a read-only transaction.
+**Read-only, and scoped so it cannot leak.** Two SELECTs against the
+statistics views inside a transaction opened with ``SET TRANSACTION READ
+ONLY``. This script used to issue ``SET default_transaction_read_only = on``
+and *commit* it, which is a session-level GUC; against Neon's
+transaction-mode pooler a session GUC outlives the client that set it and
+lands on whichever client borrows that backend next. It made a shared
+production backend read-only and killed an authorized write mid-run
+(NORM-30, ``docs/audits/2026-08-normalization/SNAPSHOT-ENRICH-PROD-REPORT-3.md``
+§6b). ``SET TRANSACTION`` applies to the current transaction only and is gone
+at COMMIT, so it cannot outlive the connection's lease.
 """
 
 from __future__ import annotations
@@ -55,6 +63,10 @@ from app.db import SessionLocal
 from app.logging_config import configure_script_logging
 
 TABLES = ("imagery_snapshots", "parcel_scenes", "scenes")
+
+# Transaction-scoped read-only. Exported so tests/test_pooler_safe_reads.py can
+# execute this exact statement against a real Postgres rather than a copy of it.
+READ_ONLY_STATEMENT = "SET TRANSACTION READ ONLY"
 
 _COUNTERS = (
     "seq_scan",
@@ -136,8 +148,10 @@ def main() -> int:
             baseline = json.load(fh)
 
     with SessionLocal() as db:
-        db.execute(sa_text("SET default_transaction_read_only = on"))
-        db.commit()
+        # Transaction-scoped, and it must stay that way: Postgres rejects SET
+        # TRANSACTION after the first query, and a session-level equivalent
+        # would leak through the pooler onto a shared backend (NORM-30).
+        db.execute(sa_text(READ_ONLY_STATEMENT))
         now = read_counters(db)
         db.rollback()
 
