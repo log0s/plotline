@@ -333,4 +333,160 @@ Run B is killed with `SIGKILL` mid-run. Predictions:
 
 ## Observed
 
-*(Appended after the runs. Everything above this line is as committed.)*
+*(Appended after the runs. Everything above this line is as committed in
+`93ff05c` and has not been edited.)*
+
+Three runs, 2026-08-29, local database only, network to the Planetary
+Computer only.
+
+| Run | What | Started | Ended | Rows |
+|---|---|---|---|---|
+| A | dry run, whole queue | 07:11:33Z | 07:15:07Z (214 s) | 1,031 fetched, 0 written |
+| B | `--execute`, **SIGKILLed** | 07:15:34Z | killed 07:17:50Z | 600 committed |
+| C | `--execute`, resumed | 07:18:14Z | 07:19:44Z (90 s) | 431 committed |
+| D | dry run, finished queue | 07:20Z | — | 0 fetched |
+
+Captures committed unedited: `snapshot-enrich-local-dryrun.md` (A),
+`snapshot-enrich-local-killed.md` (B, the partial report the kill left
+behind), `snapshot-enrich-local-resumed.md` (C).
+
+### Scorecard
+
+**14 of 16 confirmed. 1 falsified (P3). 1 deviation, wholly downstream of that
+falsification (P5). No unpredicted class.**
+
+| # | Predicted | Observed | Verdict |
+|---|---|---|---|
+| P1 | 1,031 fetched | **1,031** | confirmed |
+| P2 | 1,025 matched | **1,031** | deviation — see P3 |
+| P3 | 6 × item GET 403 | **0** | **FALSIFIED** |
+| P4 | 0 × item GET 404 | **0** | confirmed |
+| P5 | 91 NAIP rewrites | **93** | deviation — see below |
+| P6 | 0 landsat rewrites | **0** | confirmed |
+| P7 | 0 sentinel2 rewrites, 213 with no `gsd` | **0**, **213** | confirmed |
+| P8 | 0 bboxes filled | **0** | confirmed |
+| P9 | 0 capture-date disagreements | **0** | confirmed |
+| P10 | 3.5–5 min, run A | **3 min 34 s** (214 s) | confirmed |
+| P11 | 0 non-Polygon anomalies | **0** | confirmed |
+| P12 | 0 errors, exit 0 | **0 errors**, `rc=0` **read from the file** | confirmed |
+| P13 | 1,025 footprints across B+C | **1,031** | deviation — see P3 |
+| P14 | queue 6 after C | **0** | deviation — see P3 |
+| P15 | ≤200 refetched, 0 written twice | **0 recorded refetches**, **0 written twice** | confirmed |
+| P16 | 1,031 requests, run A | **1,031** | confirmed |
+
+### P3 — falsified: the six forbidden NAIP items are no longer forbidden
+
+**All six Appendix C items returned HTTP 200.** The dry run resolved 1,031 of
+1,031 with zero 403s, and three of the six were then probed directly with
+`curl` against `…/collections/naip/items/{id}` — `ut_m_4011118_sw_12_1_…`,
+`va_m_3807708_se_18_1_20120511_…`, `ut_m_4011125_sw_12_060_20211105` — each
+**200**.
+
+This is the good direction to be wrong in, and it is a fact about the
+Planetary Computer, not about this pass: **Appendix C's "unassessable, HTTP
+403" class, open since 2026-08-12, is empty as of 2026-08-29.** Those 17 rows
+across 6 items were counted as unassessed rather than as passes; they are now
+assessable, and all six carry a real footprint in `scenes`.
+
+The prediction was explicit that this number was a forecast that a 2026-08-12
+measurement still held, not a reading of today's catalogue (§0). It did not
+hold. **What this does not license:** the geometry-audit conclusions those 17
+rows were excluded from were never re-run, and nothing here says whether those
+six items' footprints actually cover the parcels that serve them. That is a
+separate question and it is now answerable by a query over `scenes` instead of
+a refetch — which is exactly ADR rule 4's promise arriving.
+
+**P2, P13 and P14 are the same falsification counted three more times**, not
+independent misses: 1,025 + 6 = 1,031 matched, 1,031 footprints, queue 0.
+
+### P5 — 93 rewrites, not 91, and the mechanism it tested held perfectly
+
+The predicted mechanism was that PC's `gsd` equals the resolution token in
+NAIP's filename convention. **It held on 200 of 200 rows.** Observed NAIP
+distribution after the heal:
+
+| `resolution_m` | predicted | observed | token count |
+|---|---|---|---|
+| 1.0 | 109 | **107** | `1` → 107 |
+| 0.6 | 73 | **75** | `060` 70 + `.6` 5 = 75 |
+| 0.3 | 15 | **15** | `030` → 15 |
+| 0.5 | 3 | **3** | `.5` → 3 |
+| total | 200 | **200** | 200 |
+
+Every bucket equals its token count exactly. The 2-row deviation is precisely
+the two Appendix C items whose token is `060` — predicted to stay at 1.0
+because they were predicted to 403, and instead fetched and corrected to 0.6.
+The other four forbidden items carry token `1` and were going to land on 1.0
+either way, which is why the deviation is 2 and not 6.
+
+So P5's numeric miss is entirely inherited from P3, and the substantive claim
+it was testing — *the filename token is the resolution, on every row* — is
+confirmed 200/200.
+
+### P12 — the exit code was read, not inferred
+
+`STEP3-PROD-REPORT.md` F3 recorded that `setsid nohup … &` discards `$?` and
+prescribed appending `; echo $? > /tmp/<name>.rc`. Run C was launched with
+that recipe and `/tmp/snapshot-enrich-C.rc` contains `0`. **PP14's successor
+is scored confirmed-by-reading rather than unobserved**, which is the first
+time this arc has had an actual exit status off a detached run.
+
+Run B has no `.rc` file, and the reason is worth stating rather than glossing:
+the deliberate kill was a `SIGKILL` of every process whose `cmdline` matched
+the script — including the wrapping `sh -c` that would have written the file.
+That is a harder kill than the client timeout the recipe defends against, and
+it does not weaken C's reading.
+
+### P13–P15 — resume, exercised for real
+
+Run B was killed at 07:17:50Z with `SIGKILL`, after three batches had
+committed and while batch 4 was in flight.
+
+| Check | Value |
+|---|---|
+| Rows committed by B | **600** (3 × 200, all `landsat-c2-l2`) |
+| Queue immediately after the kill | **431** = 1,031 − 600 |
+| — composition | 18 landsat + 200 naip + 213 sentinel2 |
+| B's report on disk after the kill | present, **"Incomplete"**, totals 600 |
+| Rows C's re-derived queue held | **431** |
+| Rows C fetched | **431** |
+| Rows fetched twice and *written* twice | **0** |
+| Queue after C | **0** |
+
+The in-flight batch 4 was rolled back whole — 600 healed, not 600-and-some —
+which is the batching decision doing its job. B's partial batch did dispatch
+some requests before the kill that its report never counted (the counter is
+rendered at batch boundaries), so the true B+C request total exceeds 1,031 by
+an unrecorded amount bounded by one batch. That is P15's `≤ 200` satisfied in
+shape; the exact number is not observable and is not claimed.
+
+**Run D**, a dry run over the finished queue, fetched **0 rows and issued 0
+STAC requests.** Idempotence is a reading, not an argument.
+
+### Gates (§5)
+
+| Gate | Result |
+|---|---|
+| Any `error` outcome → stop | **0 errors**, no stop |
+| >10 404s or a 404 outside `sentinel-2-l2a` → stop | **0 404s** |
+| A 403 outside Appendix C's six → STATUS.md line | **0 403s at all** — the inverse happened, and gets its own line |
+| Dry run and execute totals must agree | **They do**: A's 93 rewrites / 1,031 footprints / 0 bboxes equal B+C's 93 / 1,031 / 0, and A's per-source tables are identical to C's |
+
+### Final state of the local database
+
+| | before | after |
+|---|---|---|
+| `snapshot` rows with NULL `footprint`, non-topo | 1,031 | **0** |
+| — geometry type | — | **1,031 × `ST_Polygon`** |
+| — footprints equal to their own `bbox` | — | **0** (69 sentinel-2 outlines have >5 vertices) |
+| `snapshot` naip at `resolution_m = 1.0` | 200 | **107** |
+| `snapshot` usgs_topo rows | 143, no footprint | **143, no footprint** (excluded by design) |
+| `provenance` counts | 1,174 / 88 / 80 | **1,174 / 88 / 80** |
+| `parcel_scenes` | 3,082, 0 dangling | **3,082, 0 dangling** |
+
+**NORM-18's named witness is closed.** `md_m_3807708_se_18_030_20230901_
+20231018` — the item STEP3-REPORT F1 measured serving `1m res` to four
+parcels — now carries `resolution_m = 0.3`, and **all four parcels serve
+0.3**. Across the whole local database, **139 served NAIP rows** moved off the
+1.0 chip to a true value (29 at 0.3, 4 at 0.5, 106 at 0.6) and 177 stay at 1.0
+because 1.0 is what their items say.
