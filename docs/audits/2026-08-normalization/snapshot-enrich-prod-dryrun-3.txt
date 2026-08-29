@@ -1,0 +1,132 @@
+queue (provenance = 'snapshot', footprint IS NULL, source <> 'usgs_topo'): 5387 row(s); 769 topo row(s) excluded
+batch 1: 200/5387 fetched, 200 written, 0 unmatched, 0 error(s)
+batch 2: 400/5387 fetched, 400 written, 0 unmatched, 0 error(s)
+batch 3: 600/5387 fetched, 600 written, 0 unmatched, 0 error(s)
+batch 4: 800/5387 fetched, 800 written, 0 unmatched, 0 error(s)
+batch 5: 1000/5387 fetched, 1000 written, 0 unmatched, 0 error(s)
+batch 6: 1200/5387 fetched, 1200 written, 0 unmatched, 0 error(s)
+batch 7: 1400/5387 fetched, 1400 written, 0 unmatched, 0 error(s)
+batch 8: 1600/5387 fetched, 1600 written, 0 unmatched, 0 error(s)
+batch 9: 1800/5387 fetched, 1800 written, 0 unmatched, 0 error(s)
+batch 10: 2000/5387 fetched, 2000 written, 0 unmatched, 0 error(s)
+batch 11: 2200/5387 fetched, 2200 written, 0 unmatched, 0 error(s)
+batch 12: 2400/5387 fetched, 2400 written, 0 unmatched, 0 error(s)
+batch 13: 2600/5387 fetched, 2600 written, 0 unmatched, 0 error(s)
+batch 14: 2800/5387 fetched, 2800 written, 0 unmatched, 0 error(s)
+batch 15: 3000/5387 fetched, 3000 written, 0 unmatched, 0 error(s)
+batch 16: 3200/5387 fetched, 3200 written, 0 unmatched, 0 error(s)
+batch 17: 3400/5387 fetched, 3400 written, 0 unmatched, 0 error(s)
+batch 18: 3600/5387 fetched, 3600 written, 0 unmatched, 0 error(s)
+batch 19: 3800/5387 fetched, 3800 written, 0 unmatched, 0 error(s)
+batch 20: 4000/5387 fetched, 4000 written, 0 unmatched, 0 error(s)
+batch 21: 4200/5387 fetched, 4200 written, 0 unmatched, 0 error(s)
+batch 22: 4400/5387 fetched, 4400 written, 0 unmatched, 0 error(s)
+batch 23: 4600/5387 fetched, 4600 written, 0 unmatched, 0 error(s)
+batch 24: 4800/5387 fetched, 4800 written, 0 unmatched, 0 error(s)
+batch 25: 5000/5387 fetched, 5000 written, 0 unmatched, 0 error(s)
+batch 26: 5200/5387 fetched, 5200 written, 0 unmatched, 0 error(s)
+batch 27: 5387/5387 fetched, 5387 written, 0 unmatched, 0 error(s)
+
+# Snapshot-scene enrichment — dry run
+
+Started 2026-08-29T18:55:49+00:00. Finished 2026-08-29T19:13:48+00:00 (1079 s).
+
+Queue at start: **5387** rows (`provenance = 'snapshot' AND footprint IS NULL AND source <> 'usgs_topo'`), batch size 200. Excluded from the queue: **769** `usgs_topo` rows — `usgs-historical-topo` is not a Planetary Computer collection, so those scenes have no item to fetch.
+
+Rows fetched: **5387**. STAC requests issued: **5387**.
+
+## Totals
+
+| Outcome | Rows |
+|---|---|
+| matched and written | 5387 |
+| unmatched — item GET 404 | 0 |
+| unmatched — item GET 403 | 0 |
+| error | 0 |
+
+| Column | Rows |
+|---|---|
+| `footprint` filled | 5387 |
+| `bbox` filled (was NULL) | 0 |
+| `resolution_m` rewritten | 527 |
+
+Would write 5387 row(s). Queue after this run: **0**. Dry run — nothing written.
+
+## `resolution_m` rewrites, by source
+
+| Source | Stored | Item | Rows |
+|---|---|---|---|
+| naip | 1.0 | 0.3 | 77 |
+| naip | 1.0 | 0.5 | 11 |
+| naip | 1.0 | 0.6 | 439 |
+
+## Items carrying no `gsd`
+
+| Source | Rows |
+|---|---|
+| sentinel2 | 1111 |
+
+`resolution_m` was left as stored for these rows. `None` is never written over a value.
+
+## Capture-date disagreements
+
+None. Every matched item's `datetime` equals the row's `capture_date`.
+
+## Anomalies
+
+None.
+
+## Findings
+
+Unresolved ids and unexpected resolutions, one line each. Every row named here was left exactly as it was.
+
+None.
+
+Report: /tmp/snapshot-enrich-prod-dryrun-3.md
+2026-08-29T19:13:48.481353Z [info     ] Enriched snapshot scenes       [enrich_snapshot_scenes] bboxes=0 errors=0 excluded_topo=769 execute=False footprints=5387 queue=5387 resolutions=527 unmatched_403=0 unmatched_404=0 written=5387
+2026-08-29T19:13:48.483207Z [error    ] teardown_operational_error_after_completed_run [enrich_snapshot_scenes]
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1128, in _rollback_impl
+    self.engine.dialect.do_rollback(self.connection)
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 712, in do_rollback
+    dbapi_connection.rollback()
+psycopg2.OperationalError: SSL connection has been closed unexpectedly
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/app/scripts/enrich_snapshot_scenes.py", line 617, in main
+    with SessionLocal() as db:
+         ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 1809, in __exit__
+    self.close()
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2507, in close
+    self._close_impl(invalidate=False)
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2576, in _close_impl
+    transaction.close(invalidate)
+  File "<string>", line 2, in close
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/orm/state_changes.py", line 137, in _go
+    ret_value = fn(self, *arg, **kw)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 1417, in close
+    transaction.close()
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2597, in close
+    self._do_close()
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2735, in _do_close
+    self._close_impl()
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2721, in _close_impl
+    self._connection_rollback_impl()
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2713, in _connection_rollback_impl
+    self.connection._rollback_impl()
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1130, in _rollback_impl
+    self._handle_dbapi_exception(e, None, None, None, None)
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1128, in _rollback_impl
+    self.engine.dialect.do_rollback(self.connection)
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 712, in do_rollback
+    dbapi_connection.rollback()
+sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) SSL connection has been closed unexpectedly
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
