@@ -29,6 +29,9 @@ def create_app() -> FastAPI:
             "Plotline API starting",
             extra={"env": settings.app_env, "log_level": settings.log_level},
         )
+        from app.services import stac as stac_service
+
+        stac_service.schedule_startup_mint()
         yield
         from app.db import close_async_redis
         from app.services import stac as stac_service

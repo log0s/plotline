@@ -320,6 +320,27 @@ def is_allowed_upstream_url(url: str) -> bool:
 # cannot be derived there without the item fetch that path is trying to avoid.
 LANDSAT_BLOB_CONTAINER = ("landsateuwest", "landsat-c2")
 
+# Every (account, container) pair the signing layer mints a container token
+# for. Derived, not assumed: of the four collections queried anywhere
+# (`extract_cog_url`'s naip / landsat-c2-l2 / sentinel-2-l2a, plus
+# usgs-historical-topo in tasks/timeline.py), only these three resolve to a
+# PC blob container — USGS topo is served from prd-tnm.s3.amazonaws.com and
+# never reaches `_blob_container`. `_container_token`'s docstring establishes
+# one container per collection.
+# NAIP and Sentinel-2 have no named constant (their containers come out of
+# live item hrefs via `_blob_container`), so the pair below is cross-checked
+# against production mint evidence instead of guessed: BOUNDARY-BASELINE.md
+# and STATUS.md's G7 row both log `sentinel2l2a01/sentinel2-l2` and
+# `naipeuwest/naip` repeatedly across independent captures.
+# STEP3-PROD-REPORT.md §5's own log excerpt has a typo — `sentinel2-l2a`,
+# extra trailing "a" — contradicted by every other production reading; see
+# NORM22-REPORT.md. F2 says "four" known pairs; there are three.
+STARTUP_MINT_CONTAINERS: tuple[tuple[str, str], ...] = (
+    ("naipeuwest", "naip"),
+    ("sentinel2l2a01", "sentinel2-l2"),
+    LANDSAT_BLOB_CONTAINER,
+)
+
 
 def _get_sign_client() -> httpx.AsyncClient:
     """Pooled client (per event loop) so parallel signs share TLS connections."""
@@ -496,6 +517,11 @@ def _blob_container(url: str) -> tuple[str, str] | None:
 _token_flights: dict[asyncio.AbstractEventLoop, dict[str, asyncio.Task[str]]] = {}
 
 
+def _container_cache_key(account: str, container: str) -> str:
+    """The Redis key `_container_token` reads and the startup mint writes."""
+    return f"sas-token:{account}/{container}"
+
+
 async def _cached_container_token(cache_key: str) -> str | None:
     """Read a container token out of Redis, or None on a miss or a dead cache."""
     from redis.exceptions import RedisError
@@ -571,7 +597,7 @@ async def _container_token(account: str, container: str, *, wait_budget: float) 
     ``SIGN_WAIT_BATCH`` — so a 2 s-budget request cannot end up waiting on a
     60 s-budget mint. Mixing budgets in one process would break that.
     """
-    cache_key = f"sas-token:{account}/{container}"
+    cache_key = _container_cache_key(account, container)
     cached = await _cached_container_token(cache_key)
     if cached:
         return cached
@@ -589,6 +615,47 @@ async def _container_token(account: str, container: str, *, wait_budget: float) 
     # Shielded: a follower that gives up — client disconnect, its own timeout —
     # must not cancel the mint every other follower is waiting on.
     return await asyncio.shield(flight)
+
+
+# Startup-mint tasks, held here so nothing garbage-collects them mid-flight —
+# a bare `asyncio.create_task` with no reference is eligible for collection
+# before it runs (asyncio's own pitfall, not specific to this code).
+_startup_mint_tasks: set[asyncio.Task[None]] = set()
+
+
+def schedule_startup_mint() -> None:
+    """Fire off a background mint for every container in `STARTUP_MINT_CONTAINERS`.
+
+    Closes the deploy-triggered instance of NORM-22
+    (STEP3-PROD-REPORT.md §5/F2): the first request per container after a
+    deploy would otherwise mint under the request path's 2.0 s
+    `SIGN_WAIT_REQUEST`, which a PC 429's 18-19 s advised wait always blows.
+    Minting here with `SIGN_WAIT_BATCH` gives a throttled mint 60 s to
+    retry, in the background — this returns immediately and never awaits the
+    mints, so a slow or unreachable PC cannot delay or fail app startup. A
+    mint that still fails after its budget is logged and left alone: the
+    next real request re-mints on demand, exactly as it does today. Not a
+    fix for a 429 storm mid-traffic (out of scope; see NORM22-REPORT.md).
+    """
+    for account, container in STARTUP_MINT_CONTAINERS:
+        task = asyncio.create_task(_mint_at_startup(account, container))
+        _startup_mint_tasks.add(task)
+        task.add_done_callback(_startup_mint_tasks.discard)
+
+
+async def _mint_at_startup(account: str, container: str) -> None:
+    """Pre-warm one container's token into the cache `_container_token` reads."""
+    label = f"{account}/{container}"
+    cache_key = _container_cache_key(account, container)
+    try:
+        await _mint_container_token(account, container, cache_key, wait_budget=SIGN_WAIT_BATCH)
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        logger.warning(
+            "SAS startup mint failed; falling back to on-demand re-mint",
+            extra={"container": label, "error": str(exc)},
+        )
+        return
+    logger.info("SAS startup mint succeeded", extra={"container": label})
 
 
 def _token_expiry(token: str) -> str | None:
