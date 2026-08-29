@@ -919,3 +919,243 @@ F2.
 | 4. Any landsat/sentinel-2 rewrite → report per row | **0 of 3,174 landsat, 0 of 1,111 sentinel-2** |
 | 5. Dry-run and execute totals must agree | **unscored** — no execute |
 | 6. Any existing `bbox` moved → stop | **0 bboxes filled, 0 rows written at all**; the whole table re-read identical at 08:04:57Z |
+
+---
+
+# Prediction — the PRODUCTION `--execute`, written before the write
+
+*(Appended 2026-08-29 after the third production dry run and **before**
+`--execute` was invoked. Everything above this line — both local halves and
+the production prediction and its dry-run Observed half — is as committed in
+`93ff05c`, `c16f570`, `82cbda9` and `261f6af` and has not been edited.)*
+
+## §E0 — Disclosure: what is blind here, and what is emphatically not
+
+This is the fourth attempt at this write and the first prediction written with
+three production dry runs already read. **Almost nothing about the plan is
+blind, and pretending otherwise would be the dishonest move.** The disclosure
+is therefore the substance of this section.
+
+**Not blind — read, not forecast:**
+
+1. **The queue is 5,387**, its per-source split, the 769 topo exclusion, the
+   0 bbox-NULLs and the 1,102 × 1.0 NAIP distribution. Read read-only at
+   **2026-08-29T18:55:17Z** (`snapshot-enrich-prod-prerun-3.json`), identical
+   to the 17:45:53Z and 07:42:23Z readings and to t0.
+2. **The whole dry-run plan**: 5,387 matched, 0 × 403, 0 × 404, 0 errors, 527
+   NAIP rewrites split 77 / 11 / 439, 0 capture-date disagreements, 27
+   batches. Three dry runs have now produced this same plan, the third at
+   18:55:49Z → 19:13:48Z in 1,079 s.
+3. **The `h` token means 0.6.** Falsified as 0.5 in the dry-run half and not
+   re-predicted here.
+4. **The third dry run's exit path.** `.rc = 0`, with the reaped connection
+   caught and logged at 19:13:48.483Z. Read before this file was written, and
+   discussed under EP14 as a reading rather than a forecast.
+5. **The pre-write `bbox` fingerprint** over all 6,663 rows is
+   `f1809593fd050be14736aaaea4b09ed5` (comma-delimited `string_agg`), taken at
+   18:55:17Z and equal to the 17:45:53Z baseline.
+
+**Genuinely blind, and this is what the prediction is actually about:**
+
+* **Whether the plan and the write agree.** Every number above is what a
+  fetch-and-compare pass *intends*. No production row has ever been written by
+  this script. EP1–EP9 are predictions that the write lands what the plan said,
+  and gate 5 (§P5) is the reason: the two modes share one `plan_row`, so a
+  disagreement is a defect in the pass rather than a fact about the data.
+* **The geometry invariants after a write** — EP10, EP11, EP12. Locally these
+  held over 1,031 rows; production has never had them measured post-write.
+* **The exit code.** EP14 is the number three sessions have chased.
+* **The served check.** EP15 has been unscored across three sessions.
+* **Whether the catalogue answers the same way twice in one hour.** The
+  execute re-fetches every row; the dry run's 200s do not carry over.
+
+## §E1 — Predictions
+
+| # | Quantity | Predicted |
+|---|---|---|
+| EP1 | Rows fetched by `--execute` | **5,387** |
+| EP2 | Item GET **403** / **404** | **0** / **0** |
+| EP3 | Rows enriched (footprint written) | **5,387** = queue − 0 |
+| EP4 | NAIP `resolution_m` rewrites | **527** (`1.0 → 0.3` 77, `→ 0.5` 11, `→ 0.6` 439) |
+| EP5 | landsat `resolution_m` changes | **0** over 3,174 |
+| EP6 | sentinel2 `resolution_m` changes / "no `gsd`" bucket | **0** / **1,111** |
+| EP7 | Capture-date disagreements | **0** over 5,387 |
+| EP8 | `bbox` filled (was NULL) | **0** — the population is empty |
+| EP9 | `bbox` churn outside was-NULL | **0**, measured by fingerprint |
+| EP10 | Footprint geometry type, all written rows | **5,387 × `ST_Polygon`** |
+| EP11 | Footprints `ST_Equals` their own `bbox` | **0** of 5,387 |
+| EP12 | Non-Polygon geometry anomalies | **0** |
+| EP13 | Queue after the run / batches committed | **0** / **27** |
+| EP14 | `.rc`, execute **and** the item-6 dry re-run | **0** and **0**, read from the file |
+| EP15 | Served check: the named parcel reads the new value | **yes**, `1.0 → 0.5` |
+| EP16 | Wall time, execute | **18–24 min** |
+
+### EP3 — enriched = queue − 0, and why the remainder is zero rather than small
+
+**The remainder is predicted as exactly 0, not "near zero".** The only two
+mechanisms that leave a queue row unenriched are a 403 and a 404 on the item
+endpoint, and both are predicted 0 by the same reasoning §P2 built from the
+mechanism rather than inherited from a document:
+
+* **403.** The item-403 fall-through branch has never fired live, now across
+  1,515 + 88 + 1,031 + 5,387 + 5,387 + 5,387 resolutions. NORM-23 emptied the
+  only class this repo ever recorded (Appendix C's six items, of which four are
+  in this queue), and it has been confirmed in production three times. This
+  pass makes no `/search` call — NORM-10's throttle is on a different endpoint
+  — and paces one GET per row at 5 dispatches/second.
+* **404.** Zero over three production dry runs of the same 5,387 ids, spanning
+  1984–2026.
+
+**A nonzero remainder is therefore a finding, and it is enumerated per row with
+its id, collection and capture date — never absorbed into a smaller success.**
+"Complete with zero" and "failed" are different states: if the run enriches
+5,386 of 5,387, that is reported as 5,386 with one enumerated remainder, and
+the queue after the run is reported as 1, not rounded to done.
+
+### EP2's 404 threshold, restated because it now governs a write
+
+Unchanged from §P3 and binding on the execute exactly as it was on the dry run:
+**more than 10 in total, OR any 404 outside `sentinel-2-l2a` → STOP.** 1–10
+within `sentinel-2-l2a` → each enumerated by id, year and parcel count as a
+per-row finding, run continues. The named mechanism if it misses is Sentinel-2
+L2A reprocessing republishing granules under new ids, concentrated in the early
+years (82 rows from 2015). A 404 in `landsat-c2-l2` or `naip` means the
+mechanism is something else, and the run stops regardless of count.
+
+**One thing the execute adds that the dry runs could not test:** a 404 arriving
+*mid-write* leaves the run partially applied. The row is left exactly as it is
+and stays in the queue — there is no fuzzy-match fallback and none will be
+added — so a stop after batch *n* leaves *n* batches committed and the queue
+re-derivable. That is the resume mechanism, not a rollback.
+
+### EP4 — the NAIP distribution after the write
+
+| `resolution_m` | before | **predicted after** | from |
+|---|---|---|---|
+| 1.0 | 1,102 | **575** | token `1`, unchanged |
+| 0.6 | 0 | **439** | 395 (`060`) + 31 (`.6`) + 13 (`h`) |
+| 0.5 | 0 | **11** | `.5` |
+| 0.3 | 0 | **77** | `030` |
+| total | 1,102 | **1,102** | |
+
+This is **NORM-13's `scenes` arm in one table**: 1,102 rows at 1.0 → 575 at 1.0
+and **527 moved onto the value their own item states**. The `imagery_snapshots`
+arm — 1,305 NAIP rows, all 1.0 at 18:55:17Z — is deliberately not healed and is
+predicted to still be **1,305 × 1.0** afterwards. The two tables will then
+**disagree on 527 items**, with `scenes` holding the true value and being the
+one that serves. **That disagreement is predicted, not a defect**; step 4 drops
+`imagery_snapshots`.
+
+### EP5, EP6 — a landsat or sentinel-2 change is a finding, not an outcome
+
+3,174 landsat rows store 30.0 and `landsat-c2-l2` is 30 m throughout, so
+`normalize_resolution_m(30)` equals stored and nothing is written. Sentinel-2
+L2A items carry no item-level `properties.gsd`, so `normalize_resolution_m(None)`
+is `None` and `None` is never written over a stored value — all 1,111 rows keep
+10.0 and land in the "no `gsd`" table. **EP6's second number is the one that
+catches an upstream change:** fewer than 1,111 in that bucket means PC has
+started publishing item-level `gsd` for L2A, and that is a finding whether or
+not any value changes.
+
+### EP9 — bbox churn, measured rather than argued
+
+The write guard is `row.bbox_is_null` and the queue has **0** NULL bboxes, so
+the branch has an empty population and **no existing bbox may move**. This is
+scored by re-taking the fingerprint after the run and comparing to
+`f1809593fd050be14736aaaea4b09ed5`, **not** by re-reading the guard. A changed
+fingerprint with EP8 = 0 is gate 6: stop and report.
+
+### EP10, EP11 — the invariant the whole pass exists to establish
+
+`scenes.footprint` is `geometry(POLYGON,4326)`; a non-Polygon is reported and
+leaves the footprint NULL, so a nonzero EP12 also shows up as EP13 > 0.
+**Zero of 5,387 footprints may `ST_Equals` their own `bbox`** — that is the
+geometry audit's whole distinction between an outline and an envelope, and
+production's 507 existing footprints already read 0 of 507 at 18:55:17Z.
+Predicting it as a quantity measured after the write, rather than asserting it
+from the code, is the point.
+
+### EP14 — the exit code, and what each outcome means
+
+**Predicted `0`, twice: on the execute, and on the item-6 dry re-run over an
+empty queue.** This is the prediction the last three sessions could not make
+honestly, and its two halves are not the same claim:
+
+* **The dry re-run is the harder one.** It fetches nothing (queue 0) and
+  finishes in seconds, so it never idles long enough for Neon to reap the
+  connection — it cannot exercise the NORM-29 guard at all. A `0` there is
+  consistent with the guard working and equally consistent with it being inert
+  (`SNAPSHOT-ENRICH-EXIT-FIX-REPORT-2.md` §4 says exactly this about the local
+  run). **It is recorded as a non-regression check, not as evidence the fix
+  works.**
+* **The execute is the weaker reading, and that is the honest ordering.** It
+  commits every ~200 rows, so the connection is exercised throughout and the
+  18-minute idle window does not exist in that mode. If teardown never raises,
+  `.rc = 0` says nothing about NORM-29 — it says the ordinary path exits
+  cleanly under a write, which is worth having and is not the same claim.
+
+**The reading that settles NORM-29 has already been taken, and it is recorded
+here rather than predicted, because it happened before this file was written.**
+The third dry run idled the session for eighteen minutes and Neon reaped it
+exactly as it did on 2026-08-29 at 08:02Z and 18:14Z: the structlog summary
+landed at 19:13:48.481Z, `teardown_operational_error_after_completed_run` was
+logged with the traceback at 19:13:48.483Z, and **`.rc` read `0`**. That is a
+true positive — the failure occurred, the guard caught it, the exit code told
+the truth — not a quiet path that merely avoided the bug. **EP14 is therefore a
+prediction about two runs that probably cannot reproduce the trigger**, and it
+is scored as such.
+
+**The three outcomes and what each means, written down before the numbers are
+read so none of them can be rationalised afterwards:**
+
+1. **`.rc = 0` on both** → predicted. Adds a write-mode and an empty-queue
+   reading to the dry run's true positive; does not by itself add evidence
+   about the guard.
+2. **`.rc = 1` with a clean report** → **a third distinct exit-path failure
+   mode. STOP and report.** Not a re-run candidate, and explicitly not a
+   NORM-27/NORM-29 recurrence: that mechanism was observed firing and being
+   absorbed at 19:13:48Z, on the deployed `sqlalchemy.exc.OperationalError`
+   guard verified in the image at 18:54Z. A third `1` means something neither
+   session found.
+3. **`.rc = 1` with a dirty report** → the ordinary contract working:
+   `sys.exit(1 if out.errors else 0)`. Read the errors, do not re-run blind.
+
+### EP15 — the served check, with the subject named in advance
+
+**Parcel `a79522ab-0681-4629-a4fe-935ab4d856c2`, group_key `2015`, scene
+`1f4276e5-d41e-4c3d-8cf5-90be04b5c4fe`, NAIP item
+`ny_m_4007306_sw_18_.5_20150522_20151109`** — token `.5`, currently
+`resolution_m = 1.0`, predicted `0.5` after the run. Chosen read-only at
+18:56:51Z and named here **before** the write so the check cannot be selected
+after the fact from whatever happened to move.
+
+The prediction is that this parcel serves `0.5` **end to end** — through the
+listing path that reads `scenes` after the step-3 cutover, not merely in the
+table — so the `1m res` chip at `frontend/src/components/MapView.tsx:298-301`
+reads `50cm`. **This is NORM-18's first production observation**, and it is
+predicting two things at once: that the cutover reads `scenes`, and that
+nothing caches the old value.
+
+### EP16 — wall time
+
+One GET per row at `--min-interval-s 0.2` — 5 dispatches/second globally — so
+the floor is `5387 × 0.2 = 1,077 s = 17 min 57 s`. Three dry runs measured
+1,080 s, 1,081 s and 1,079 s. The execute adds 27 commits of
+~200 rows each against Neon, which is why the band's top is raised over the dry
+runs' rather than centred on them: **18–24 min**.
+
+## §E2 — Gates on the write
+
+1. Any `error` outcome → stop, report, do not re-run blindly.
+2. More than 10 404s, or any 404 outside `sentinel-2-l2a` → stop (§P3).
+3. Any 403 → not a stop, but every id enumerated and a STATUS.md line.
+4. Any landsat or sentinel-2 `resolution_m` change → reported per row.
+5. The dry run's totals and the execute's totals must agree row for row.
+   They share one `plan_row`, so a disagreement is a defect in the pass.
+6. Any existing `bbox` observed to have moved → stop and report.
+7. **`.rc` nonzero with a clean report → stop and report as a new finding**
+   (§EP14 outcome 2). Not a re-run candidate.
+8. **Interruption is not a rollback** (NORM-8). If the ssh client dies, the
+   remote process is still running: verify by `/proc` scan and queue count,
+   record what was found, and resume the same logical run with the reason
+   written down. Never relaunch blind.
