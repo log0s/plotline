@@ -490,3 +490,320 @@ parcels — now carries `resolution_m = 0.3`, and **all four parcels serve
 0.3**. Across the whole local database, **139 served NAIP rows** moved off the
 1.0 chip to a true value (29 at 0.3, 4 at 0.5, 106 at 0.6) and 177 stay at 1.0
 because 1.0 is what their items say.
+
+---
+
+# Prediction — the same heal, against PRODUCTION
+
+Written 2026-08-29 between 07:44Z and the dry run's completion. **Everything
+above this line is as committed in `93ff05c` and `c16f570` and has not been
+edited**, including the local Observed half.
+
+## §P0 — Disclosure: what is blind, and the one thing that is unusual here
+
+The prompt orders the dry run *before* this prediction. **This section was
+nonetheless written while the dry run was still in flight and before a single
+byte of its output was read** — `/tmp/snapshot-enrich-prod-dryrun.log` and
+`.md` were untouched on the machine when this was committed. That is stricter
+than the prompt requires and it is the only way the 403 and 404 forecasts
+below mean anything: read after the dry run they would be transcription, not
+prediction.
+
+**Blind.** Every outcome quantity: the 403 count, the 404 count, footprints
+written, NAIP rewrites, landsat/sentinel-2 rewrites, capture-date
+disagreements, geometry anomalies, wall time, exit code, and what the `h`
+resolution token turns out to mean.
+
+**Not blind, and disclosed as such** — the item-2 pre-run measurement, read
+07:42:23Z under `default_transaction_read_only = on` (proved: an
+`UPDATE scenes SET resolution_m = resolution_m WHERE false` raised
+`ReadOnlySqlTransaction`):
+
+1. **The queue is 5,387** and its per-source split, the topo exclusion (769),
+   the queue's bbox-NULL count (0) and its NAIP resolution distribution
+   (1,102 × 1.0) are `SELECT count(*)` readings, not forecasts. They are
+   recorded so the arithmetic can be checked, not scored.
+2. **The NAIP filename-token histogram over the queue** is a reading. What
+   each token *means* to the Planetary Computer is the forecast (P5), and one
+   token — `h` — has no local precedent at all.
+3. **No Planetary Computer request was made by this session before the dry run
+   launched.** Unlike the local prediction (§0.2, three design-time probes),
+   nothing here rests on a production-era fetch. The three ids the local
+   session probed are not in this queue's evidence chain.
+
+**No document is cited as a floor for anything.** NORM-23 is binding and it is
+re-derived below rather than inherited.
+
+## §P1 — The queue, with the arithmetic
+
+`scenes` in production, read 2026-08-29T07:42:23Z. Deltas from step 3's t0
+(`2026-08-29T06:41:47.270470Z`) first, because the prompt gates on them:
+
+| | t0 (`STEP3-PROD-REPORT.md` §2, §7) | 07:42:23Z | delta |
+|---|---|---|---|
+| `scenes` | 6,663 | **6,663** | **0** |
+| — by provenance | 6,156 / 505 / 2 | **6,156 / 505 / 2** | **0** |
+| `parcel_scenes` | 12,884 | **12,884** | **0** |
+| `imagery_snapshots` | 12,884 | **12,884** | **0** |
+
+**There is no traffic to reconcile, because there is none at all.** The
+strongest form of that statement is the timestamps rather than the counts:
+`max(scenes.fetched_at)` and `max(parcel_scenes.selected_at)` are both
+`2026-08-29 04:41:26.056028+00`, **two hours before t0**, and `count(*)` of
+rows stamped at or after t0 is **0** in both tables. `selected_by` is
+non-NULL on 7 `parcel_scenes` rows, all stamped
+`efa4c63a07455c5fc776c431d345284fd4082ddd` — the step-2 sweep's deploy sha,
+not this session's. No selection has run since the cutover.
+
+The queue, by the script's own definition
+(`enrich_snapshot_scenes.py:165-181`, `provenance = 'snapshot' AND footprint
+IS NULL AND source <> 'usgs_topo'`):
+
+```
+provenance = 'snapshot'                       6,156
+  − source = 'usgs_topo'                      −  769   (TNM-sourced, no PC item)
+  − footprint already non-NULL                −    0   (there are none)
+  = queue                                     5,387
+```
+
+| source | collection | queue rows | bbox NULL | capture_date NULL |
+|---|---|---|---|---|
+| landsat | `landsat-c2-l2` | **3,174** | 0 | 0 |
+| naip | `naip` | **1,102** | 0 | 0 |
+| sentinel2 | `sentinel-2-l2a` | **1,111** | 0 | 0 |
+| | | **5,387** | **0** | **0** |
+
+3,174 + 1,102 + 1,111 = 5,387, and `count(DISTINCT (collection, item_id))`
+over the queue is also **5,387** — one row per item, no duplicate pair.
+**Excluded: 769** topo rows, every one with a NULL footprint. The prompt's
+"~5,387 (6,156 minus ~769 topo)" is exact in both terms.
+
+**Every queue row already has a `bbox`** (0 NULL), so P8's population is empty
+here as it was locally. Capture-date span: landsat **1984-03-12 → 2026-08-17**,
+naip **2010-04-22 → 2023-11-13**, sentinel2 **2015-08-21 → 2026-08-26**. This
+queue is 5.2× the local one and reaches back four decades further.
+
+Ordering is `ORDER BY collection, item_id`, so: `landsat-c2-l2` (3,174) →
+`naip` (1,102) → `sentinel-2-l2a` (1,111). At batch size 200 that is
+**27 batches** (26 full + one of 187).
+
+## §P2 — The 403 count, predicted from nothing
+
+**Predicted: 0.** Not "at least zero", not "the Appendix C floor" — zero, as a
+central estimate, and the reasoning is built here rather than cited.
+
+The entire evidentiary basis for a per-item 403 in this repo is one
+measurement: `2026-08-geometry-audit/FINDINGS.md` Appendix C, 6 NAIP items,
+2026-08-12. **That measurement was re-taken on 2026-08-29 and returned 200 on
+all six** (NORM-23), by two independent methods — a 1,031-row dry run that met
+zero 403s, and three direct `curl`s. A single observation that has since been
+contradicted by a later observation of the same objects is not a floor; it is
+a superseded reading. **Every document in this repo that quotes "the six
+forbidden items" as a known remainder is quoting a class of size zero, and
+none of them is load-bearing here.**
+
+Against that, the positive evidence for zero:
+
+* **No item-endpoint 403 has ever been observed at all**, on any run:
+  1,515 production resolutions (two enrichment runs), 88 + 1,031 local ones,
+  and the geometry audit's 1,239 fetches. `enrich_synthesized_scenes.py`'s
+  item-403 fall-through branch has **never fired live** (NORM-7).
+* **NORM-10's split is the mechanism.** The 403 this arc has actually met is a
+  throttle on `/search`, at ~29 req/s. This pass makes no `/search` call at
+  all — one GET per row against `/collections/{c}/items/{id}` — and is paced
+  at 5 dispatches/second, a rate that has now completed 505 + 505 + 1,031 rows
+  without one.
+* Only **4** of Appendix C's six items are even in this queue
+  (`va_m_3807708_se_18_060_20181019_20190212`,
+  `…_18_1_20120511_20120709`, `…_18_1_20140927_20141126`,
+  `…_18_1_20160718_20160928`; the two `ut_m_4011…` items are not in
+  production). So even the dead floor, if resurrected, would be 4 rather
+  than 6 — recorded to show the floor was checked against this queue and not
+  transplanted.
+
+**Any nonzero 403 count is a finding**, enumerated per item id in the report
+with its collection and capture date, and — if the items are NAIP —
+explicitly compared against Appendix C's list rather than assumed to be it.
+
+## §P3 — The 404 count, and the threshold that separates a tail from a stop
+
+**Predicted: 0.** **Stop-and-think threshold: more than 10 in total, OR any
+404 outside `sentinel-2-l2a`.**
+
+The gate has never met real data — 0 of 1,031 locally — and this is its first
+real test, against ids spanning the pipeline's whole history and a catalogue
+that demonstrably moves in both directions (NORM-23 is items *returning*; the
+same mobility permits items *leaving*).
+
+**What a 404 means here, precisely:** an id the pipeline once served that PC no
+longer resolves. These ids were not parsed out of tile URLs (NORM-4) — they
+came from PC's own search results by way of `imagery_snapshots.stac_item_id`.
+So a 404 is a fact about the catalogue, never a fact about the row, and there
+is no fuzzy-match fallback to reach for and none will be added. **The row is
+left exactly as it is** and stays in the queue.
+
+**Grounds for zero:** 2,020 catalogued production resolutions to date without
+one; NAIP and Landsat Collection-2 item ids are stable identifiers.
+
+**The named mechanism if it misses, stated in advance:** Sentinel-2 L2A ids
+embed a processing-baseline timestamp, and PC has reprocessed parts of that
+archive; a reprocessed granule is republished under a new id and the old one
+can stop resolving. **1,111 of the 5,387 rows are sentinel-2, spanning
+2015–2026 at 82–98 rows per year** — 82 rows from 2015 are the oldest and the
+most exposed. A miss should therefore be *concentrated in `sentinel-2-l2a` and
+skewed to the early years*. If instead 404s appear in `landsat-c2-l2` or
+`naip`, the mechanism is something else and the run stops regardless of count.
+
+**Why the threshold is 10 and not a fraction.** 5.2× the local queue does not
+buy 5.2× the tolerance: the question the threshold asks is not "is this rate
+acceptable" but "does the catalogue still contain what we served", and a
+double-digit answer to that is a different investigation from a single-digit
+one. **1–10 404s, all in `sentinel-2-l2a`: a tail** — each enumerated by id,
+year and parcel count as a per-row finding, run continues. **11 or more, or
+one anywhere else: stop**, report, do not work around.
+
+## §P4 — Predictions
+
+| # | Quantity | Predicted |
+|---|---|---|
+| PP1 | Rows fetched, dry run | **5,387** |
+| PP2 | STAC requests, dry run | **5,387** |
+| PP3 | Item GET **403** | **0** |
+| PP4 | Item GET **404** | **0** |
+| PP5 | Matched (200) | **5,387** |
+| PP6 | Footprints written by `--execute` | **5,387** |
+| PP7 | NAIP `resolution_m` rewritten | **527** |
+| PP8 | landsat `resolution_m` rewritten | **0** |
+| PP9 | sentinel2 rewritten / in the "no `gsd`" bucket | **0** / **1,111** |
+| PP10 | `bbox` filled | **0** |
+| PP11 | `bbox` values churned (existing bboxes moved) | **0** |
+| PP12 | Capture-date disagreements | **0** |
+| PP13 | Non-Polygon geometry anomalies | **0** |
+| PP14 | Footprint geometry type, all written rows | **5,387 × `ST_Polygon`** |
+| PP15 | Footprints `ST_Equals` their own `bbox` | **0** |
+| PP16 | Errors / exit code, both runs | **0** / **0**, read from `.rc` |
+| PP17 | Queue after `--execute` | **0** |
+| PP18 | Batches committed | **27** |
+| PP19 | Wall time, each run | **18–23 min** |
+| PP20 | Served check: a NAIP parcel reads the new value | **yes** |
+
+### PP7 and the `h` token — the prediction most likely to be wrong
+
+The queue's 1,102 NAIP rows all store **1.0**. Their filename resolution
+tokens:
+
+| token | rows | resolution it implies | basis |
+|---|---|---|---|
+| `1` | 575 | 1.0 | confirmed 107/107 locally |
+| `060` | 395 | 0.6 | confirmed 70/70 locally |
+| `030` | 77 | 0.3 | confirmed 15/15 locally |
+| `.6` | 31 | 0.6 | confirmed 5/5 locally |
+| `.5` | 11 | 0.5 | confirmed 3/3 locally |
+| **`h`** | **13** | **0.5 — forecast, no local precedent** | see below |
+| | **1,102** | | |
+
+Five of the six tokens were confirmed by the local run at 200 of 200 rows —
+the filename token *is* the item's `gsd`, measured, not assumed. **`h` did not
+occur in the local queue at all.** All 13 are 2016 NAIP over IN, MI, MO, NH and
+VT, in the older single-date filename form
+(`in_m_3808620_nw_16_h_20160618`, `nh_m_4207107_sw_19_h_20160706`, …) — 6
+underscores rather than 7, of which the queue holds 295 rows overall.
+
+**`h` is read as "half metre" — 0.5.** It is the only reading that makes the
+token a resolution field at all, which is what position 6 is in every other
+row. **This is a genuine forecast about a 13-row class nobody in this arc has
+measured**, and the alternatives are named so a miss is legible rather than
+retrofitted: `1.0` (the token means something other than resolution and these
+are ordinary 1 m tiles) or `0.6`. **A miss here moves at most 13 rows between
+buckets and falsifies nothing else** — and whatever PC's `gsd` says is what
+lands, because the item wins wherever it speaks.
+
+Predicted rewrites: every row whose token is not `1` —
+
+```
+395 (060) + 77 (030) + 31 (.6) + 11 (.5) + 13 (h) = 527
+```
+
+and the predicted NAIP `snapshot` distribution afterwards:
+
+| `resolution_m` | rows | from |
+|---|---|---|
+| 1.0 | **575** | token `1`, unchanged |
+| 0.6 | **426** | 395 + 31 |
+| 0.5 | **24** | 11 + 13 (`h`) |
+| 0.3 | **77** | |
+| | **1,102** | |
+
+**This is NORM-13's `scenes` arm, before and after, in one table:** 1,102 rows
+at 1.0 → 575 at 1.0 and **527 moved onto the value their item states**. The
+`imagery_snapshots` arm — 1,305 NAIP rows, all 1.0 — is deliberately not
+healed and will still be 1,305 × 1.0 afterwards, so the two tables will
+**disagree** on 527 items with `scenes` holding the true value and being the
+one that serves. That disagreement is the unhealed arm made visible, and it is
+predicted, not a defect.
+
+### PP8, PP9 — landsat and sentinel-2
+
+3,174 landsat rows all store 30.0 and `landsat-c2-l2` is 30 m throughout;
+`normalize_resolution_m(30)` is `30.0`, equal to stored, nothing written.
+**A landsat rewrite is a reported finding, not a routine outcome** — and with
+3,174 rows spanning 1984–2026 this is the first time the claim meets the
+Thematic Mapper era at scale.
+
+Sentinel-2 L2A items carry no item-level `properties.gsd` (measured
+2026-08-29 on a queue member, local §0.2), so `normalize_resolution_m(None)`
+is `None`, `None` is never written over a stored value, and all 1,111 rows
+keep 10.0 and land in the "no `gsd`" table. **PP9's second number is the one
+that would catch a change upstream:** if fewer than 1,111 rows land in that
+bucket, PC has started publishing item-level `gsd` for L2A and that is a
+finding.
+
+### PP11, PP14, PP15 — the invariants, promoted to predicted quantities
+
+* **`bbox` churn 0.** The guard is `row.bbox_is_null`; the queue has 0 NULL
+  bboxes, so the branch has an empty population and **no existing bbox may
+  move**. Verified after the run by counting rows whose `bbox` differs from
+  the pre-run reading, not by re-reading the guard.
+* **All 5,387 footprints `ST_Polygon`.** `scenes.footprint` is
+  `geometry(POLYGON,4326)`; a non-Polygon is reported and leaves the footprint
+  NULL, so a nonzero PP13 also shows up as PP17 > 0.
+* **Zero footprints `ST_Equals` their own `bbox`.** Locally 0 of 1,031 — the
+  geometry audit's whole distinction between an outline and an envelope,
+  measured on the result. Production's 507 existing footprints already read 0.
+  **This is the invariant the whole pass exists to establish**, and predicting
+  it as a quantity rather than asserting it from the code is the point.
+
+### PP19 — wall time, from the local run's pacing
+
+One GET per row at `--min-interval-s 0.2` — 5 dispatches/second globally,
+regardless of concurrency 6 — so the floor is `5387 × 0.2 = 1,077 s =
+17 min 57 s`. The local run's measured ratio to its own floor was
+`214 / 206 = 1.039`, response latency overlapping the pacing at concurrency 6.
+Scaled: `1,077 × 1.039 ≈ 1,119 s ≈ 18 min 39 s`. **Predicted 18–23 min per
+run**, and **both runs fetch** — `--execute` is the write flag only
+(`enrich_snapshot_scenes.py:587`, and the docstring at `:85`: "both forms do
+fetch") — so the dry run and the execute together are **~37–46 minutes** of
+wall clock, plus any resumption.
+
+### PP20 — the served check
+
+The NORM-18 fix becomes observable end to end in production for the first
+time. At least one parcel whose NAIP primary moves off 1.0 must read the new
+value through the listing path, not just in the table — the `1m res` chip at
+`frontend/src/components/MapView.tsx:298-301` is what a user sees. Predicting
+**yes** is predicting that the cutover reads `scenes` and nothing caches the
+old value.
+
+## §P5 — Gates
+
+1. Any `error` outcome → stop, report, do not re-run blindly.
+2. More than 10 404s, or any 404 outside `sentinel-2-l2a` → stop and report
+   (§P3). 1–10 within `sentinel-2-l2a` → enumerate each and continue.
+3. Any 403 → not a stop, but every id enumerated and a STATUS.md line
+   (§P2). NORM-23 means there is no expected population to absorb it into.
+4. Any landsat or sentinel-2 `resolution_m` rewrite → reported per row.
+5. The dry run's totals and the execute's totals must agree row for row where
+   the queues overlap. They share one `plan_row`, so a disagreement is a
+   defect in the pass, not in the data.
+6. Any existing `bbox` observed to have moved → stop and report. Nothing in
+   this pass may touch a non-NULL bbox.
