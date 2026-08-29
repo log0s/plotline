@@ -787,7 +787,7 @@ async def _search_and_persist_source(
         db.commit()
 
         # Use actual DB count — covers items from prior runs too
-        total_items = imagery_service.count_imagery_snapshots(db, parcel_id, source_name)
+        total_items = imagery_service.count_served_scenes(db, parcel_id, source_name)
 
     _set_task_status(timeline_request_id, source_name, "complete", items_found=total_items)
 
@@ -1004,7 +1004,7 @@ async def _search_and_persist_topo(
         )
         db.commit()
 
-        total_items = imagery_service.count_imagery_snapshots(db, parcel_id, source_name)
+        total_items = imagery_service.count_served_scenes(db, parcel_id, source_name)
 
     _set_task_status(timeline_request_id, source_name, "complete", items_found=total_items)
 

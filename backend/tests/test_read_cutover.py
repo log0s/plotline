@@ -304,7 +304,7 @@ def test_a_row_with_no_mosaic_has_no_additional_cog_urls(served: Session) -> Non
 # ── Shape freeze ──────────────────────────────────────────────────────────────
 
 
-def _freeze(rows: list[imagery_service.ImagerySnapshotRow]) -> list[dict[str, object]]:
+def _freeze(rows: list[imagery_service.ServedSceneRow]) -> list[dict[str, object]]:
     """A served row as JSON, with the one field the cutover changes tokenised.
 
     ``id`` is the predicted divergence: it is ``parcel_scenes.id`` after the
@@ -336,3 +336,33 @@ def test_the_served_row_shape_is_byte_identical_to_the_frozen_capture(
     """
     frozen = json.loads(GOLDEN.read_text())
     assert _freeze(imagery_service.get_served_scenes(served, PARCEL_ID)) == frozen
+
+
+# ── Step 4's measurement hook ─────────────────────────────────────────────────
+
+
+def test_the_reconcilers_read_of_imagery_snapshots_is_logged(
+    served: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The one legitimate reader left names itself, so step 4 can count it.
+
+    ADR 0001 step 4 retires ``imagery_snapshots`` after a cooling period with
+    no reads, *measured*. This event is the naming half of that measurement:
+    after the step-3 cutover the only application read is the reconciler's
+    existing-rows pull, so any ``imagery_snapshots_read`` carrying a different
+    ``caller`` is a reader that should not exist. It cannot see an
+    uninstrumented read — ``scripts/snapshot_reads.py`` and
+    ``pg_stat_user_tables`` are what close that gap.
+    """
+    with caplog.at_level("INFO", logger="app.services.imagery"):
+        imagery_service.reconcile_source_snapshots(
+            served,
+            PARCEL_ID,
+            "landsat",
+            [("LC08_L2SP_2020", date(2020, 7, 4))],
+        )
+
+    reads = [r for r in caplog.records if r.msg == "imagery_snapshots_read"]
+    assert len(reads) == 1
+    assert reads[0].caller == "reconcile_source_snapshots.existing_rows"  # type: ignore[attr-defined]
+    assert reads[0].source == "landsat"  # type: ignore[attr-defined]

@@ -12,8 +12,11 @@ This keeps CI dependency-free — no Postgres/PostGIS install required.
 
 from __future__ import annotations
 
+import json
 import os
-from collections.abc import Generator
+import uuid
+from collections.abc import Generator, Sequence
+from datetime import UTC, date, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -394,3 +397,82 @@ def client(db: Session) -> Generator[TestClient, None, None]:
         yield c
 
     get_settings.cache_clear()
+
+
+def seed_served_scene(
+    db: Session,
+    *,
+    parcel_id: uuid.UUID | str,
+    source: str,
+    capture_date: date,
+    stac_item_id: str,
+    stac_collection: str,
+    cog_url: str,
+    group_key: str | None = None,
+    thumbnail_url: str | None = None,
+    resolution_m: float | None = None,
+    cloud_cover_pct: float | None = None,
+    mosaic_cog_urls: Sequence[str] = (),
+) -> uuid.UUID:
+    """Seed one served period in the normalized shape, and return its id.
+
+    The id the serving reads hand out is ``parcel_scenes.id`` since the ADR
+    0001 step-3 cutover, so a test that needs "the id of a snapshot this
+    parcel serves" has to write ``scenes`` and ``parcel_scenes`` rather than
+    ``imagery_snapshots``. Raw SQL for the reason every other seed here uses
+    it: the ORM's UUID and geometry handling do not match this TEXT-typed
+    SQLite database.
+
+    ``group_key`` defaults to the year, which is what every source but
+    ``usgs_topo`` groups by; pass ``'1950s'`` for a topo row.
+    """
+    from app.services.imagery import encode_group_key
+
+    scene_ids: list[str] = []
+    for url in (cog_url, *mosaic_cog_urls):
+        scene_id = str(uuid.uuid4())
+        db.execute(
+            text(
+                "INSERT INTO scenes (id, source, collection, item_id, capture_date,"
+                " cog_url, thumbnail_url, resolution_m, cloud_cover_pct, provenance,"
+                " fetched_at)"
+                " VALUES (:id, :source, :collection, :item_id, :capture_date,"
+                " :cog_url, :thumbnail_url, :resolution_m, :cloud_cover_pct,"
+                " 'snapshot', :fetched_at)"
+            ),
+            {
+                "id": scene_id,
+                "source": source,
+                "collection": stac_collection,
+                # Mosaic tiles are first-class scenes with ids of their own.
+                "item_id": stac_item_id if not scene_ids else f"{stac_item_id}_t{len(scene_ids)}",
+                "capture_date": capture_date.isoformat(),
+                "cog_url": url,
+                "thumbnail_url": thumbnail_url if not scene_ids else None,
+                "resolution_m": resolution_m,
+                "cloud_cover_pct": cloud_cover_pct,
+                "fetched_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        scene_ids.append(scene_id)
+
+    served_id = uuid.uuid4()
+    db.execute(
+        text(
+            "INSERT INTO parcel_scenes (id, parcel_id, source, group_key, scene_id,"
+            " mosaic_scene_ids, selected_at, selected_by)"
+            " VALUES (:id, :parcel_id, :source, :group_key, :scene_id, :mosaic,"
+            " :selected_at, NULL)"
+        ),
+        {
+            "id": str(served_id),
+            "parcel_id": str(parcel_id),
+            "source": source,
+            "group_key": group_key or encode_group_key("year", capture_date),
+            "scene_id": scene_ids[0],
+            "mosaic": json.dumps(scene_ids[1:]) if len(scene_ids) > 1 else None,
+            "selected_at": datetime.now(UTC).isoformat(),
+        },
+    )
+    db.flush()
+    return served_id

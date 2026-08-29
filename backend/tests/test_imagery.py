@@ -12,7 +12,10 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from redis.exceptions import RedisError
+from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
+
+from .conftest import seed_served_scene
 
 # ── Imagery service unit tests ─────────────────────────────────────────────────
 
@@ -191,7 +194,7 @@ def test_upsert_imagery_snapshot_insert(db: Session) -> None:
 def test_upsert_imagery_snapshot_dedup(db: Session) -> None:
     """upsert_imagery_snapshot updates cog_url on conflict and reports
     insert vs update via the return value."""
-    from app.services.imagery import get_imagery_snapshots, upsert_imagery_snapshot
+    from app.services.imagery import upsert_imagery_snapshot
 
     parcel_id = uuid.uuid4()
     _insert_parcel(db, parcel_id, "Dupe St")
@@ -215,65 +218,27 @@ def test_upsert_imagery_snapshot_dedup(db: Session) -> None:
     second = upsert_imagery_snapshot(db, **kwargs)  # type: ignore[arg-type]
     assert second is False, "Second call should report update, not insert"
 
-    # Verify the URL was updated, not duplicated
-    snaps = get_imagery_snapshots(db, parcel_id)
-    assert len(snaps) == 1, "Should still be one row, not two"
-    assert snaps[0].cog_url == "https://example.com/landsat_new.tif"
-
-
-def test_get_imagery_snapshots_returns_sorted(db: Session) -> None:
-    """get_imagery_snapshots returns rows sorted by capture_date ascending."""
-    from app.services.imagery import get_imagery_snapshots, upsert_imagery_snapshot
-
-    parcel_id = uuid.uuid4()
-    _insert_parcel(db, parcel_id, "Sort St")
-
-    for year, item_id in [(2015, "item_2015"), (2000, "item_2000"), (2010, "item_2010")]:
-        upsert_imagery_snapshot(
-            db,
-            parcel_id=parcel_id,
-            source="naip",
-            capture_date=date(year, 7, 1),
-            stac_item_id=item_id,
-            stac_collection="naip",
-            cog_url=f"https://example.com/{item_id}.tif",
+    # Verify the URL was updated, not duplicated. Read straight out of
+    # imagery_snapshots: this is a test of the write path, which still writes
+    # that table (dual-write continues until ADR 0001 step 4), and the serving
+    # reads no longer look at it.
+    rows = (
+        db.execute(
+            text("SELECT cog_url FROM imagery_snapshots WHERE parcel_id = :pid"),
+            {"pid": str(parcel_id)},
         )
-
-    snapshots = get_imagery_snapshots(db, parcel_id)
-    dates = [s.capture_date for s in snapshots]
-    assert dates == sorted(dates), "Snapshots should be sorted by date"
-    assert len(snapshots) == 3
-
-
-def test_get_imagery_snapshots_source_filter(db: Session) -> None:
-    """get_imagery_snapshots filters by source correctly."""
-    from app.services.imagery import get_imagery_snapshots, upsert_imagery_snapshot
-
-    parcel_id = uuid.uuid4()
-    _insert_parcel(db, parcel_id, "Filter St")
-
-    upsert_imagery_snapshot(
-        db,
-        parcel_id=parcel_id,
-        source="naip",
-        capture_date=date(2020, 6, 1),
-        stac_item_id="naip_1",
-        stac_collection="naip",
-        cog_url="https://example.com/1.tif",
+        .scalars()
+        .all()
     )
-    upsert_imagery_snapshot(
-        db,
-        parcel_id=parcel_id,
-        source="landsat",
-        capture_date=date(1990, 6, 1),
-        stac_item_id="ls_1",
-        stac_collection="landsat-c2-l2",
-        cog_url="https://example.com/2.tif",
-    )
+    assert rows == ["https://example.com/landsat_new.tif"], "Should still be one row"
 
-    naip_only = get_imagery_snapshots(db, parcel_id, source="naip")
-    assert len(naip_only) == 1
-    assert naip_only[0].source == "naip"
+
+# ``get_imagery_snapshots``' own sorted/source-filter tests lived here until
+# the ADR 0001 step-3 cutover deleted the function. Their replacements are
+# ``test_read_cutover.py``'s test_the_listing_serves_parcel_scenes_and_not_
+# imagery_snapshots (capture_date ASC) and test_the_listing_filters_read_the_
+# new_tables_columns (source and date-window filters), which assert the same
+# behaviour against the read that now serves it.
 
 
 # ── Timeline request API tests ─────────────────────────────────────────────────
@@ -336,15 +301,13 @@ def test_list_imagery_caps_rendered_preview_thumbnails(client: TestClient, db: S
     and signing one is a wasted round-trip — the SAS endpoint returns it
     unchanged.
     """
-    from app.services.imagery import upsert_imagery_snapshot
-
     parcel_id = uuid.uuid4()
     _insert_parcel(db, parcel_id, "Preview St")
     preview = (
         "https://planetarycomputer.microsoft.com/api/data/v1/item/preview.png"
         "?collection=naip&item=naip_2020_item&assets=image&format=png"
     )
-    upsert_imagery_snapshot(
+    seed_served_scene(
         db,
         parcel_id=parcel_id,
         source="naip",
@@ -804,10 +767,13 @@ def test_stac_host_allowlist() -> None:
 _BLOB_URL = "https://landsateuwest.blob.core.windows.net/landsat-c2/naip_2020.tif"
 
 
+# These seed the *normalized* shape, because the id the tile proxy, warmup and
+# the STAC callback resolve is a ``parcel_scenes`` id since the ADR 0001
+# step-3 cutover. Seeding ``imagery_snapshots`` here would leave every test
+# below looking up an id no serving read can resolve — which is exactly what
+# these helpers did before the cutover, and how the cutover found them.
 def _insert_snapshot(db: Session, parcel_id: uuid.UUID, source: str, cog_url: str) -> uuid.UUID:
-    from app.services.imagery import get_imagery_snapshots, upsert_imagery_snapshot
-
-    upsert_imagery_snapshot(
+    return seed_served_scene(
         db,
         parcel_id=parcel_id,
         source=source,
@@ -815,16 +781,12 @@ def _insert_snapshot(db: Session, parcel_id: uuid.UUID, source: str, cog_url: st
         stac_item_id=f"{source}_2020_item",
         stac_collection="naip" if source == "naip" else "landsat-c2-l2",
         cog_url=cog_url,
-        thumbnail_url=None,
         resolution_m=1.0,
     )
-    return get_imagery_snapshots(db, parcel_id=parcel_id, source=source)[0].id
 
 
 def _insert_topo_snapshot(db: Session, parcel_id: uuid.UUID, cog_url: str) -> uuid.UUID:
-    from app.services.imagery import get_imagery_snapshots, upsert_imagery_snapshot
-
-    upsert_imagery_snapshot(
+    return seed_served_scene(
         db,
         parcel_id=parcel_id,
         source="usgs_topo",
@@ -832,10 +794,8 @@ def _insert_topo_snapshot(db: Session, parcel_id: uuid.UUID, cog_url: str) -> uu
         stac_item_id="tnm-1954-sheet",
         stac_collection="usgs_topo",
         cog_url=cog_url,
-        thumbnail_url=None,
         resolution_m=2.0,
     )
-    return get_imagery_snapshots(db, parcel_id=parcel_id, source="usgs_topo")[0].id
 
 
 def test_topo_tile_on_an_unlisted_host_is_refused(client: TestClient, db: Session) -> None:
@@ -1177,9 +1137,7 @@ def test_list_imagery_omits_snapshots_it_cannot_sign(client: TestClient, db: Ses
     parcel_id = uuid.uuid4()
     _insert_parcel(db, parcel_id, "Partial Way")
     good_url = "https://example.blob.core.windows.net/good.tif"
-    from app.services.imagery import upsert_imagery_snapshot
-
-    upsert_imagery_snapshot(
+    seed_served_scene(
         db,
         parcel_id=parcel_id,
         source="naip",
@@ -1187,7 +1145,6 @@ def test_list_imagery_omits_snapshots_it_cannot_sign(client: TestClient, db: Ses
         stac_item_id="naip_2018",
         stac_collection="naip",
         cog_url=good_url,
-        thumbnail_url=None,
         resolution_m=1.0,
     )
     _insert_snapshot(db, parcel_id, "sentinel2", _BLOB_URL)

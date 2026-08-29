@@ -40,7 +40,7 @@ from app.schemas.imagery import (
 from app.services import imagery as imagery_service
 from app.services import stac as stac_service
 from app.services.admission import REFUSED_DETAIL, AdmissionRefused
-from app.services.imagery import ImagerySnapshotRow
+from app.services.imagery import ServedSceneRow
 from app.services.titiler import titiler_params
 
 logger = logging.getLogger(__name__)
@@ -189,14 +189,14 @@ async def list_imagery(
 
     # Sync DB work runs in the threadpool — this handler is async (for the
     # parallel URL signing below) and must not block the event loop.
-    def _load_snapshots() -> list[ImagerySnapshotRow] | None:
+    def _load_snapshots() -> list[ServedSceneRow] | None:
         row = db.execute(
             sa_text("SELECT id FROM parcels WHERE id = :id"),
             {"id": str(parcel_id)},
         ).first()
         if not row:
             return None
-        return imagery_service.get_imagery_snapshots(
+        return imagery_service.get_served_scenes(
             db,
             parcel_id=parcel_id,
             source=source,
@@ -298,19 +298,19 @@ async def list_imagery(
 
 # ── Snapshot cache ────────────────────────────────────────────────────────────
 
-_snapshot_cache: OrderedDict[uuid.UUID, tuple[float, ImagerySnapshotRow]] = OrderedDict()
+_snapshot_cache: OrderedDict[uuid.UUID, tuple[float, ServedSceneRow]] = OrderedDict()
 _SNAPSHOT_CACHE_TTL = 300
 _SNAPSHOT_CACHE_MAX = 500
 
 
-def _get_cached_snapshot(snapshot_id: uuid.UUID) -> ImagerySnapshotRow | None:
+def _get_cached_snapshot(snapshot_id: uuid.UUID) -> ServedSceneRow | None:
     entry = _snapshot_cache.get(snapshot_id)
     if entry and time.monotonic() - entry[0] < _SNAPSHOT_CACHE_TTL:
         return entry[1]
     return None
 
 
-def _put_cached_snapshot(snapshot_id: uuid.UUID, snap: ImagerySnapshotRow) -> None:
+def _put_cached_snapshot(snapshot_id: uuid.UUID, snap: ServedSceneRow) -> None:
     _snapshot_cache[snapshot_id] = (time.monotonic(), snap)
     _snapshot_cache.move_to_end(snapshot_id)
     while len(_snapshot_cache) > _SNAPSHOT_CACHE_MAX:
@@ -351,7 +351,7 @@ def _is_allowed_stac_host(url: str) -> bool:
     return (urlparse(url).hostname or "").lower() in _ALLOWED_STAC_HOSTS
 
 
-def _refuse_unlisted_host(snap: ImagerySnapshotRow, url: str) -> None:
+def _refuse_unlisted_host(snap: ServedSceneRow, url: str) -> None:
     """502 before a stored URL on an unknown host reaches Titiler's ``url=``.
 
     Titiler fetches whatever it is handed, from inside Plotline's network,
@@ -460,7 +460,7 @@ async def _fetch_titiler(
 
 
 async def _proxy_cog_tile(
-    snap: ImagerySnapshotRow,
+    snap: ServedSceneRow,
     z: int,
     x: int,
     y: int,
@@ -566,7 +566,7 @@ async def _landsat_stac_url(snapshot_id: uuid.UUID, settings: Settings) -> str:
 
 
 async def _proxy_landsat_tile(
-    snap: ImagerySnapshotRow,
+    snap: ServedSceneRow,
     z: int,
     x: int,
     y: int,
@@ -622,7 +622,7 @@ async def proxy_imagery_tile(
     """Dispatch to the correct Titiler endpoint based on imagery source."""
     snap = _get_cached_snapshot(snapshot_id)
     if snap is None:
-        snap = await run_in_threadpool(imagery_service.get_snapshot_by_id, db, snapshot_id)
+        snap = await run_in_threadpool(imagery_service.get_served_scene_by_id, db, snapshot_id)
         if not snap:
             raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_id} not found")
         _put_cached_snapshot(snapshot_id, snap)
@@ -667,7 +667,7 @@ async def warmup_cog(
     """Pre-warm Titiler's GDAL cache for faster first-tile rendering."""
     snap = _get_cached_snapshot(snapshot_id)
     if snap is None:
-        snap = await run_in_threadpool(imagery_service.get_snapshot_by_id, db, snapshot_id)
+        snap = await run_in_threadpool(imagery_service.get_served_scene_by_id, db, snapshot_id)
         if snap:
             _put_cached_snapshot(snapshot_id, snap)
     db.close()
@@ -767,7 +767,7 @@ async def get_signed_stac_item(
     db: Session = Depends(get_db),
 ) -> Response:
     """Serve a Landsat STAC item with freshly signed band URLs."""
-    snap = await run_in_threadpool(imagery_service.get_snapshot_by_id, db, snapshot_id)
+    snap = await run_in_threadpool(imagery_service.get_served_scene_by_id, db, snapshot_id)
     if not snap or snap.source != "landsat":
         raise HTTPException(status_code=404, detail="Not found or not a STAC-tile source")
 

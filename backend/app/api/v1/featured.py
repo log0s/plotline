@@ -12,44 +12,11 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models.parcels import FeaturedLocation
 from app.schemas.featured import FeaturedListResponse, FeaturedLocationResponse
+from app.services import imagery as imagery_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-def _snapshot_ids_for_parcels(db: Session, parcel_id_strs: list[str]) -> dict[str, tuple[str, str]]:
-    """Return ``{parcel_id: (earliest_snapshot_id, latest_snapshot_id)}``.
-
-    One raw-SQL query for any number of parcels — sorted by parcel_id
-    then capture_date so we can bucket on the way through. Raw SQL
-    avoids the ORM's UUID coercion which doesn't match the SQLite
-    TEXT-typed test DB.
-    """
-    if not parcel_id_strs:
-        return {}
-    placeholders = ",".join(f":p{i}" for i in range(len(parcel_id_strs)))
-    params = {f"p{i}": pid for i, pid in enumerate(parcel_id_strs)}
-    rows = db.execute(
-        sa_text(
-            f"""
-            SELECT parcel_id, id, capture_date
-            FROM imagery_snapshots
-            WHERE parcel_id IN ({placeholders})
-            ORDER BY parcel_id, capture_date ASC
-            """
-        ),
-        params,
-    ).all()
-    out: dict[str, tuple[str, str]] = {}
-    for pid, sid, _capture_date in rows:
-        pid_str = str(pid)
-        sid_str = str(sid)
-        if pid_str not in out:
-            out[pid_str] = (sid_str, sid_str)
-        else:
-            out[pid_str] = (out[pid_str][0], sid_str)
-    return out
 
 
 def _build_response(
@@ -104,7 +71,7 @@ def list_featured(db: Session = Depends(get_db)) -> FeaturedListResponse:
 
     parcel_id_strs = [str(loc.parcel_id) for loc in locations]
     coords_map = _parcel_coords(db, parcel_id_strs)
-    snapshot_ids = _snapshot_ids_for_parcels(db, parcel_id_strs)
+    snapshot_ids = imagery_service.served_scene_bounds(db, parcel_id_strs)
 
     results: list[FeaturedLocationResponse] = []
     for loc in locations:
@@ -144,7 +111,9 @@ def get_featured_by_slug(slug: str, db: Session = Depends(get_db)) -> FeaturedLo
     if coords is None:
         raise HTTPException(status_code=404, detail="Parcel for featured location not found")
 
-    earliest_id, latest_id = _snapshot_ids_for_parcels(db, [pid_str]).get(pid_str, (None, None))
+    earliest_id, latest_id = imagery_service.served_scene_bounds(db, [pid_str]).get(
+        pid_str, (None, None)
+    )
 
     return _build_response(
         loc,

@@ -67,7 +67,7 @@ async def render_preview(
         logger.warning("No parcel for featured %s", loc.slug)
         return None
 
-    snapshots = imagery_service.get_imagery_snapshots(
+    snapshots = imagery_service.get_served_scenes(
         db, parcel_id=uuid.UUID(str(loc.parcel_id)), source="naip"
     )
     if not snapshots:

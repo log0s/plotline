@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 from contextlib import contextmanager
-from datetime import date, timedelta
+from datetime import date
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import event, text
@@ -17,6 +17,8 @@ from sqlalchemy import event, text
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
     from sqlalchemy.orm import Session
+
+from .conftest import seed_served_scene
 
 
 def _seed(db: Session, n_locations: int = 5, snaps_per_parcel: int = 10) -> list[uuid.UUID]:
@@ -72,22 +74,21 @@ def _seed(db: Session, n_locations: int = 5, snaps_per_parcel: int = 10) -> list
                 "ord": i,
             },
         )
+        # parcel_scenes, not imagery_snapshots: the earliest/latest ids the
+        # featured cards carry come from the normalized shape since the ADR
+        # 0001 step-3 cutover, and seeding the old table leaves this endpoint
+        # with no bounds at all. One served period per month, so each parcel's
+        # ten rows fall in ten distinct group_keys.
         for s in range(snaps_per_parcel):
-            db.execute(
-                text(
-                    "INSERT INTO imagery_snapshots "
-                    "(id, parcel_id, source, capture_date, stac_item_id, stac_collection, cog_url) "
-                    "VALUES (:id, :pid, :src, :dt, :sid, :coll, :url)"
-                ),
-                {
-                    "id": str(uuid.uuid4()),
-                    "pid": str(pid),
-                    "src": "naip",
-                    "dt": (date(2010, 1, 1) + timedelta(days=s * 30)).isoformat(),
-                    "sid": f"item-{i}-{s}",
-                    "coll": "naip",
-                    "url": f"https://example.com/{i}/{s}.tif",
-                },
+            captured = date(2010 + s, 6, 1)
+            seed_served_scene(
+                db,
+                parcel_id=pid,
+                source="naip",
+                capture_date=captured,
+                stac_item_id=f"item-{i}-{s}",
+                stac_collection="naip",
+                cog_url=f"https://example.com/{i}/{s}.tif",
             )
     db.commit()
     return parcel_ids

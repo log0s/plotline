@@ -363,7 +363,7 @@ async def _run_fetch_source(source_cfg: dict, mock_search) -> None:
             side_effect=lambda groups, raw, notes=None: groups,
         ),
         patch("app.tasks.timeline.imagery_service.reconcile_source_snapshots"),
-        patch("app.tasks.timeline.imagery_service.count_imagery_snapshots", return_value=0),
+        patch("app.tasks.timeline.imagery_service.count_served_scenes", return_value=0),
         patch("app.tasks.timeline.imagery_service.update_request_task"),
     ):
         await _fetch_source(

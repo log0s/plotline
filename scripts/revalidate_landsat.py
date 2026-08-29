@@ -76,22 +76,22 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import SessionLocal
 from app.logging_config import configure_script_logging
-from app.models.parcels import ImagerySnapshot, TimelineRequest
+from app.models.parcels import TimelineRequest
 from app.services import imagery as imagery_service
 from app.services.admission import AdmissionRefused
 from app.services.deploy import fetch_deployed_version
 
 
 def landsat_parcels(db: Session) -> list[uuid.UUID]:
-    return list(
-        db.execute(
-            select(ImagerySnapshot.parcel_id)
-            .where(ImagerySnapshot.source == "landsat")
-            .group_by(ImagerySnapshot.parcel_id)
-        )
-        .scalars()
-        .all()
-    )
+    """Parcels serving at least one Landsat period.
+
+    Reads ``parcel_scenes`` since the ADR 0001 step-3 cutover; it used to
+    ``GROUP BY parcel_id`` over ``imagery_snapshots``. The two agreed exactly
+    on every parcel of the local fleet when both paths were alive
+    (`docs/audits/2026-08-normalization/step3-parity-local.md`, site
+    ``revalidate_landsat``).
+    """
+    return imagery_service.parcels_serving_source(db, "landsat")
 
 
 def swept_since(db: Session, cutoff: datetime) -> set[uuid.UUID]:

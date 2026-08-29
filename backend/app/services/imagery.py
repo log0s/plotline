@@ -37,6 +37,41 @@ from app.services.admission import (
 
 logger = logging.getLogger(__name__)
 
+
+# ── Step 4's measurement hook ─────────────────────────────────────────────────
+
+# ADR 0001 step 4 retires ``imagery_snapshots`` "after one cooling period with
+# no reads (measured, not assumed — log every read; expect zero)". After the
+# step-3 cutover the only application read left is the reconciler's
+# existing-rows pull, which is legitimate and continues until step 4. This
+# event is what makes that population countable: one line per (parcel,
+# source) reconcile, ~4 per parcel-run, ~756 in a 189-parcel fleet sweep,
+# against the ~3,300 lines such a sweep already emits. That is the whole cost.
+#
+# **What it can and cannot prove, stated so step 4 does not over-read it.**
+# Grepping for ``imagery_snapshots_read`` with a ``caller`` other than the
+# reconciler catches a *new instrumented* reader. It cannot catch an
+# uninstrumented one, because a read that does not call this function does not
+# log — the measurement is only as complete as the discipline that maintains
+# it. The reader that closes that gap is the database's own counter:
+#
+#     SELECT seq_scan, seq_tup_read, idx_scan, idx_tup_fetch
+#     FROM pg_stat_user_tables WHERE relname = 'imagery_snapshots';
+#
+# read at the start and end of the cooling period and differenced. It counts
+# every reader, instrumented or not, at the cost of not naming any of them —
+# which is exactly the half this event supplies. `scripts/snapshot_reads.py`
+# takes that reading; the two together are the measurement step 4 needs.
+
+
+def log_imagery_snapshots_read(caller: str, **fields: object) -> None:
+    """Record that something read ``imagery_snapshots``, and what."""
+    logger.info(
+        "imagery_snapshots_read",
+        extra={"caller": caller, **fields},
+    )
+
+
 # A task with a completed_at. 'partial' joins the list at the task level for
 # the same reason it joined at the request level in 0012: it is terminal and
 # serving, not an error, and a task that never gets a completed_at reads as
@@ -69,15 +104,32 @@ class TaskCounts:
     coverage: str | None = None
 
 
-# ── Snapshot data class (PostGIS-free, SQLite-compatible) ─────────────────────
+# ── Served-scene data class (PostGIS-free, SQLite-compatible) ─────────────────
 
 
 @dataclass
-class ImagerySnapshotRow:
-    """Lightweight representation of an imagery_snapshots row.
+class ServedSceneRow:
+    """One period a parcel serves, flattened for the response layer.
+
+    Until the ADR 0001 step-3 cutover this was one ``imagery_snapshots`` row
+    and was named for it. It is now a ``parcel_scenes`` row joined to its
+    ``scenes`` row, with ``additional_cog_urls`` reconstructed from
+    ``mosaic_scene_ids``. **The field set is unchanged**, deliberately: the
+    listing endpoint, the preview renderer and the Titiler callback all build
+    their responses out of it, and step 3 moved where the facts come from,
+    not what they are (``tests/fixtures/step3_served_shape.json`` is the
+    frozen shape, captured from the old path before it was deleted).
+
+    ``id`` is the one field whose *value* changed: it is
+    ``parcel_scenes.id``, where it used to be ``imagery_snapshots.id``.
 
     Avoids importing the GeoAlchemy2 ORM model for reads, keeping the service
     layer compatible with both PostgreSQL (production) and SQLite (tests).
+
+    ``created_at`` has always been ``None`` here — the old read selected the
+    column and never assigned it — and stays ``None`` rather than being
+    quietly redefined as ``parcel_scenes.selected_at``, which answers a
+    different question.
     """
 
     id: uuid.UUID
@@ -906,22 +958,6 @@ def sweep_stranded_work(db: Session) -> tuple[int, int]:
 # ── Imagery snapshot helpers ──────────────────────────────────────────────────
 
 
-def count_imagery_snapshots(
-    db: Session,
-    parcel_id: uuid.UUID,
-    source: str,
-) -> int:
-    """Return the total number of imagery snapshots for a parcel + source."""
-    row = db.execute(
-        sa_text(
-            "SELECT COUNT(*) FROM imagery_snapshots"
-            " WHERE parcel_id = :parcel_id AND source = :source"
-        ),
-        {"parcel_id": str(parcel_id), "source": source},
-    ).scalar()
-    return int(row or 0)
-
-
 def _capture_date(value: object) -> date | None:
     """Parse a capture_date column, which SQLite hands back as text."""
     if isinstance(value, datetime):
@@ -1540,6 +1576,12 @@ def reconcile_source_snapshots(
         ),
         {"parcel_id": str(parcel_id), "source": source},
     ).all()
+    log_imagery_snapshots_read(
+        "reconcile_source_snapshots.existing_rows",
+        parcel_id=str(parcel_id),
+        source=source,
+        rows=len(rows),
+    )
 
     stale: list[object] = []
     # (group_key, collection, item_id) per suppressed delete — the deletions
@@ -1703,16 +1745,15 @@ def _is_postgres(db: Session) -> bool:
         return False
 
 
-def _bbox_select_sql(column: str = "bbox") -> str:
+def _bbox_select_sql(column: str) -> str:
     """SQL fragment for the four bbox component columns.
 
     On PostgreSQL, uses PostGIS ``ST_XMin``/``ST_YMin``/``ST_XMax``/``ST_YMax``.
     On SQLite (test DB, no PostGIS), returns NULL columns so the query still
     executes and the Python-side bbox tuple is None.
 
-    ``column`` is the geometry expression to decompose — ``bbox`` for an
-    unaliased ``imagery_snapshots`` query, ``s.bbox`` for the joined
-    ``scenes`` read.
+    ``column`` is the geometry expression to decompose: ``s.bbox``, for the
+    joined ``scenes`` read that is the only caller since the step-3 cutover.
     """
     return (
         f"ST_XMin({column}) AS bbox_w, ST_YMin({column}) AS bbox_s, "
@@ -1722,96 +1763,6 @@ def _bbox_select_sql(column: str = "bbox") -> str:
 
 def _bbox_select_sql_sqlite() -> str:
     return "NULL AS bbox_w, NULL AS bbox_s, NULL AS bbox_e, NULL AS bbox_n"
-
-
-def get_snapshot_by_id(db: Session, snapshot_id: uuid.UUID) -> ImagerySnapshotRow | None:
-    """Return a single imagery snapshot by ID, or None if not found."""
-    bbox_select = _bbox_select_sql() if _is_postgres(db) else _bbox_select_sql_sqlite()
-    sql = sa_text(
-        f"""
-        SELECT id, parcel_id, source, capture_date, stac_item_id, stac_collection,
-               cog_url, additional_cog_urls, thumbnail_url,
-               resolution_m, cloud_cover_pct, created_at,
-               {bbox_select}
-        FROM imagery_snapshots
-        WHERE id = :id
-        """
-    )
-    row = db.execute(sql, {"id": str(snapshot_id)}).mappings().first()
-    if not row:
-        return None
-    return ImagerySnapshotRow(
-        id=uuid.UUID(str(row["id"])),
-        parcel_id=uuid.UUID(str(row["parcel_id"])),
-        source=row["source"],
-        capture_date=date.fromisoformat(str(row["capture_date"])),
-        stac_item_id=row["stac_item_id"],
-        stac_collection=row["stac_collection"],
-        cog_url=row["cog_url"],
-        additional_cog_urls=row["additional_cog_urls"],
-        thumbnail_url=row["thumbnail_url"],
-        cloud_cover_pct=row["cloud_cover_pct"],
-        resolution_m=row["resolution_m"],
-        bbox=_row_bbox(row),
-    )
-
-
-def get_imagery_snapshots(
-    db: Session,
-    parcel_id: uuid.UUID,
-    source: str | None = None,
-    start_date: date | None = None,
-    end_date: date | None = None,
-) -> list[ImagerySnapshotRow]:
-    """Return imagery snapshots for a parcel, sorted by capture_date ascending.
-
-    Uses raw SQL to avoid GeoAlchemy2 AsEWKB calls on the bbox column.
-    """
-    where_clauses = ["parcel_id = :parcel_id"]
-    params: dict[str, object] = {"parcel_id": str(parcel_id)}
-
-    if source:
-        where_clauses.append("source = :source")
-        params["source"] = source
-    if start_date:
-        where_clauses.append("capture_date >= :start_date")
-        params["start_date"] = start_date.isoformat()
-    if end_date:
-        where_clauses.append("capture_date <= :end_date")
-        params["end_date"] = end_date.isoformat()
-
-    where_sql = " AND ".join(where_clauses)
-    bbox_select = _bbox_select_sql() if _is_postgres(db) else _bbox_select_sql_sqlite()
-    sql = sa_text(
-        f"""
-        SELECT id, parcel_id, source, capture_date, stac_item_id, stac_collection,
-               cog_url, additional_cog_urls, thumbnail_url,
-               resolution_m, cloud_cover_pct, created_at,
-               {bbox_select}
-        FROM imagery_snapshots
-        WHERE {where_sql}
-        ORDER BY capture_date ASC
-        """
-    )
-
-    rows = db.execute(sql, params).mappings().all()
-    return [
-        ImagerySnapshotRow(
-            id=uuid.UUID(str(row["id"])),
-            parcel_id=uuid.UUID(str(row["parcel_id"])),
-            source=row["source"],
-            capture_date=date.fromisoformat(str(row["capture_date"])),
-            stac_item_id=row["stac_item_id"],
-            stac_collection=row["stac_collection"],
-            cog_url=row["cog_url"],
-            additional_cog_urls=row["additional_cog_urls"],
-            thumbnail_url=row["thumbnail_url"],
-            cloud_cover_pct=row["cloud_cover_pct"],
-            resolution_m=row["resolution_m"],
-            bbox=_row_bbox(row),
-        )
-        for row in rows
-    ]
 
 
 def _row_bbox(row: RowMapping) -> tuple[float, float, float, float] | None:
@@ -1923,8 +1874,8 @@ def _served_scene_rows(db: Session, where_sql: str, params: dict[str, object]) -
     return list(db.execute(sql, params).mappings().all())
 
 
-def _to_served_row(row: RowMapping, mosaic: dict[str, list[str]]) -> ImagerySnapshotRow:
-    return ImagerySnapshotRow(
+def _to_served_row(row: RowMapping, mosaic: dict[str, list[str]]) -> ServedSceneRow:
+    return ServedSceneRow(
         id=uuid.UUID(str(row["id"])),
         parcel_id=uuid.UUID(str(row["parcel_id"])),
         source=row["source"],
@@ -1946,7 +1897,7 @@ def get_served_scenes(
     source: str | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
-) -> list[ImagerySnapshotRow]:
+) -> list[ServedSceneRow]:
     """What this parcel serves, sorted by capture_date ascending.
 
     The normalized replacement for ``get_imagery_snapshots``: same row shape,
@@ -1979,7 +1930,7 @@ def get_served_scenes(
     return [_to_served_row(row, mosaic) for row in rows]
 
 
-def get_served_scene_by_id(db: Session, served_id: uuid.UUID) -> ImagerySnapshotRow | None:
+def get_served_scene_by_id(db: Session, served_id: uuid.UUID) -> ServedSceneRow | None:
     """One served scene by its ``parcel_scenes`` id, or None.
 
     The normalized replacement for ``get_snapshot_by_id``. The id the API
