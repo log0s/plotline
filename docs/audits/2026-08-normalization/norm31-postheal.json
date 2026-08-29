@@ -1,0 +1,142 @@
+{
+ "taken_at": "2026-08-29 20:38:12.155306",
+ "session_state": [
+  {
+   "txn_ro": "on",
+   "default_ro": "off",
+   "backend_pid": 659
+  }
+ ],
+ "write_probe": "ReadOnlySqlTransaction: cannot execute UPDATE in a read-only transaction",
+ "queue_count": [
+  {
+   "n": 0
+  }
+ ],
+ "healed_rows": [
+  {
+   "id": "6d456449-2ffb-4f3f-aa3f-ba69a502481d",
+   "source": "sentinel2",
+   "collection": "sentinel-2-l2a",
+   "item_id": "S2B_MSIL2A_20181226T153639_R111_T19TCG_20201008T131747",
+   "capture_date": "2018-12-26",
+   "provenance": "snapshot",
+   "resolution_m": 10.0,
+   "is_valid": true,
+   "reason": "Valid Geometry",
+   "geom_type": "POLYGON",
+   "npoints": 27,
+   "fp_area": "0.76542450",
+   "bbox_area": "0.95076320",
+   "eq_bbox": false,
+   "bbox_wkt": "POLYGON((-71.43118 41.741259449822174,-70.08484 41.741259449822174,-70.08484 42.44744302996699,-71.43118 42.44744302996699,-71.43118 41.741259449822174))",
+   "footprint_md5": "58a63f50f98073fe81726d79f6ea8ed6",
+   "fetched_at": "2026-08-20 11:31:23.252707+00"
+  },
+  {
+   "id": "6b114490-1bd7-47e7-a195-f5d92686559b",
+   "source": "sentinel2",
+   "collection": "sentinel-2-l2a",
+   "item_id": "S2B_MSIL2A_20190602T162839_R083_T16TEK_20201005T212018",
+   "capture_date": "2019-06-02",
+   "provenance": "snapshot",
+   "resolution_m": 10.0,
+   "is_valid": true,
+   "reason": "Valid Geometry",
+   "geom_type": "POLYGON",
+   "npoints": 21,
+   "fp_area": "1.03875393",
+   "bbox_area": "1.20564127",
+   "eq_bbox": false,
+   "bbox_wkt": "POLYGON((-87.000244 39.72242887988659,-85.70166 39.72242887988659,-85.70166 40.650856515774606,-87.000244 40.650856515774606,-87.000244 39.72242887988659))",
+   "footprint_md5": "3a9e1c4aa2d512236f0b66a53bf75954",
+   "fetched_at": "2026-08-12 00:43:12.406686+00"
+  }
+ ],
+ "containment": [
+  {
+   "item_id": "S2B_MSIL2A_20181226T153639_R111_T19TCG_20201008T131747",
+   "parcel_id": "b494f235-ba1d-4658-b57f-e5ef18d7a628",
+   "lon": -70.7948434,
+   "lat": 42.1339997,
+   "contains": true,
+   "covers": true
+  },
+  {
+   "item_id": "S2B_MSIL2A_20190602T162839_R083_T16TEK_20201005T212018",
+   "parcel_id": "31929a9c-955d-4849-b918-2c0ca10b8c1e",
+   "lon": -86.029790650648,
+   "lat": 39.967219365955,
+   "contains": true,
+   "covers": true
+  },
+  {
+   "item_id": "S2B_MSIL2A_20190602T162839_R083_T16TEK_20201005T212018",
+   "parcel_id": "d6cf2ac8-b93b-4c78-add8-bd7ddecc4663",
+   "lon": -86.276848,
+   "lat": 39.9642377,
+   "contains": true,
+   "covers": true
+  }
+ ],
+ "fleet_invariant": [
+  {
+   "not_polygon": 0,
+   "invalid": 0,
+   "equals_bbox": 0,
+   "with_footprint": 5894
+  }
+ ],
+ "counts": [
+  {
+   "scenes": 6663,
+   "parcel_scenes": 12884,
+   "imagery_snapshots": 12884
+  }
+ ],
+ "by_provenance": [
+  {
+   "provenance": "enriched",
+   "n": 505
+  },
+  {
+   "provenance": "selection",
+   "n": 2
+  },
+  {
+   "provenance": "snapshot",
+   "n": 6156
+  }
+ ],
+ "bbox_fingerprint": [
+  {
+   "md5_comma": "f1809593fd050be14736aaaea4b09ed5",
+   "rows": 6663
+  }
+ ],
+ "footprint_fingerprint_all": [
+  {
+   "md5_comma": "76527acee6f351888915b5ae1ebb993a",
+   "rows": 6663
+  }
+ ],
+ "footprint_fingerprint_outside_healed": [
+  {
+   "md5_comma": "b605a050fb49731dd45175d13e89ac9c",
+   "rows": 6661
+  }
+ ],
+ "resolution_fingerprint_all": [
+  {
+   "md5_comma": "b30a4fc5c7b6ff36aae6573714e049ec",
+   "rows": 6663
+  }
+ ],
+ "freshness": [
+  {
+   "max_fetched_at": "2026-08-29 04:41:26.056028+00",
+   "max_selected_at": "2026-08-29 04:41:26.056028+00",
+   "fetched_since_preheal": 0
+  }
+ ]
+}
