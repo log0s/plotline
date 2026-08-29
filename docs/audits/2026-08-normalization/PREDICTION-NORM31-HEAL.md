@@ -78,3 +78,32 @@ the repair does not also grade it (`NORM31-REPORT.md` §5's method).
   that touched rows it does not name.
 * A repaired row that fails P8 → stop and report: a valid geometry that lost
   its parcel is a worse outcome than an invalid one that kept it.
+
+---
+
+## Observed — production, the heal
+
+Appended after the run at `20:36:43–20:36:45Z`. The prediction half above is
+unedited; it was committed at `213ae77`, before the write.
+
+**21 scoreable, 21 confirmed, 0 falsified.** The line-by-line score is
+`NORM31-PROD-REPORT.md` §5; the readings are `norm31-postheal.json`,
+`norm31-run.md`, `norm31-run.rc`, `norm31-dryrun-2.md` and `reads-t2.json`.
+
+Three observations the prediction did not contain:
+
+* **`ST_NPoints` fell 28 → 27 and 22 → 21.** The repair pinched off the
+  zero-area spike, taking the duplicate vertex at the self-intersection with
+  it. Area is preserved to 8 dp, so nothing covered was lost.
+* **`fetched_at` did not move** on either row — the mode writes the footprint
+  column and nothing else, shown by a timestamp rather than by a fingerprint.
+* **`scenes.n_tup_upd` has moved +5,389 since the step-3 cooling t0** — 5,387
+  from the big heal and exactly 2 from this one. The database's own write
+  counter accounts for every `scenes` update this arc has made.
+
+**P21 needs its wording read carefully rather than its verdict.** It predicted
+that the reconciler would account for none of the observed delta, and
+`imagery_snapshots.idx_scan` moved **+0**, so it is confirmed. What it does
+*not* establish — and said so in advance — is that the reconciler is the only
+reader, because the reconciler never ran in this window at all. That is why the
+step-4 verdict in `NORM31-PROD-REPORT.md` §6d is **not yet**.
