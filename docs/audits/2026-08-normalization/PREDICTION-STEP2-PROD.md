@@ -349,3 +349,143 @@ Step 3. No read path moves in this session, no read site is touched, and
 nothing in production reads `scenes` or `parcel_scenes` after this sweep any
 more than before it. Step 3 is unblocked by a clean battery, not performed by
 one.
+
+---
+
+## Observed — the pilot, 2026-08-29
+
+*(appended after the pilot ran; the half above is unedited)*
+
+The pilot enqueued 03:50:36 → 03:52:29Z (113 s): **30 queued, 0 skipped, exit
+0, 0 unreached**. The last of the 30 requests reached terminal at 03:59:29Z.
+The battery ran 03:59:42Z. Captures: `step2-pilot-sweep.txt`,
+`step2-pilot-battery.txt`, `step2-pilot-worker-log.txt`.
+
+**Outcome: every safety property held, and the sweep wrote nothing at all.**
+
+### Pilot scorecard
+
+| # | Quantity | Predicted | Observed | Verdict |
+|---|---|---|---|---|
+| PP1 | Parity, pilot, both directions | 0 / 0 | **0 / 0** (also 0 / 0 fleet-wide) | confirmed |
+| PP2 | Duplicate `(parcel_id, source, group_key)` | 0 | **0** | confirmed |
+| PP3 | Duplicate `(collection, item_id)` | 0 | **0** | confirmed |
+| PP4 | Dangling `mosaic_scene_ids` | 0 | **0** | confirmed |
+| PP5 | New `scenes` rows | 20–75 | **0** — `scenes` still 6,661, 0 `'selection'` | **falsified** |
+| PP6 | `scenes` rows deleted | 0 | **0** | confirmed |
+| PP7 | `provenance = 'mosaic_url'` | 0 | **0** | confirmed |
+| PP8 | Pilot `parcel_scenes` with `selected_by` | 20–75 | **0** — NULL on all 2,075 | **falsified** |
+| PP9 | Pilot NAIP `resolution_m` no longer uniformly 1.0 | 3–12 real gsd | **1.0 on all 227** | **falsified** |
+| PP10 | Pilot `imagery_snapshots` count | 2,075 ± 3; landsat exactly 1,290 | **2,075 exactly; landsat exactly 1,290** | confirmed |
+| PP11 | Pilot `parcel_scenes` = pilot `imagery_snapshots` | equal | **2,075 = 2,075** | confirmed |
+| PP12 | Ledger `failed` rows in the window | 0 | **0** | confirmed |
+| §6b | G4 request-path signing storm | expected | **0 signals of any kind** | **falsified** |
+
+### The three falsifications are one fact, and it is not a defect
+
+**Zero rows were inserted into `imagery_snapshots` in the pilot window** —
+the query returns an empty result for every source. The pipeline re-selected
+*exactly* the item already served for all 2,075 groups, so no `scenes` row
+was needed (PP5), no `parcel_scenes` row was inserted or changed and
+therefore none took a `selected_by` (PP8), and no NAIP row was inserted and
+therefore none carried a real `gsd` (PP9). One upstream fact, three
+downstream zeroes.
+
+The forecast that failed was the **churn estimate**, not the dual-write.
+§5b's anchor — 36 pilot rows for a one-day gap on 08-27, 101 on 08-26 — did
+not carry over to a 32-hour gap: the observed value is 0, below a band whose
+floor was 20. The mechanism §5b named (Landsat/Sentinel-2 validation walks
+re-signing assets live, so a fallback taken last time may not be taken this
+time) cuts both ways, and this run took no fallbacks: the worker log carries
+**zero** signing warnings, zero rate-limit events and zero retries across all
+90 STAC searches. A quiet Planetary Computer produces a stable selection.
+**The prediction is not edited to fit.**
+
+### What the pilot did and did not prove
+
+**Proved, at production scale for the first time:** a full pipeline run over
+30 parcels leaves `imagery_snapshots` and `parcel_scenes` in exact agreement
+— 0 violations in both directions over 2,075 groups, and 0 / 0 fleet-wide
+over 12,884 — with no duplicate group, no duplicate `(collection, item_id)`,
+and no dangling reference. Landsat is exactly conserved at 1,290 = 30 × 43.
+
+**Did not prove: the insert path, at all.** It was executed zero times.
+NORM-12 predicted this branch would dominate; it did not merely dominate, it
+was total. The pilot is therefore indistinguishable, from the tables alone,
+from a run in which the dual-write never executed — and there is no log line
+to separate the two, because `reconcile_source_snapshots` emits none.
+`efa4c63` is the deployed SHA and contains `9526805`, which is the only
+positive evidence available. **This is stated here, before the remainder
+runs, so it cannot be softened afterwards.**
+
+### Insert-only, checked rather than assumed (§7a, taken early)
+
+The full 505-row `enriched` population was fingerprinted rather than a
+3-row sample:
+
+* count **505**, all with a non-NULL footprint;
+* `max(fetched_at)` = **2026-08-27 17:52:36Z** — before the sweep;
+* `resolution_m` distribution **identical to the pre-sweep baseline in all
+  eleven buckets**, including each of the eight NORM-11 noise spellings at
+  its exact count (0.5999999999999901 ×2, and one each of
+  0.5999999999999975 / 0.5999999999999994 / 0.6000000000000011 /
+  0.6000000000000012 / 0.600000000000007 / 0.6000000000000097);
+* row digest `d17c4eee14c2155cb4e4528b265f87ab` over every column, recorded
+  here as the baseline for the remainder sweep.
+
+A single rewritten row would move the digest and, for the noisy eight, the
+distribution. Neither moved.
+
+### Mosaics, checked the strong way
+
+**613 of 613** mosaic references resolve to a `scenes` row whose `cog_url` is
+a member of the same group's `additional_cog_urls` array — the two
+representations name the same tiles, not merely the same count. This is the
+check `STEP2-REPORT.md` §3f ran over 176 local references, now run over all
+613 production references. 576 rows carry a mosaic on each side; 578 distinct
+tiles, 505 `enriched` + 73 `snapshot`, unchanged. **§5a's derivation holds:
+no mosaic tile needed inserting.**
+
+### The ledger for the window (NORM-3)
+
+2,343 rows: landsat 1,290 `ok`; naip 227 `ok` / 270 `absent`/`no_scenes` / 6
+`suppressed`/`naip_no_point_coverage` / **7 `indeterminate`**; sentinel2 357
+`ok` / 3 `absent`/`all_cloud_filtered`; usgs_topo 177 `ok` / 4 `absent` / **2
+`indeterminate`**. **Zero `failed` rows.** 30 requests `complete`, 120 tasks
+`complete`, none in flight.
+
+The 9 `indeterminate` rows are on the three tier-A parcels chosen for exactly
+this reason and are the two known truncation classes, unchanged from the
+08-26 and 08-27 sweeps: `fe065e2d` NAIP item cap on 2010/2019/2020/2022/
+2024/2025/2026, `9c35ceb0` and `e513188c` TNM row cap. They are markers that
+an absent group *may* be truncation, not failures, and under the absent-group
+rule they cost no row in either table. **So the pilot's parity zero rests on
+zero unretried failures** — the NORM-3 reading, and it is clean.
+
+The 6 `suppressed` rows are the NAIP no-covering-tile gate firing, matched by
+6 `Suppressing imagery year with no covering tile` warnings in the worker
+log. Under the absent-group rule they delete nothing — HEAL-SCORECARD §3's
+prospective-only finding, observed again and unchanged.
+
+### G4 did not fire, and the pilot cannot clear the remainder
+
+Predicted: the 2026-08-12 signature (41 SAS rate-limit give-ups, 17 band
+signing failures, 115 Titiler 500s). **Observed: none.** Across 621 captured
+worker lines the only 9 warnings are the 6 suppressions and the 3 truncation
+caps; there is no `rate-limited`, no `Band signing failed`, no Titiler 500,
+and the API stream is quiet.
+
+Log coverage is complete rather than sampled, unlike the geometry heal's
+~50%: the continuous stream was started **before** the sweep and carries all
+30 `fetch_imagery_timeline task started` and all 30 `Timeline request
+finished` events, 90 STAC searches (3 sources × 30) and 30 topo searches.
+
+§6b said in advance that a quiet pilot does not clear the remainder, and that
+holds: the pilot is a sixth of the fleet and ran 30 requests through an
+admission cap of 25.
+
+### Gate
+
+**PASS.** Parity 0 in both directions, duplicates 0 of both kinds, dangling
+references 0, and every ledger row that is not `ok` is named and explained
+with zero `failed` among them. Proceeding to the remaining 159 parcels.

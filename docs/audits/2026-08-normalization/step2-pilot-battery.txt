@@ -1,0 +1,162 @@
+POST PROBE UTC: 2026-08-29T03:59:42.480949+00:00
+MODE: pilot WINDOW SINCE: 2026-08-29 03:50:00+00
+
+== PARITY (pilot), both directions
+snap_not_ps | ps_not_snap
+0 | 0
+
+== PARITY (fleet), both directions
+snap_not_ps | ps_not_snap
+0 | 0
+
+== duplicate (parcel_id,source,group_key) in imagery_snapshots (fleet)
+dup_groups
+0
+
+== duplicate (collection,item_id) in scenes (table-wide)
+dup_items
+0
+
+== duplicate (parcel_id,source,group_key) in parcel_scenes (fleet)
+dup_ps
+0
+
+== dangling mosaic refs (table-wide)
+dangling
+0
+
+== scenes by source x provenance (fleet)
+source | provenance | count
+landsat | snapshot | 3174
+naip | enriched | 505
+naip | snapshot | 1102
+sentinel2 | snapshot | 1111
+usgs_topo | snapshot | 769
+
+== scenes total by provenance
+provenance | count
+enriched | 505
+snapshot | 6156
+
+== 'selection' rows: field coverage
+source | rows | footprint | bbox | resolution | platform | cloud
+
+== 'selection' rows: footprint geometry types
+gtype | count
+
+== 'selection' naip resolution_m
+resolution_m | count
+
+== 'selection' rows fetched_at range
+min | max
+NULL | NULL
+
+== parcel_scenes selected_by (fleet)
+selected_by | count
+(NULL) | 12884
+
+== parcel_scenes selected_by (pilot)
+selected_by | count
+(NULL) | 2075
+
+== pilot: imagery_snapshots / parcel_scenes by source
+source | snapshots | parcel_scenes
+landsat | 1290 | 1290
+naip | 227 | 227
+sentinel2 | 357 | 357
+usgs_topo | 201 | 201
+
+== pilot: naip imagery_snapshots resolution_m
+resolution_m | count
+1.0 | 227
+
+== pilot: rows inserted in this window
+source | count | items
+
+== fleet: imagery_snapshots by source
+source | count
+landsat | 8127
+naip | 1305
+sentinel2 | 2259
+usgs_topo | 1193
+
+== fleet: imagery_snapshots / parcel_scenes totals
+snapshots | parcel_scenes
+12884 | 12884
+
+== fleet: naip imagery_snapshots resolution_m
+resolution_m | count
+1.0 | 1305
+
+== fleet: rows inserted in this window
+source | count | items
+
+== mosaic totals (fleet)
+rows_with_mosaic | refs
+576 | 613
+
+== mosaic refs by target provenance
+provenance | tiles | refs
+enriched | 505 | 540
+snapshot | 73 | 73
+
+== mosaic refs resolving to a cog_url in the same group's additional_cog_urls
+refs_checked | refs_matching
+613 | 613
+
+== enriched population fingerprint (insert-only check)
+rows | with_footprint | min_fetched | max_fetched | digest
+505 | 505 | 2026-04-16 04:27:34.253463+00:00 | 2026-08-27 17:52:36.087081+00:00 | d17c4eee14c2155cb4e4528b265f87ab
+
+== enriched resolution_m distribution (must equal the pre-sweep baseline)
+resolution_m | count
+0.3 | 38
+0.5 | 6
+0.5999999999999901 | 2
+0.5999999999999975 | 1
+0.5999999999999994 | 1
+0.6 | 192
+0.6000000000000011 | 1
+0.6000000000000012 | 1
+0.600000000000007 | 1
+0.6000000000000097 | 1
+1.0 | 261
+
+== LEDGER in this window: source/outcome/reason
+source | outcome | reason | count
+landsat | ok |  | 1290
+naip | absent | no_scenes | 270
+naip | indeterminate | naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation | 7
+naip | ok |  | 227
+naip | suppressed | naip_no_point_coverage | 6
+sentinel2 | absent | all_cloud_filtered | 3
+sentinel2 | ok |  | 357
+usgs_topo | absent | no_scenes | 4
+usgs_topo | indeterminate | TNM response hit its row cap at usgs_topo.search_usgs_topo_products; a decade absent from the response may be truncation | 2
+usgs_topo | ok |  | 177
+
+== LEDGER in this window: failed rows in full
+parcel_id | source | group_key | outcome | reason | created_at
+9c35ceb0-e922-4971-87a4-1ae9aab7c8d9 | usgs_topo | * | indeterminate | TNM response hit its row cap at usgs_topo.search_usgs_topo_products; a decade absent from the response may be truncation | 2026-08-29 03:52:07.688526+00:00
+e513188c-7de4-435e-994e-98621d88a81b | usgs_topo | * | indeterminate | TNM response hit its row cap at usgs_topo.search_usgs_topo_products; a decade absent from the response may be truncation | 2026-08-29 03:51:17.818984+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2010 | indeterminate | naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation | 2026-08-29 03:50:42.674474+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2019 | indeterminate | naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation | 2026-08-29 03:50:42.674474+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2020 | indeterminate | naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation | 2026-08-29 03:50:42.674474+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2022 | indeterminate | naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation | 2026-08-29 03:50:42.674474+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2024 | indeterminate | naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation | 2026-08-29 03:50:42.674474+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2025 | indeterminate | naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation | 2026-08-29 03:50:42.674474+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2026 | indeterminate | naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation | 2026-08-29 03:50:42.674474+00:00
+
+== requests in this window
+status | origin | count
+complete | heal | 30
+
+== tasks in this window
+source | status | count
+landsat | complete | 30
+naip | complete | 30
+sentinel2 | complete | 30
+usgs_topo | complete | 30
+
+== requests still in flight
+status | count
