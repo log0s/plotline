@@ -105,6 +105,16 @@ Production is read-only from any session, and reads go through Fly:
   written exception in its prompt that names the SHA the worker must be on,
   verified first with `fly image show -a plotline-worker` (`GH_SHA` label) before
   invoking anything.
+- Production connections go through a transaction-mode pooler, so **session-level
+  `SET` of any kind is forbidden** — `SET SESSION …`, `SET <guc>` outside a
+  transaction, a committed `SET`, or psycopg2's `set_session()`. The setting
+  outlives the connection's lease and lands on a shared backend, where it applies
+  to unrelated clients: a read-only probe done this way made production read-only
+  and killed an authorized write mid-run (NORM-30). Read-only intent is expressed
+  **per transaction** — `BEGIN READ ONLY` / `SET TRANSACTION READ ONLY` as the
+  transaction's first statement, or `SET LOCAL` for other GUCs — and the
+  `UPDATE … WHERE false` proof runs *inside that same transaction*, where it
+  proves the thing that is actually scoped.
 - Any production command expected to outlive the ssh client timeout writes its
   report to a file on the machine, or runs detached. **A killed client neither
   kills nor rolls back the remote process** — it only takes the output with it,
