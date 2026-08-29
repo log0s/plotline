@@ -1,0 +1,108 @@
+Connecting to fdaa:58:2ead:a7b:2bf:226b:8984:2...
+BASELINE UTC: 2026-08-29T03:41:38.163382+00:00
+
+== scenes by source x provenance
+source | provenance | count
+landsat | snapshot | 3174
+naip | enriched | 505
+naip | snapshot | 1102
+sentinel2 | snapshot | 1111
+usgs_topo | snapshot | 769
+
+== scenes by provenance
+provenance | count
+enriched | 505
+snapshot | 6156
+
+== scenes total
+scenes
+6661
+
+== parcel_scenes totals
+rows | rows_with_mosaic | mosaic_refs | with_selected_by
+12884 | 576 | 613 | 0
+
+== distinct mosaic refs
+distinct_refs
+578
+
+== dangling mosaic refs
+dangling
+0
+
+== mosaic refs by target provenance (insert-population derivation)
+source | provenance | distinct_tiles | refs
+naip | enriched | 505 | 540
+naip | snapshot | 73 | 73
+
+== duplicate (parcel_id, source, group_key) in imagery_snapshots
+dup_groups
+0
+
+== duplicate (collection,item_id) in scenes
+dup_items
+0
+
+== duplicate (parcel_id,source,group_key) in parcel_scenes
+dup_ps
+0
+
+== imagery_snapshots totals
+rows | max_created
+12884 | 2026-08-27 19:41:01.190156+00:00
+
+== imagery_snapshots by source
+source | count | max
+landsat | 8127 | 2026-08-27 19:17:26.637119+00:00
+naip | 1305 | 2026-08-27 18:15:45.540156+00:00
+sentinel2 | 2259 | 2026-08-27 19:41:01.190156+00:00
+usgs_topo | 1193 | 2026-08-27 18:15:43.738392+00:00
+
+== PARITY fleet-wide
+snap_not_ps | ps_not_snap
+0 | 0
+
+== naip resolution_m in scenes by provenance
+provenance | resolution_m | count
+enriched | 0.3 | 38
+enriched | 0.5 | 6
+enriched | 0.5999999999999901 | 2
+enriched | 0.5999999999999975 | 1
+enriched | 0.5999999999999994 | 1
+enriched | 0.6 | 192
+enriched | 0.6000000000000011 | 1
+enriched | 0.6000000000000012 | 1
+enriched | 0.600000000000007 | 1
+enriched | 0.6000000000000097 | 1
+enriched | 1.0 | 261
+snapshot | 1.0 | 1102
+
+== naip resolution_m in imagery_snapshots
+resolution_m | count
+1.0 | 1305
+
+== scenes footprint NULL by provenance
+provenance | null_fp | total
+enriched | 0 | 505
+snapshot | 6156 | 6156
+
+== ledger last 24h by source/outcome/reason
+source | outcome | reason | count
+
+== ledger max created_at
+max_created | total
+2026-08-27 22:00:44.961932+00:00 | 35377
+
+== parcels
+parcels
+189
+
+== parcels with imagery
+parcels_with_snapshots
+189
+
+== in-flight timeline requests
+status | count
+complete | 1110
+failed | 3
+partial | 40

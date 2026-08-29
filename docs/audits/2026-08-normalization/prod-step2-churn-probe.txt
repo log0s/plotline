@@ -1,0 +1,149 @@
+Connecting to fdaa:58:2ead:a7b:2bf:226b:8984:2...
+CHURN PROBE UTC: 2026-08-29T03:44:10.845324+00:00
+
+== snapshots written per day x source x capture-year-2026 (observed sweep churn)
+day | source | is_2026 | count | items
+2026-08-25 | landsat | False | 51 | 51
+2026-08-25 | landsat | True | 12 | 8
+2026-08-25 | naip | False | 12 | 12
+2026-08-25 | sentinel2 | False | 21 | 21
+2026-08-25 | sentinel2 | True | 49 | 23
+2026-08-25 | usgs_topo | False | 185 | 155
+2026-08-26 | landsat | False | 109 | 109
+2026-08-26 | landsat | True | 3 | 3
+2026-08-26 | naip | False | 15 | 15
+2026-08-26 | sentinel2 | False | 22 | 22
+2026-08-26 | sentinel2 | True | 2 | 2
+2026-08-26 | usgs_topo | False | 20 | 20
+2026-08-27 | landsat | False | 101 | 101
+2026-08-27 | landsat | True | 3 | 3
+2026-08-27 | naip | False | 18 | 18
+2026-08-27 | sentinel2 | False | 33 | 33
+2026-08-27 | sentinel2 | True | 10 | 6
+2026-08-27 | usgs_topo | False | 10 | 10
+
+== scenes fetched_at per day (rows the backfill/enrichment wrote)
+day | provenance | count
+2026-04-13 | snapshot | 23
+2026-04-14 | snapshot | 25
+2026-04-16 | enriched | 9
+2026-04-16 | snapshot | 228
+2026-04-20 | snapshot | 95
+2026-04-21 | enriched | 6
+2026-04-21 | snapshot | 10
+2026-05-11 | snapshot | 59
+2026-05-23 | enriched | 10
+2026-05-23 | snapshot | 121
+2026-06-12 | snapshot | 1
+2026-06-13 | snapshot | 3
+2026-06-16 | enriched | 14
+2026-06-16 | snapshot | 96
+2026-06-24 | snapshot | 2
+2026-07-02 | snapshot | 6
+2026-07-03 | enriched | 6
+2026-07-03 | snapshot | 55
+2026-07-22 | snapshot | 66
+2026-08-03 | enriched | 21
+2026-08-03 | snapshot | 146
+2026-08-04 | snapshot | 1
+2026-08-11 | enriched | 26
+2026-08-11 | snapshot | 343
+2026-08-12 | enriched | 170
+2026-08-12 | snapshot | 2127
+2026-08-13 | enriched | 14
+2026-08-13 | snapshot | 213
+2026-08-14 | enriched | 114
+2026-08-14 | snapshot | 1271
+2026-08-15 | enriched | 13
+2026-08-15 | snapshot | 190
+2026-08-16 | enriched | 7
+2026-08-16 | snapshot | 86
+2026-08-17 | enriched | 24
+2026-08-17 | snapshot | 265
+2026-08-18 | enriched | 21
+2026-08-18 | snapshot | 269
+2026-08-19 | enriched | 8
+2026-08-19 | snapshot | 14
+2026-08-20 | snapshot | 47
+2026-08-21 | enriched | 13
+2026-08-21 | snapshot | 59
+2026-08-23 | enriched | 3
+2026-08-23 | snapshot | 65
+2026-08-24 | enriched | 8
+2026-08-24 | snapshot | 50
+2026-08-25 | enriched | 6
+2026-08-25 | snapshot | 129
+2026-08-26 | snapshot | 25
+2026-08-27 | enriched | 12
+2026-08-27 | snapshot | 66
+
+== distinct collection values in scenes
+source | collection | count
+landsat | landsat-c2-l2 | 3174
+naip | naip | 1607
+sentinel2 | sentinel-2-l2a | 1111
+usgs_topo | usgs-historical-topo | 769
+
+== parcels carrying a failed ledger row since 2026-08-25
+parcel_id | source | group_key | outcome | reason | created_at
+09f35468-2695-49a1-b0ef-70823749b938 | landsat | 1994 | failed | read_timeout | 2026-08-26 08:15:27.178267+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | landsat | 1984 | failed | read_timeout | 2026-08-26 09:42:19.758282+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | landsat | 1985 | failed | read_timeout | 2026-08-26 09:42:19.758282+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | landsat | 1986 | failed | read_timeout | 2026-08-26 09:42:19.758282+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | landsat | 1987 | failed | read_timeout | 2026-08-26 09:42:19.758282+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | landsat | 1988 | failed | read_timeout | 2026-08-26 09:42:19.758282+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | landsat | 1989 | failed | read_timeout | 2026-08-26 09:42:19.758282+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | landsat | 1990 | failed | read_timeout | 2026-08-26 09:42:19.758282+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | landsat | 1991 | failed | read_timeout | 2026-08-26 09:42:19.758282+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | landsat | 1992 | failed | read_timeout | 2026-08-26 09:42:19.758282+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | landsat | 1993 | failed | read_timeout | 2026-08-26 09:42:19.758282+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | landsat | 1994 | failed | read_timeout | 2026-08-26 09:42:19.758282+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | landsat | 1995 | failed | read_timeout | 2026-08-26 09:42:19.758282+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | landsat | 1996 | failed | read_timeout | 2026-08-26 09:42:19.758282+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | landsat | 1997 | failed | read_timeout | 2026-08-26 09:42:19.758282+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | landsat | 1998 | failed | read_timeout | 2026-08-26 09:42:19.758282+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | landsat | 1999 | failed | read_timeout | 2026-08-26 09:42:19.758282+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2010 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2011 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2012 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2013 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2014 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2015 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2016 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2017 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2018 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2019 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2020 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2021 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2022 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2023 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2024 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2025 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+6563dedf-23b1-4719-89db-ab135ed24fb3 | naip | 2026 | failed | read_timeout | 2026-08-26 09:16:12.409946+00:00
+
+== parcels carrying indeterminate rows since 2026-08-25
+parcel_id | source | group_key | outcome | created_at
+9c35ceb0-e922-4971-87a4-1ae9aab7c8d9 | usgs_topo | * | indeterminate | 2026-08-26 02:25:02.310646+00:00
+9c35ceb0-e922-4971-87a4-1ae9aab7c8d9 | usgs_topo | * | indeterminate | 2026-08-27 18:44:10.033235+00:00
+e513188c-7de4-435e-994e-98621d88a81b | usgs_topo | * | indeterminate | 2026-08-27 18:49:13.668763+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2010 | indeterminate | 2026-08-26 02:44:48.676888+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2010 | indeterminate | 2026-08-27 19:10:45.315362+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2019 | indeterminate | 2026-08-27 19:10:45.315362+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2019 | indeterminate | 2026-08-26 02:44:48.676888+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2020 | indeterminate | 2026-08-26 02:44:48.676888+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2020 | indeterminate | 2026-08-27 19:10:45.315362+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2022 | indeterminate | 2026-08-26 02:44:48.676888+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2022 | indeterminate | 2026-08-27 19:10:45.315362+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2024 | indeterminate | 2026-08-26 02:44:48.676888+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2024 | indeterminate | 2026-08-27 19:10:45.315362+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2025 | indeterminate | 2026-08-26 02:44:48.676888+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2025 | indeterminate | 2026-08-27 19:10:45.315362+00:00
+fe065e2d-7818-408e-a1ff-d529bae67c57 | naip | 2026 | indeterminate | 
+--- capture note (added after retrieval) ---
+This capture is TRUNCATED by the ssh client, NORM-8's shape: the last three
+queries in scripts/probe_churn.py ("2026 landsat/s2 item sharing", "2026
+capture_date spread per source", "naip capture years present") produced no
+output here, and the final indeterminate row is cut mid-line. Two of the
+three were re-run in the pilot-set probe and appear in
+prod-step2-pilot-set.txt; the capture_date-spread query was not re-run and
+nothing in the prediction depends on it.

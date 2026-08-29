@@ -1,0 +1,119 @@
+Connecting to fdaa:58:2ead:a7b:2bf:226b:8984:2...
+PILOT2 UTC: 2026-08-29T03:45:39.230116+00:00
+
+== TIER C - first 21 by id: no mosaic rows, not featured, not tier A/B
+id | address
+02d958d9-1a18-44fc-aa60-045e0d6740f2 | 4167 w 180 s
+099336a2-1680-4500-843b-06c2b208ec30 | 1600 Amphitheatre Pkwy, Mountain View, C
+0e0abf8c-bc5f-4681-a00d-5cb6e2134d0b | 1600 Pennsylvania Ave NW, Washington, DC
+0e7f4129-6c40-445b-a5ed-a5303aa0024e | 1950 NE Monroe Lane, Bend, OR 97701
+100c2b8f-565f-4a6b-9fa8-cbfb3219a5ca | 720 Chimborazo Blvd, Richmond, VA 23223
+1074e64b-d8db-4e67-8bef-01bce0fbf61a | 1 world trade center, ny ny
+11b0f0c1-458d-44bf-87c4-72b5e132677c | Seattle, Washington
+134ca8cd-8a85-4929-abe0-a632879c0731 | 160 old westboro road,
+13f20e3b-477f-4b85-9a4d-1c3ff3044a78 | Albany, California
+153b4e14-94b4-4889-9e81-e2e0c350dff4 | 5955 Rincon Drive
+1754635c-c85f-402b-9f8a-4b45f4bda428 | 102 everett st, chattanooga, t
+177681ef-aa0f-46b8-9453-15a9cc89ef34 | 1016 easy st
+189ff067-bcf9-48cb-a289-eb840d71cf13 | 200 E Santa Clara St, San Jose, CA 95113
+1a473e7c-eefd-4d0d-bf3f-7edead3f5c91 | 627 haverhill road, chester NH 03037
+1c5a3af3-3e29-4684-978b-36bee6e0283a | 1265 Hales Bar Rd, Guild, TN 37340
+1cc54096-606b-41ff-8db7-802bb5b766ec | 3701 Calle Ariana, San Clemente, CA 9267
+1dbd9583-c7cd-4804-a1ea-2050914d53d4 | Nederland, Colorado 80466
+2003d090-4d8a-48d4-9177-55826c25274b | 410 South Collington Avenue Baltimore MD
+23125dc1-e6b0-4149-b23a-daabda3468d3 | 3919 Luther Rd, Silver Springs, NY 14550
+267aa62b-cfab-4ca2-b757-e2a739e48eff | 5156 Michael Lane SE Turner, OR
+2758a216-8973-45b8-8a35-3f3fe1383b6e | 3602 decatur
+
+== PILOT SET (30)
+6563dedf-23b1-4719-89db-ab135ed24fb3
+fe065e2d-7818-408e-a1ff-d529bae67c57
+e513188c-7de4-435e-994e-98621d88a81b
+09f35468-2695-49a1-b0ef-70823749b938
+9c35ceb0-e922-4971-87a4-1ae9aab7c8d9
+4146ec5f-8860-4b91-9842-42225096e9c9
+34efa7ae-ea51-4c03-940f-98308439d4cc
+39286f1d-baa2-457b-8e4a-1bee4e5fddce
+dc493cc5-1b6e-4cad-b311-11b4418947c9
+02d958d9-1a18-44fc-aa60-045e0d6740f2
+099336a2-1680-4500-843b-06c2b208ec30
+0e0abf8c-bc5f-4681-a00d-5cb6e2134d0b
+0e7f4129-6c40-445b-a5ed-a5303aa0024e
+100c2b8f-565f-4a6b-9fa8-cbfb3219a5ca
+1074e64b-d8db-4e67-8bef-01bce0fbf61a
+11b0f0c1-458d-44bf-87c4-72b5e132677c
+134ca8cd-8a85-4929-abe0-a632879c0731
+13f20e3b-477f-4b85-9a4d-1c3ff3044a78
+153b4e14-94b4-4889-9e81-e2e0c350dff4
+1754635c-c85f-402b-9f8a-4b45f4bda428
+177681ef-aa0f-46b8-9453-15a9cc89ef34
+189ff067-bcf9-48cb-a289-eb840d71cf13
+1a473e7c-eefd-4d0d-bf3f-7edead3f5c91
+1c5a3af3-3e29-4684-978b-36bee6e0283a
+1cc54096-606b-41ff-8db7-802bb5b766ec
+1dbd9583-c7cd-4804-a1ea-2050914d53d4
+2003d090-4d8a-48d4-9177-55826c25274b
+23125dc1-e6b0-4149-b23a-daabda3468d3
+267aa62b-cfab-4ca2-b757-e2a739e48eff
+2758a216-8973-45b8-8a35-3f3fe1383b6e
+
+== pilot: current snapshot/parcel_scene counts
+snapshots
+2075
+
+== pilot: parcel_scenes counts
+parcel_scenes | with_mosaic | refs
+2075 | 76 | 83
+
+== pilot: snapshots by source
+source | count
+landsat | 1290
+naip | 227
+sentinel2 | 357
+usgs_topo | 201
+
+== pilot: churn observed in the 08-26 and 08-27 sweeps (rows inserted)
+day | source | count
+2026-08-26 | landsat | 69
+2026-08-26 | naip | 9
+2026-08-26 | sentinel2 | 12
+2026-08-26 | usgs_topo | 11
+2026-08-27 | landsat | 18
+2026-08-27 | naip | 6
+2026-08-27 | sentinel2 | 12
+
+== pilot: naip resolution_m now
+resolution_m | count
+1.0 | 227
+
+== pilot: parity now
+snap_not_ps | ps_not_snap
+0 | 0
+
+== fleet: 2026 item sharing top
+source | stac_item_id | parcels
+landsat | LC09_L2SP_033033_20260805_02_T1 | 17
+landsat | LC09_L2SP_014032_20260512_02_T1 | 16
+landsat | LC09_L2SP_044034_20260311_02_T1 | 15
+sentinel2 | S2A_MSIL2A_20260714T185831_R113_T10SEG_20260715T024413 | 13
+sentinel2 | S2B_MSIL2A_20260812T154809_R054_T18TWL_20260812T194239 | 12
+landsat | LC09_L2SP_015033_20260604_02_T1 | 11
+sentinel2 | S2A_MSIL2A_20260531T155711_R054_T18SUJ_20260601T000401 | 9
+landsat | LC09_L2SP_046029_20260731_02_T1 | 8
+
+== fleet: naip capture years
+y | count
+2010 | 36
+2011 | 106
+2012 | 94
+2013 | 101
+2014 | 101
+2015 | 109
+2016 | 92
+2017 | 110
+2018 | 78
+2019 | 100
+2020 | 65
+2021 | 107
+2022 | 101
+2023 | 105

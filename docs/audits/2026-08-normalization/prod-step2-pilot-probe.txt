@@ -1,0 +1,138 @@
+Connecting to fdaa:58:2ead:a7b:2bf:226b:8984:2...
+PILOT PROBE UTC: 2026-08-29T03:42:42.935975+00:00
+
+== featured locations
+display_order | slug | parcel_id | address
+1 | stapleton-central-park | 1a67b7ae-e97e-45c6-8929-24933ffdc1cd | 8340 Northfield Blvd, Denver, CO 80238
+2 | rino-art-district | bdf4bdcc-3e7f-4cb6-b918-2337c3a0a808 | 2901 Blake St, Denver, CO 80205
+3 | green-valley-ranch | 2a4ca7b9-0db7-455b-acdb-49783036c767 | 4800 Telluride St, Denver, CO 80249
+4 | navy-yard-capitol-riverfront | dc493cc5-1b6e-4cad-b311-11b4418947c9 | 1300 4th St SE, Washington, DC 20003
+5 | rodanthe-outer-banks | cf46ed63-58e0-4308-8bcc-6ebacb225b6e | 24241 Atlantic Dr, Rodanthe, NC 27968
+6 | hudson-yards | 9c35ceb0-e922-4971-87a4-1ae9aab7c8d9 | 500 W 33rd St, New York, NY 10001
+
+== parcels with the most NAIP mosaic rows
+parcel_id | mosaic_rows | refs | address
+4146ec5f-8860-4b91-9842-42225096e9c9 | 13 | 13 | 900 melrose avenue
+34efa7ae-ea51-4c03-940f-98308439d4cc | 12 | 12 | The Dalles, Oregon 97058
+39286f1d-baa2-457b-8e4a-1bee4e5fddce | 11 | 11 | 5834 NE 23rd Ave, POrtland, OR 97211
+dc493cc5-1b6e-4cad-b311-11b4418947c9 | 10 | 16 | 1300 4th St SE, Washington, DC 20003
+ec9e29e1-1e0c-4742-a08d-20e876bd3ce3 | 10 | 10 | 2827 27th st nw, Washington, dc
+1445b762-5611-4698-8c64-e3ac20fff658 | 9 | 9 | 1304 north ave, burlington
+9c35ceb0-e922-4971-87a4-1ae9aab7c8d9 | 9 | 10 | 500 W 33rd St, New York, NY 10001
+5c4a4e7c-e340-4725-919d-3f1880fc4633 | 8 | 8 | 1211 New Wilke Rd, Arlington Heights, IL 60005
+6422b9f9-76d6-45f5-9025-70f235a40271 | 8 | 8 | 233 S Wacker Dr, Chicago, IL 60606
+a38b1d05-4abe-46bb-9542-0409d816af97 | 8 | 8 | 609 Dawson ave Rockford il 61107
+af35715a-e946-42d8-a0f7-97567097c244 | 8 | 8 | 869 30th street
+d33bc6ab-d6ae-425b-9b01-e8d5d55623a8 | 8 | 16 | Chicago, Illinois
+e513188c-7de4-435e-994e-98621d88a81b | 8 | 8 | 350 5th Ave, New York, NY 10118
+09f35468-2695-49a1-b0ef-70823749b938 | 7 | 7 | New York, New York
+10e84e1d-59b3-459f-8da5-f8510cd5600c | 7 | 7 | 4524 S Routt Street Littleton, CO
+24ec8466-f895-4787-a2cc-4c16c03db1cf | 7 | 7 | 640 Clematis Street, West Palm Beach, Florida 33401
+32eb093b-fad4-4086-a801-b16965804f52 | 7 | 7 | 270 W Gardenia Dr, Orange City Fl
+466de26b-8434-4b83-8350-06369b8c558d | 7 | 7 | South Lemay Avenue, Fort Collins, Colorado 80525
+52f926b5-623f-48c9-aff5-5d6cfbf6d007 | 7 | 7 | South Lemay Avenue, Fort Collins, Colorado 80522
+590f63b0-543c-46d1-8c85-aafdb26d36ba | 7 | 7 | 750 north glebe road
+5b868158-4d9f-4f60-b77a-d41e0b659c37 | 7 | 7 | 3668 lark street
+5d3a7b3a-1610-4ac2-95f7-5209de3fd18b | 7 | 7 | 7445 S Alkire St, littleton co 80127
+67624825-d985-4e1f-af83-fa6b8d5d4a7c | 7 | 7 | Islamorada, Florida 33036
+6dc460b8-558d-4139-b584-8c408d4c645a | 7 | 7 | 1531 high street, grand junction, co
+71d8ea55-b1c6-4431-8f82-aebf6ba281a3 | 7 | 7 | 4590 beach rd, medina, ohio
+
+== count of parcels carrying any mosaic
+parcels_with_mosaic
+87
+
+== 2026 groups per source (recency-churn population)
+source | rows_2026 | items | earliest | latest
+landsat | 189 | 75 | 2026-01-14 | 2026-08-17
+sentinel2 | 189 | 93 | 2026-01-19 | 2026-08-26
+
+== distinct scenes per source (sharing factor)
+source | scenes | parcel_scene_rows | rows_per_scene
+landsat | 3174 | 8127 | 2.56
+naip | 1102 | 1305 | 1.18
+sentinel2 | 1111 | 2259 | 2.03
+usgs_topo | 769 | 1193 | 1.55
+
+== ledger by source/outcome/reason since 2026-08-25
+source | outcome | reason | count
+census_acs5 | absent | api_no_data | 224
+census_acs5 | ok |  | 3358
+census_decennial | absent | api_no_data | 564
+census_decennial | ok |  | 1415
+landsat | failed | read_timeout | 17
+landsat | ok |  | 16366
+naip | absent | no_scenes | 3814
+naip | failed | read_timeout | 17
+naip | indeterminate | naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation | 14
+naip | ok |  | 2630
+naip | suppressed | naip_no_point_coverage | 19
+sentinel2 | absent | all_cloud_filtered | 18
+sentinel2 | ok |  | 4530
+usgs_topo | absent | no_scenes | 1
+usgs_topo | indeterminate | TNM response hit its row cap at usgs_topo.search_usgs_topo_products; a decade absent from the response may be truncation | 3
+usgs_topo | ok |  | 2387
+
+== ledger non-ok all time (retryable backlog)
+source | outcome | reason | count
+naip | absent | no_scenes | 3814
+census_decennial | absent | api_no_data | 564
+census_acs5 | absent | api_no_data | 224
+naip | suppressed | naip_no_point_coverage | 19
+sentinel2 | absent | all_cloud_filtered | 18
+landsat | failed | read_timeout | 17
+naip | failed | read_timeout | 17
+naip | indeterminate | naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation | 14
+usgs_topo | indeterminate | TNM response hit its row cap at usgs_topo.search_usgs_topo_products; a decade absent from the response may be truncation | 3
+usgs_topo | absent | no_scenes | 1
+
+== ledger created_at daily histogram (last 10 days)
+day | count
+2026-08-26 | 16587
+2026-08-27 | 18790
+
+== all parcels ordered by id with snapshot counts
+id | snaps | naip | mosaic_rows | featured | address
+02d958d9-1a18-44fc-aa60-045e0d6740f2 | 65 | 5 | 0 | 0 | 4167 w 180 s
+079e4f79-782f-4ef3-be61-8be2361b4daa | 67 | 6 | 6 | 0 | Austin, Texas
+0846ce11-0505-47b3-a693-1e1f57d32f60 | 65 | 6 | 2 | 0 | 8201 spring valley lane, Plano TX 75025
+099336a2-1680-4500-843b-06c2b208ec30 | 69 | 6 | 0 | 0 | 1600 Amphitheatre Pkwy, Mountain View, CA 9404
+09f35468-2695-49a1-b0ef-70823749b938 | 72 | 9 | 7 | 0 | New York, New York
+0e0abf8c-bc5f-4681-a00d-5cb6e2134d0b | 71 | 10 | 0 | 0 | 1600 Pennsylvania Ave NW, Washington, DC 20500
+0e7f4129-6c40-445b-a5ed-a5303aa0024e | 65 | 6 | 0 | 0 | 1950 NE Monroe Lane, Bend, OR 97701
+100c2b8f-565f-4a6b-9fa8-cbfb3219a5ca | 69 | 7 | 0 | 0 | 720 Chimborazo Blvd, Richmond, VA 23223
+1074e64b-d8db-4e67-8bef-01bce0fbf61a | 72 | 9 | 0 | 0 | 1 world trade center, ny ny
+10e84e1d-59b3-459f-8da5-f8510cd5600c | 68 | 7 | 7 | 0 | 4524 S Routt Street Littleton, CO
+11b0f0c1-458d-44bf-87c4-72b5e132677c | 69 | 6 | 0 | 0 | Seattle, Washington
+1247f9cf-996e-4d76-a331-651e93bfdc16 | 66 | 5 | 5 | 0 | 1177 s jeremy st
+134ca8cd-8a85-4929-abe0-a632879c0731 | 70 | 6 | 0 | 0 | 160 old westboro road,
+13f20e3b-477f-4b85-9a4d-1c3ff3044a78 | 69 | 6 | 0 | 0 | Albany, California
+1445b762-5611-4698-8c64-e3ac20fff658 | 75 | 12 | 9 | 0 | 1304 north ave, burlington
+150deeaf-7247-4844-a6cb-0b595689831c | 64 | 6 | 6 | 0 | 3928 N Virginia Dare Trail, Kitty Hawk, NC
+153b4e14-94b4-4889-9e81-e2e0c350dff4 | 69 | 6 | 0 | 0 | 5955 Rincon Drive
+1754635c-c85f-402b-9f8a-4b45f4bda428 | 68 | 6 | 0 | 0 | 102 everett st, chattanooga, t
+177681ef-aa0f-46b8-9453-15a9cc89ef34 | 67 | 7 | 0 | 0 | 1016 easy st
+189ff067-bcf9-48cb-a289-eb840d71cf13 | 67 | 6 | 0 | 0 | 200 E Santa Clara St, San Jose, CA 95113
+1a473e7c-eefd-4d0d-bf3f-7edead3f5c91 | 69 | 7 | 0 | 0 | 627 haverhill road, chester NH 03037
+1a67b7ae-e97e-45c6-8929-24933ffdc1cd | 69 | 7 | 0 | 1 | 8340 Northfield Blvd, Denver, CO 80238
+1c5a3af3-3e29-4684-978b-36bee6e0283a | 68 | 6 | 0 | 0 | 1265 Hales Bar Rd, Guild, TN 37340
+1cc54096-606b-41ff-8db7-802bb5b766ec | 67 | 6 | 0 | 0 | 3701 Calle Ariana, San Clemente, CA 92672
+1dbd9583-c7cd-4804-a1ea-2050914d53d4 | 70 | 7 | 0 | 0 | Nederland, Colorado 80466
+1f0c42aa-fe26-421c-8e63-2b20df9964f9 | 63 | 6 | 6 | 0 | 173 furnace elberta
+2003d090-4d8a-48d4-9177-55826c25274b | 68 | 7 | 0 | 0 | 410 South Collington Avenue Baltimore MD
+23125dc1-e6b0-4149-b23a-daabda3468d3 | 67 | 7 | 0 | 0 | 3919 Luther Rd, Silver Springs, NY 14550, USA
+24ec8466-f895-4787-a2cc-4c16c03db1cf | 65 | 7 | 7 | 0 | 640 Clematis Street, West Palm Beach, Florida 
+267aa62b-cfab-4ca2-b757-e2a739e48eff | 67 | 6 | 0 | 0 | 5156 Michael Lane SE Turner, OR
+2758a216-8973-45b8-8a35-3f3fe1383b6e | 67 | 7 | 0 | 0 | 3602 decatur
+2863d3aa-6442-4502-96bb-07d4aad6ef14 | 70 | 8 | 0 | 0 | O'Hare International Terminal, Jefferson Towns
+2a4ca7b9-0db7-455b-acdb-49783036c767 | 69 | 7 | 0 | 1 | 4800 Telluride St, Denver, CO 80249
+2b398698-8235-4e71-b6e1-370e274f1ca6 | 67 | 7 | 6 | 0 | 5131 S Mariposa Dr Gi
+2e30825d-d4af-4451-a8d5-b1eaca2138be | 69 | 6 | 0 | 0 | Cupertino, California 95014
+2e34406d-73cc-42f8-abaa-f737ac441843 | 69 | 7 | 0 | 0 | 869 30th st
+2e992810-7cc8-4c27-8940-db482419900b | 70 | 6 | 0 | 0 | 329 grafton
+2f1b332e-2b96-40
+--- capture note (added after retrieval) ---
+TRUNCATED by the ssh client, NORM-8's shape: the final query listed all 189
+parcels and the capture stops at 2f1b332e. Nothing in the prediction depends
+on the tail — the pilot set was derived server-side by the next probe and is
+captured whole in prod-step2-pilot-set.txt.
