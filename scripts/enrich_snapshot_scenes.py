@@ -112,8 +112,8 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from psycopg2 import OperationalError
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.logging_config import configure_script_logging
@@ -627,6 +627,10 @@ def main() -> None:
         # (NORM-27): the run already finished and `out` was assigned before
         # `Session.__exit__` raised. That is a teardown failure, not a run
         # failure, and must not turn a completed run into a reported one.
+        # SQLAlchemy wraps the DBAPI error rather than raising it directly, so
+        # this catches ``sqlalchemy.exc.OperationalError`` (the psycopg2 error
+        # lands on ``__cause__``, but is not this class and is not a
+        # superclass of it) — NORM-29.
         if out is None:
             raise
         logger.error("teardown_operational_error_after_completed_run", exc_info=True)

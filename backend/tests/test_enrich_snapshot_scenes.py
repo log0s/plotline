@@ -53,9 +53,10 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+import psycopg2
 import pytest
-from psycopg2 import OperationalError
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 _HERE = Path(__file__).resolve()
@@ -569,12 +570,33 @@ def test_pacing_spaces_out_dispatches() -> None:
     assert all(gap >= 0.04 for gap in gaps), gaps
 
 
-# ── main()'s exit path (NORM-27) ───────────────────────────────────────────────
+# ── main()'s exit path (NORM-27, NORM-29) ───────────────────────────────────────
 #
 # `main` opens the DB session itself and derives its exit code from the run's
 # outcome. These tests mock the DB layer's teardown (`SessionLocal`'s context
 # manager) and `run` itself — no network, no real database — to isolate the
 # exit-path logic from the work it wraps.
+#
+# NORM-29: the guard catches `sqlalchemy.exc.OperationalError`, not
+# `psycopg2.OperationalError` — SQLAlchemy re-raises its own wrapper and the
+# two classes are disjoint (verified in `test_wrapped_error_matches_a_real_session_exit_failure`
+# below). Every teardown error these tests raise is therefore built the way
+# SQLAlchemy builds one: its own `OperationalError`, with the psycopg2 error
+# that caused it attached as `__cause__`, exactly as `Session.__exit__` would
+# leave it.
+
+
+def _sqlalchemy_operational_error(message: str) -> OperationalError:
+    """A teardown error shaped the way SQLAlchemy actually raises one.
+
+    Mirrors reality, not convenience (NORM-29): SQLAlchemy never raises
+    ``psycopg2.OperationalError`` itself, it catches it and re-raises this
+    wrapper with the psycopg2 error as ``__cause__``.
+    """
+    orig = psycopg2.OperationalError(message)
+    error = OperationalError(statement=None, params=None, orig=orig)
+    error.__cause__ = orig
+    return error
 
 
 class _FakeSession:
@@ -619,7 +641,9 @@ def test_teardown_operational_error_after_success_exits_zero(
             monkeypatch,
             tmp_path,
             outcome=script.Outcome(errors=0),
-            teardown_error=OperationalError("SSL connection has been closed unexpectedly"),
+            teardown_error=_sqlalchemy_operational_error(
+                "SSL connection has been closed unexpectedly"
+            ),
         )
 
     assert exc_info.value.code == 0
@@ -634,7 +658,7 @@ def test_failure_during_the_run_still_exits_nonzero(
         _run_main(
             monkeypatch,
             tmp_path,
-            outcome=OperationalError("connection reset mid-run"),
+            outcome=_sqlalchemy_operational_error("connection reset mid-run"),
             teardown_error=None,
         )
 
@@ -662,7 +686,60 @@ def test_run_errors_and_teardown_error_both_exit_nonzero(
             monkeypatch,
             tmp_path,
             outcome=script.Outcome(errors=1),
-            teardown_error=OperationalError("SSL connection has been closed unexpectedly"),
+            teardown_error=_sqlalchemy_operational_error(
+                "SSL connection has been closed unexpectedly"
+            ),
         )
 
     assert exc_info.value.code == 1
+
+
+def test_wrapped_error_matches_a_real_session_exit_failure() -> None:
+    """Pins NORM-29's premise: obtain the exception class from the layer that raises it.
+
+    A hand-built `sqlalchemy.exc.OperationalError` only proves the guard *can*
+    catch that class; it says nothing about whether that is the class a real
+    `Session.__exit__` failure actually raises. This test forces a real one:
+    a SQLite connection whose driver-level `rollback()` fails with
+    `sqlite3.OperationalError` during session teardown, translated by
+    SQLAlchemy's own error-translation code (not by this test) into
+    `sqlalchemy.exc.OperationalError` — the same wrapper class the guard
+    imports, with the driver error attached as `__cause__`.
+
+    Postgres/psycopg2 would raise the identical wrapper class for the same
+    reason (SQLAlchemy's translation is driver-agnostic); this is the
+    strongest reproduction available without a live Postgres connection to
+    sever mid-teardown, which is what production actually did.
+    """
+    import sqlite3
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.pool import NullPool
+
+    class FailingConnection(sqlite3.Connection):
+        should_fail = False
+
+        def rollback(self) -> None:
+            if FailingConnection.should_fail:
+                raise sqlite3.OperationalError("disk I/O error")
+            super().rollback()
+
+    def creator() -> sqlite3.Connection:
+        return sqlite3.connect(":memory:", factory=FailingConnection, check_same_thread=False)
+
+    engine = create_engine("sqlite://", creator=creator, poolclass=NullPool)
+    try:
+        connection = engine.connect()
+        session = Session(bind=connection)
+        session.execute(text("SELECT 1"))
+        FailingConnection.should_fail = True
+
+        with pytest.raises(script.OperationalError) as exc_info, session:
+            pass
+
+        assert isinstance(exc_info.value.__cause__, sqlite3.OperationalError)
+        assert not isinstance(exc_info.value, psycopg2.OperationalError)
+    finally:
+        # Let the pool's own teardown succeed instead of raising a second time.
+        FailingConnection.should_fail = False
+        engine.dispose()
