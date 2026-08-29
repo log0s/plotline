@@ -314,3 +314,134 @@ of 88 tiles were recorded at a resolution they do not have, as is every NAIP
 row in `imagery_snapshots`. Until it is fixed, NAIP `scenes` rows disagree
 about resolution by provenance. STATUS.md NORM-9; the fix belongs with step
 2's dual-write.
+
+
+---
+
+## Amendment — 2026-08-28, step 2's dual-write, built and swept locally
+
+Appended after `reconcile_source_snapshots` was made to write both shapes and
+a full local sweep scored a prediction. Everything above is unedited.
+Sources: `docs/audits/2026-08-normalization/STEP2-REPORT.md` and the
+"Observed" half of `.../PREDICTION-STEP2.md`. Commits: `61d486b`
+(migration 0017), `9526805` (the dual-write), `17c488e` (tests), `fa0840e`
+(prediction, before the sweep), `d9e5587` (scoring).
+
+**Not deployed.** Step 2 is committed and has run against the local database
+only. Production still runs the pre-step-2 pipeline.
+
+### `provenance` now has four values
+
+The first amendment's block reads `-- 'snapshot' | 'mosaic_url'`, the third
+widened it to include `'enriched'`; both are left as written. The current
+vocabulary is:
+
+```
+  provenance       TEXT NOT NULL  -- 'snapshot' | 'mosaic_url' | 'enriched' | 'selection'
+```
+
+`'selection'` means the row was written by the pipeline at selection time,
+from the STAC item itself. It is a fourth value rather than a widening of
+`'snapshot'` for a reason stronger than vocabulary hygiene: **`provenance =
+'snapshot'` is a live work-queue definition**, not just a label — it is
+exactly the deferred footprint pass over the rows the backfill copied
+(STATUS.md NORM-7). A `'selection'` row carries `footprint` from birth, so
+folding the new rows into `'snapshot'` would have made that queue definition
+silently wrong the first time the pipeline ran. Migration 0017 is pure DDL:
+one CHECK dropped and recreated. Both existing predicates are unchanged —
+"is this `item_id` catalogued" is `provenance <> 'mosaic_url'`, "was this
+copied out of `imagery_snapshots`" is `provenance = 'snapshot'`.
+
+### Rule 5 now holds at write time, so the F1 class stops growing
+
+The selector holds the real STAC items, so every tile of a NAIP mosaic is
+catalogued as a first-class scene *when it is selected* — with its own
+footprint, bbox, `gsd` and capture date — rather than being written as a URL
+in an array for a later pass to parse an item id out of. Observed: four local
+pipeline runs catalogued 21 new NAIP tiles and `provenance = 'mosaic_url'`
+stayed at **0**. The synthesized-candidate class the first amendment
+describes is now closed for new rows; only the 6,156 backfilled `snapshot`
+rows still need the deferred footprint pass.
+
+### `resolution_m` comes from the item, rounded (NORM-9, NORM-11)
+
+The pipeline wrote NAIP's `resolution_m` as the per-source constant `1.0`
+regardless of what the item said. It now writes the item's `properties.gsd`
+wherever the item carries one, falling back to the constant only when it does
+not — and **both shapes switched in the same commit**, from the same field of
+the same object, so `imagery_snapshots` and `scenes` cannot disagree about a
+row they were written from together.
+
+`gsd` is rounded to two decimals by `normalize_resolution_m`, one named
+function with the NORM-11 citation next to it. Two decimals is chosen against
+the resolutions that occur (NAIP 0.3/0.5/0.6/1.0, Landsat 30, Sentinel-2 10):
+the closest real pair is 0.1 m apart, so rounding cannot merge two
+resolutions, and it absorbs noise four orders of magnitude larger than the
+~1e-14 Planetary Computer actually serves. The cost is that the upstream
+double is not recoverable from the column, which is accepted: the column
+answers "how fine is this image", and it never held the exact `gsd` anyway.
+
+**Old rows are not healed.** `upsert_imagery_snapshot`'s `ON CONFLICT DO
+UPDATE` does not touch `resolution_m`, and `scenes` is insert-only, so a row
+that already exists keeps the constant however many times it is re-selected.
+The population that keeps 1.0 is therefore not "rows written before the
+deploy" but "rows that still exist", and no sweep shrinks it. STATUS.md
+NORM-13.
+
+### `selected_by` starts carrying a value, and what NULL means
+
+`selected_by` is the running image's `GIT_SHA` — the value the health
+endpoint reports. It is written when a `parcel_scenes` row is inserted or
+when its selection changes; an **unchanged** selection leaves the row
+completely alone, `selected_at` included, because a sweep that re-picks the
+same scene has not made a selection and bumping the timestamp would turn the
+column into "when did the last sweep run".
+
+So NULL keeps meaning "no dual-writing run has attributed this selection",
+which for a backfilled row is exactly true. After step 3 there are no
+backfilled rows and every row is attributed at insert.
+
+### The two shapes commit together — inside the reconciler
+
+`reconcile_source_snapshots`' single transaction now carries the
+`imagery_snapshots` deletes, the mirrored `parcel_scenes` deletes, the
+`scenes` inserts and the `parcel_scenes` upserts. It does **not** carry the
+snapshot *inserts*, which happen earlier in the persist loop and commit per
+row, unchanged from before. An interruption between them leaves new snapshot
+rows with no `parcel_scenes` row, which the next run's reconcile writes — the
+same recoverable direction the existing persist-then-reconcile ordering
+already chose. STATUS.md NORM-14.
+
+Deletion mirroring follows the old shape's rules exactly, absent-group rule
+included: a group absent from a run's selection is never deleted in either
+table, and the one exception — a `suppressed` item this run positively
+identified as unservable — removes the `parcel_scenes` row only when it
+actually serves that item.
+
+### Step 2's prediction, as it actually ran
+
+The migration-path text says "Run one full sweep; prediction: the two tables
+agree row-for-row with the old table on every parcel." They do: **0 parity
+violations in either direction over 3,082 rows**, 0 duplicate groups, 0
+duplicate `(collection, item_id)`, 0 dangling mosaic references, and 176 of
+176 mosaic references resolving to a scene whose `cog_url` is a member of the
+same group's `additional_cog_urls`.
+
+What the text did not anticipate is that **a current database cannot exercise
+a dual-write's insert path**. The local database had been swept hours
+earlier, so the sweep re-selected exactly what it already served and the
+dual-write correctly wrote nothing — same table, whether or not the code
+runs. Coverage came from two probe parcels inserted for the purpose, one of
+which (already-catalogued region) did 71 lookups with 71 hits and 0 inserts,
+and one of which (100 km from anything) wrote 80 `'selection'` scenes, 75
+with an `ST_Polygon` footprint. **The same will be true of a production step-2
+sweep**, and a prediction for it should not expect `selected_by` to fill in
+bulk. STATUS.md NORM-12.
+
+### The change conditions still hold
+
+Rule 1 is untouched: `timeline_task_years` references neither table and this
+batch did not make it. Rule 2's `group_key` is the same `encode_group_key`
+string in both shapes — the parity check joins on it. Rule 3's uniqueness held
+through a 43-parcel sweep. Rule 4 remains true only of the `enriched` and
+`selection` rows; the `snapshot` rows' footprints are still NULL.
