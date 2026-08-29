@@ -1,0 +1,64 @@
+# Worker log capture — step 2 production sweep, 2026-08-29
+#
+# Continuous 'fly logs -a plotline-worker' stream, started 03:49:30Z — BEFORE the
+# pilot enqueue at 03:50:36Z — and never dropped. 3,337 lines captured.
+# Coverage is COMPLETE, not sampled: 189 'fetch_imagery_timeline task started' and
+# 189 'Timeline request finished' events for 189 parcels, against the geometry
+# heal's ~50% (HEAL-SCORECARD.md section 0).
+# Filtered here to the histograms, the reconciliation events and every non-info
+# line; the full 1.0 MB stream is not committed.
+
+## Event histogram (all 3,337 lines; per-task celery lines collapsed)
+    567 Starting STAC search
+    567 STAC search complete
+    567 Imagery source done
+    189 fetch_imagery_timeline task started
+    189 USGS topo search complete
+    189 USGS topo done
+    189 Timeline scope resolved
+    189 Timeline request finished
+    189 Timeline bbox computed
+      9 Suppressing imagery year with no covering tile
+      7 Replaced superseded imagery snapshots
+      5 SAS container token minted
+      3 mingle: searching for neighbors
+      3 mingle: all alone
+      3 celery@e2862966b306d8 ready.
+      3 Janitor found no stranded work
+      3 Connected to rediss://default:***@set-warthog-98046.upstash.io:6379//
+      2 TNM query hit its row cap \u2014 results are truncated
+      1 STAC search hit its item cap \u2014 results are truncated
+
+## Level histogram
+   3240 "level": "info"
+     12 "level": "warning"
+
+## G4 scan — SAS rate limiting, band signing failures, Titiler 500s
+matches for /rate.limited|Band signing failed|backoff exceeds|giving up|Titiler/: 0
+0
+
+## The 7 reconciliation replacements, in full
+# Positive evidence the reconciler ran: one line per changed group, each deleting
+# exactly the superseded row. reconcile_source_snapshots emits nothing when it
+# deletes nothing, which is why the 30-parcel pilot produced none of these.
+[2m2026-08-29T04:09:17Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "Replaced superseded imagery snapshots", "logger": "app.services.imagery", "level": "info", "parcel_id": "39fc3efc-957f-4cd0-b177-57d7b2c510c0", "source": "sentinel2", "deleted": 1, "suppressed_deleted": 0, "scope": "year", "groups": ["2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026"], "timestamp": "2026-08-29T04:09:17.272224Z"}
+[2m2026-08-29T04:16:15Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "Replaced superseded imagery snapshots", "logger": "app.services.imagery", "level": "info", "parcel_id": "71d85fbd-3ef1-45f4-b3e1-dfd551700ca4", "source": "sentinel2", "deleted": 1, "suppressed_deleted": 0, "scope": "year", "groups": ["2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026"], "timestamp": "2026-08-29T04:16:15.017036Z"}
+[2m2026-08-29T04:17:50Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "Replaced superseded imagery snapshots", "logger": "app.services.imagery", "level": "info", "parcel_id": "742fc436-6dc5-4820-a9b3-b67758f01f33", "source": "sentinel2", "deleted": 1, "suppressed_deleted": 0, "scope": "year", "groups": ["2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026"], "timestamp": "2026-08-29T04:17:50.357902Z"}
+[2m2026-08-29T04:19:33Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "Replaced superseded imagery snapshots", "logger": "app.services.imagery", "level": "info", "parcel_id": "7ef10b5c-24ae-4279-bc49-2234431e38c8", "source": "sentinel2", "deleted": 1, "suppressed_deleted": 0, "scope": "year", "groups": ["2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026"], "timestamp": "2026-08-29T04:19:33.197951Z"}
+[2m2026-08-29T04:29:20Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "Replaced superseded imagery snapshots", "logger": "app.services.imagery", "level": "info", "parcel_id": "b0ca9bbc-b7dc-46fb-8e7b-6aa1a356bb62", "source": "sentinel2", "deleted": 1, "suppressed_deleted": 0, "scope": "year", "groups": ["2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026"], "timestamp": "2026-08-29T04:29:20.471501Z"}
+[2m2026-08-29T04:37:27Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "Replaced superseded imagery snapshots", "logger": "app.services.imagery", "level": "info", "parcel_id": "d38891fc-1310-4230-b4ed-dc9e255a97df", "source": "sentinel2", "deleted": 1, "suppressed_deleted": 0, "scope": "year", "groups": ["2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026"], "timestamp": "2026-08-29T04:37:27.449094Z"}
+[2m2026-08-29T04:41:27Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "Replaced superseded imagery snapshots", "logger": "app.services.imagery", "level": "info", "parcel_id": "e195a200-24b2-4322-83b4-9bcd7dcc7069", "source": "sentinel2", "deleted": 1, "suppressed_deleted": 0, "scope": "year", "groups": ["2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026"], "timestamp": "2026-08-29T04:41:27.213264Z"}
+
+## Every warning-level line, in full
+[2m2026-08-29T03:50:42Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "STAC search hit its item cap \u2014 results are truncated", "logger": "app.tasks.timeline", "level": "warning", "source": "naip", "collection": "naip", "cap": 50, "datetime_range": "2010-01-01/2026-12-31", "timestamp": "2026-08-29T03:50:42.629717Z"}
+[2m2026-08-29T03:51:17Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "TNM query hit its row cap \u2014 results are truncated", "logger": "app.services.usgs_topo", "level": "warning", "resource": "Historical Topographic Maps", "cap": 100, "bbox": "-74.0028424726495,40.73433775732184,-73.9673119725088,40.76135941072505", "timestamp": "2026-08-29T03:51:17.775273Z"}
+[2m2026-08-29T03:51:20Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "Suppressing imagery year with no covering tile", "logger": "app.tasks.timeline", "level": "warning", "parcel_id": "e513188c-7de4-435e-994e-98621d88a81b", "source": "naip", "year": 2023, "reason": "no selected tile's footprint contains the parcel", "tile_ids": ["nj_m_4007309_sw_18_030_20230820_20231019", "nj_m_4007424_ne_18_030_20230820_20231019"], "timestamp": "2026-08-29T03:51:20.444565Z"}
+[2m2026-08-29T03:52:07Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "TNM query hit its row cap \u2014 results are truncated", "logger": "app.services.usgs_topo", "level": "warning", "resource": "Historical Topographic Maps", "cap": 100, "bbox": "-74.0175019306684,40.74038464093805,-73.98196805141667,40.76740638779196", "timestamp": "2026-08-29T03:52:07.645108Z"}
+[2m2026-08-29T03:55:57Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "Suppressing imagery year with no covering tile", "logger": "app.tasks.timeline", "level": "warning", "parcel_id": "1754635c-c85f-402b-9f8a-4b45f4bda428", "source": "naip", "year": 2010, "reason": "no selected tile's footprint contains the parcel", "tile_ids": ["ga_m_3408506_nw_16_1_20100812"], "timestamp": "2026-08-29T03:55:57.712600Z"}
+[2m2026-08-29T03:55:57Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "Suppressing imagery year with no covering tile", "logger": "app.tasks.timeline", "level": "warning", "parcel_id": "1754635c-c85f-402b-9f8a-4b45f4bda428", "source": "naip", "year": 2013, "reason": "no selected tile's footprint contains the parcel", "tile_ids": ["ga_m_3408506_nw_16_1_20130825_20131029"], "timestamp": "2026-08-29T03:55:57.713007Z"}
+[2m2026-08-29T03:55:57Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "Suppressing imagery year with no covering tile", "logger": "app.tasks.timeline", "level": "warning", "parcel_id": "1754635c-c85f-402b-9f8a-4b45f4bda428", "source": "naip", "year": 2015, "reason": "no selected tile's footprint contains the parcel", "tile_ids": ["ga_m_3408506_nw_16_1_20150803_20151221"], "timestamp": "2026-08-29T03:55:57.713337Z"}
+[2m2026-08-29T03:55:57Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "Suppressing imagery year with no covering tile", "logger": "app.tasks.timeline", "level": "warning", "parcel_id": "1754635c-c85f-402b-9f8a-4b45f4bda428", "source": "naip", "year": 2017, "reason": "no selected tile's footprint contains the parcel", "tile_ids": ["ga_m_3408506_nw_16_1_20170908_20171207"], "timestamp": "2026-08-29T03:55:57.713656Z"}
+[2m2026-08-29T03:55:57Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "Suppressing imagery year with no covering tile", "logger": "app.tasks.timeline", "level": "warning", "parcel_id": "1754635c-c85f-402b-9f8a-4b45f4bda428", "source": "naip", "year": 2019, "reason": "no selected tile's footprint contains the parcel", "tile_ids": ["ga_m_3408506_nw_16_060_20190909_20200103"], "timestamp": "2026-08-29T03:55:57.713961Z"}
+[2m2026-08-29T04:22:21Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "Suppressing imagery year with no covering tile", "logger": "app.tasks.timeline", "level": "warning", "parcel_id": "8d9ee137-642e-412a-9a20-419a7c4f7433", "source": "naip", "year": 2012, "reason": "no selected tile's footprint contains the parcel", "tile_ids": ["va_m_3807708_se_18_1_20120511_20120709"], "timestamp": "2026-08-29T04:22:21.333564Z"}
+[2m2026-08-29T04:22:21Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "Suppressing imagery year with no covering tile", "logger": "app.tasks.timeline", "level": "warning", "parcel_id": "8d9ee137-642e-412a-9a20-419a7c4f7433", "source": "naip", "year": 2014, "reason": "no selected tile's footprint contains the parcel", "tile_ids": ["va_m_3807708_se_18_1_20140927_20141126"], "timestamp": "2026-08-29T04:22:21.333880Z"}
+[2m2026-08-29T04:22:21Z[0m app[e2862966b306d8] [32mlax[0m [[34minfo[0m]{"event": "Suppressing imagery year with no covering tile", "logger": "app.tasks.timeline", "level": "warning", "parcel_id": "8d9ee137-642e-412a-9a20-419a7c4f7433", "source": "naip", "year": 2016, "reason": "no selected tile's footprint contains the parcel", "tile_ids": ["va_m_3807708_se_18_1_20160718_20160928"], "timestamp": "2026-08-29T04:22:21.334021Z"}

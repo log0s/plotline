@@ -1,0 +1,135 @@
+POST PROBE UTC: 2026-08-29T04:50:34.049239+00:00
+MODE: fleet WINDOW SINCE: 2026-08-29 04:02:00+00
+
+== PARITY (fleet), both directions
+snap_not_ps | ps_not_snap
+0 | 0
+
+== duplicate (parcel_id,source,group_key) in imagery_snapshots (fleet)
+dup_groups
+0
+
+== duplicate (collection,item_id) in scenes (table-wide)
+dup_items
+0
+
+== duplicate (parcel_id,source,group_key) in parcel_scenes (fleet)
+dup_ps
+0
+
+== dangling mosaic refs (table-wide)
+dangling
+0
+
+== scenes by source x provenance (fleet)
+source | provenance | count
+landsat | snapshot | 3174
+naip | enriched | 505
+naip | snapshot | 1102
+sentinel2 | selection | 2
+sentinel2 | snapshot | 1111
+usgs_topo | snapshot | 769
+
+== scenes total by provenance
+provenance | count
+enriched | 505
+selection | 2
+snapshot | 6156
+
+== 'selection' rows: field coverage
+source | rows | footprint | bbox | resolution | platform | cloud
+sentinel2 | 2 | 2 | 2 | 2 | 2 | 2
+
+== 'selection' rows: footprint geometry types
+gtype | count
+ST_Polygon | 2
+
+== 'selection' naip resolution_m
+resolution_m | count
+
+== 'selection' rows fetched_at range
+min | max
+2026-08-29 04:29:19.342619+00:00 | 2026-08-29 04:41:26.056028+00:00
+
+== parcel_scenes selected_by (fleet)
+selected_by | count
+(NULL) | 12877
+efa4c63a07455c5fc776c431d345284fd4082ddd | 7
+
+== fleet: imagery_snapshots by source
+source | count
+landsat | 8127
+naip | 1305
+sentinel2 | 2259
+usgs_topo | 1193
+
+== fleet: imagery_snapshots / parcel_scenes totals
+snapshots | parcel_scenes
+12884 | 12884
+
+== fleet: naip imagery_snapshots resolution_m
+resolution_m | count
+1.0 | 1305
+
+== fleet: rows inserted in this window
+source | count | items
+sentinel2 | 7 | 3
+
+== mosaic totals (fleet)
+rows_with_mosaic | refs
+576 | 613
+
+== mosaic refs by target provenance
+provenance | tiles | refs
+enriched | 505 | 540
+snapshot | 73 | 73
+
+== mosaic refs resolving to a cog_url in the same group's additional_cog_urls
+refs_checked | refs_matching
+613 | 613
+
+== enriched population fingerprint (insert-only check)
+rows | with_footprint | min_fetched | max_fetched | digest
+505 | 505 | 2026-04-16 04:27:34.253463+00:00 | 2026-08-27 17:52:36.087081+00:00 | d17c4eee14c2155cb4e4528b265f87ab
+
+== enriched resolution_m distribution (must equal the pre-sweep baseline)
+resolution_m | count
+0.3 | 38
+0.5 | 6
+0.5999999999999901 | 2
+0.5999999999999975 | 1
+0.5999999999999994 | 1
+0.6 | 192
+0.6000000000000011 | 1
+0.6000000000000012 | 1
+0.600000000000007 | 1
+0.6000000000000097 | 1
+1.0 | 261
+
+== LEDGER in this window: source/outcome/reason
+source | outcome | reason | count
+landsat | ok |  | 6837
+naip | absent | no_scenes | 1622
+naip | ok |  | 1078
+naip | suppressed | naip_no_point_coverage | 3
+sentinel2 | absent | all_cloud_filtered | 6
+sentinel2 | ok |  | 1902
+usgs_topo | absent | no_scenes | 3
+usgs_topo | ok |  | 976
+
+== LEDGER in this window: failed rows in full
+parcel_id | source | group_key | outcome | reason | created_at
+
+== requests in this window
+status | origin | count
+complete | heal | 159
+
+== tasks in this window
+source | status | count
+landsat | complete | 159
+naip | complete | 159
+sentinel2 | complete | 159
+usgs_topo | complete | 159
+
+== requests still in flight
+status | count

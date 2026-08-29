@@ -489,3 +489,193 @@ admission cap of 25.
 **PASS.** Parity 0 in both directions, duplicates 0 of both kinds, dangling
 references 0, and every ledger row that is not `ok` is named and explained
 with zero `failed` among them. Proceeding to the remaining 159 parcels.
+
+---
+
+## Observed — the remainder, 2026-08-29
+
+*(appended after the remainder ran; both halves above are unedited)*
+
+159 parcels enqueued 04:02:47 → 04:41:20Z (38.5 min, admission-throttled at
+25): **159 queued, 0 skipped, exit 0, 0 unreached**. All terminal by
+04:50:09Z. Battery 04:50:34Z, detail probe 04:51:19Z. Captures:
+`step2-remainder-sweep.txt`, `step2-fleet-battery.txt`, `step2-detail.txt`,
+`step2-sweep-worker-log.txt`.
+
+**Outcome: every safety property confirmed, every volume estimate falsified
+low, and the insert path fired — twice.**
+
+### Correction to the pilot section above
+
+That section says "there is no log line to separate the two, because
+`reconcile_source_snapshots` emits none." **That is wrong and is corrected
+here rather than edited above.** The reconciler *does* emit `Replaced
+superseded imagery snapshots`, once per group whose selection changed — the
+remainder produced 7 such lines. What it emits on a *no-op* is nothing, which
+is why the pilot produced none. The pilot's conclusion stands (its zero-write
+result was not separable from a dual-write that never ran); the reason given
+for it did not.
+
+### Remainder / fleet scorecard
+
+| # | Quantity | Predicted | Observed | Verdict |
+|---|---|---|---|---|
+| PR1 | Parity, fleet-wide, both directions | 0 / 0 | **0 / 0** over 12,884 | confirmed |
+| PR2 | Duplicate `(parcel_id, source, group_key)` | 0 | **0** | confirmed |
+| PR3 | Duplicate `(collection, item_id)` | 0 | **0** | confirmed |
+| PR4 | Dangling references | 0 | **0** | confirmed |
+| PR5 | New `scenes` rows from the remainder | 80–300 (likely 120–190) | **2** | **falsified** |
+| PR6 | `scenes` total after both sweeps | 6,760–7,036 (likely ~6,830–6,900) | **6,663** | **falsified** |
+| PR7 | `scenes` deleted / `mosaic_url` | 0 / 0 | **0 / 0** | confirmed |
+| PR8 | Fleet `parcel_scenes` with `selected_by` | 100–375 | **7** | **falsified** |
+| PR9 | Fleet `imagery_snapshots` count; landsat conserved | 12,884 ± 15; landsat exactly 8,127 | **12,884 exactly; landsat exactly 8,127** | confirmed |
+| PR10 | Fleet `parcel_scenes` = fleet `imagery_snapshots` | equal | **12,884 = 12,884** | confirmed |
+| PR11 | NAIP `resolution_m` ≠ 1.0, fleet-wide | 15–60 rows | **0** — still 1.0 on all 1,305 | **falsified** |
+| PR12 | `snapshot` rows with NULL `footprint` | still 6,156 | **6,156** | confirmed |
+| §7a | `enriched` rows unchanged | byte-identical | **digest and all 11 buckets identical** | confirmed |
+| §6b | G4 signing storm | expected | **0 signals** | **falsified** |
+
+### The whole churn estimate was wrong, by a factor of ~35
+
+Predicted from the 08-27 anchor: ~175 fleet rows per day of drift. Observed
+over 32 hours: **7 rows, 3 distinct items, all Sentinel-2, all group `2026`.**
+Landsat contributed **0** against a predicted ~104/day; NAIP 0; topo 0.
+
+The three items, with capture dates, say what the churn actually was:
+
+| Item | Capture date | Parcels that picked it |
+|---|---|---|
+| `S2C_MSIL2A_20260820T173901_R098_T13TEE_…` | 2026-08-20 | 4 |
+| `S2B_MSIL2A_20260828T160819_R140_T17TPH_…` | **2026-08-28** | 2 |
+| `S2B_MSIL2A_20260827T163859_R126_T16TER_…` | **2026-08-27** | 1 |
+
+Two of the three were captured *after* the last sweep's newest write
+(`imagery_snapshots.max(created_at)` = 2026-08-27 19:41Z). **This is 2026
+capture-year recency and nothing else** — exactly the driver §5b named, and
+none of the historic-year churn §5b sized the band from.
+
+### F-PROD-1 — the anchor measured a different thing than it was used for
+
+**New finding.** §5b built its band on 112 and 104 Landsat rows per day from
+the 08-26 and 08-27 sweeps, attributing them to "the validation walks
+re-sign assets live, so a fallback taken last time may not be taken this
+time". This run took **zero** fallbacks and produced **zero** Landsat churn,
+and the worker log explains why: across 567 STAC searches there is **not one
+signing failure, rate-limit event or retry** — 4 SAS container tokens minted,
+no `Band signing failed`, no `rate-limited`, no Titiler 500.
+
+So the same condition — a healthy Planetary Computer — explains both the
+absent churn *and* the absent G4 storm, and they are the same variable
+observed twice. Two consequences, and the second is the uncomfortable one:
+
+1. **Neither result generalizes.** A sweep run while PC is throttling would
+   likely show both the churn and the storm. The G4 risk is not retired by
+   this run; it was not exercised by it.
+2. **The 08-26/08-27 historic-year churn may not have been improvement.** If
+   ~100 Landsat rows a day were being rewritten because asset signing failed
+   and the validation walk fell back to a different item, then those sweeps
+   were writing signing noise into the database rather than better
+   selections. This run, against a quiet PC, changed **no** historic year on
+   **any** of 189 parcels. That is a hypothesis, not a claim — this session
+   has no logs from 08-26 or 08-27 and did not go looking. It is recorded
+   because it is cheap to check next time and expensive to rediscover.
+
+### The insert path, exercised — and every mechanism visible in 7 rows
+
+The 7 changed groups resolve into exactly the three cases the design predicts,
+which is more than the volume would suggest:
+
+* **`S2C_…20260820`, 4 parcels: 4 lookups, 4 hits, 0 inserts.** The item was
+  already held as a `provenance = 'snapshot'` row fetched 2026-08-25. **The
+  one-row-per-item promise and the insert-only rule, observed in production**
+  — the same shape the DC probe showed locally (71 lookups, 71 hits, 0
+  inserts), now against a table the enrichment prepared.
+* **`S2B_…20260828`, 2 parcels: 1 insert, then 1 hit.** Parcel `b0ca9bbc`
+  inserted the scene at 04:29:19.342Z; parcel `d38891fc` re-selected the same
+  item eight minutes later at 04:37:26 and **found it** — its `parcel_scenes`
+  row points at the row the first parcel created. The ADR's premise, observed
+  *within a single sweep*.
+* **`S2B_…20260827`, 1 parcel: 1 insert.**
+
+**7 lookups → 3 distinct items → 2 inserts, 5 hits.** `scenes` 6,661 → 6,663.
+
+### What the 2 `'selection'` rows carry
+
+| item | resolution_m | cloud | platform | footprint | bbox |
+|---|---|---|---|---|---|
+| `S2B_…20260827T163859…` | 10.0 | 0.249 | S2B | `ST_Polygon`, 5 points | yes |
+| `S2B_…20260828T160819…` | 10.0 | 1.122 | S2B | `ST_Polygon`, 5 points | yes |
+
+**Both carry a real footprint from birth**, which is the requirement step 2
+exists to meet: the synthesized-candidate class (NORM-4/NORM-7) cannot grow,
+and `provenance = 'mosaic_url'` stayed at **0** through 189 production
+pipeline runs.
+
+**`resolution_m = 10.0` is the source constant, not an item `gsd`**, and is
+recorded as such rather than claimed as NORM-9 evidence: Sentinel-2 items
+carry no item-level `gsd`, so the fallback is correct behaviour and proves
+nothing about the `gsd` read. **NORM-9 remains unobserved in production** —
+see PR11.
+
+### Deletion mirroring and update-in-place, observed
+
+`imagery_snapshots` is **12,884 before and after** with 7 rows inserted, so 7
+superseded rows were deleted. `parcel_scenes` is **12,884 before and after**,
+so those 7 selections were **updated in place — same primary key, new
+`scene_id`** — rather than deleted and re-inserted. That is
+`STEP2-REPORT.md` §1e's first case, and the worker log carries the matching
+evidence: 7 × `Replaced superseded imagery snapshots`, each
+`deleted: 1, suppressed_deleted: 0, scope: "year"`.
+
+`selected_by` is the deployed SHA `efa4c63a07455c5fc776c431d345284fd4082ddd`
+on exactly those 7 rows and NULL on the other 12,877 — **NORM-12's shape,
+confirmed at fleet scale**: 0.05% of rows attributed, not 100%, and that is
+correct, not a failure.
+
+### Insert-only, at full-population granularity (§7a)
+
+The prompt asks for 3 enriched rows spot-checked; all **505** were, twice —
+after the pilot and after the remainder. Both times: 505 rows, 505 with a
+footprint, `max(fetched_at)` **2026-08-27 17:52:36Z**, and digest
+**`d17c4eee14c2155cb4e4528b265f87ab`** over every column of every row,
+identical to the post-pilot reading and consistent with the pre-sweep
+baseline's eleven-bucket `resolution_m` distribution — including each of the
+eight NORM-11 noise spellings at its exact count. **No `enriched` row was
+touched by 189 pipeline runs.** `ON CONFLICT DO NOTHING`, observed.
+
+### Mosaics, and §5a's derivation
+
+**613 of 613** references still resolve to a `scenes` row whose `cog_url` is
+in the same group's `additional_cog_urls`; 576 rows carry a mosaic on each
+side; 578 distinct tiles, 505 `enriched` + 73 `snapshot` — **every number
+unchanged from the baseline.** §5a predicted mosaic tiles would contribute 0
+new `scenes` rows, and they contributed 0. The prompt's premise that they
+were the largest insert population is falsified, as predicted, in the
+direction predicted.
+
+### The ledger, whole window (NORM-3)
+
+03:50:00Z → 04:51Z: **14,770 rows, 0 `failed`.** 189 requests `complete`
+(origin `heal`), 756 tasks `complete`, none in flight, none `partial`, none
+`failed`.
+
+Non-`ok` outcomes, all pre-existing classes: naip `absent`/`no_scenes` 1,892;
+naip `suppressed`/`naip_no_point_coverage` 9; naip `indeterminate` (item cap)
+7; sentinel2 `absent`/`all_cloud_filtered` 9; usgs_topo `absent`/`no_scenes`
+7; usgs_topo `indeterminate` (TNM row cap) 2.
+
+**The 9 `indeterminate` rows are all from the pilot window and all on the
+three tier-A parcels chosen for them** — `fe065e2d` (NAIP item cap, 7 years),
+`9c35ceb0` and `e513188c` (TNM row cap). The remainder produced none. They
+are truncation markers, not failures, and under the absent-group rule cost no
+row in either table.
+
+**So the fleet parity zero rests on zero unretried upstream failures.** Every
+one of the 12,884 groups was swept in this window, and not one search failed.
+That is the strongest form of the NORM-3 reading, and it is the first time
+either database has produced it.
+
+### Stop conditions
+
+**None fired.** PR3 = 0, PR2 = 0, dangling = 0, `scenes` never fell (6,661 →
+6,663, insert-only), and no ledger `failed` row exists to explain.

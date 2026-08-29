@@ -1,0 +1,62 @@
+DETAIL UTC: 2026-08-29T04:51:19.229654+00:00
+
+== the 7 changed parcel_scenes rows
+parcel_id | source | group_key | item_id | provenance | capture_date | selected_at | selected_by
+39fc3efc-957f-4cd0-b177-57d7b2c510c0 | sentinel2 | 2026 | S2C_MSIL2A_20260820T173901_R098_T13TEE_20260820T223509 | snapshot | 2026-08-20 | 2026-08-29 04:09:16.117285+00:00 | efa4c63a07455c5fc776c431d345284fd4082ddd
+71d85fbd-3ef1-45f4-b3e1-dfd551700ca4 | sentinel2 | 2026 | S2C_MSIL2A_20260820T173901_R098_T13TEE_20260820T223509 | snapshot | 2026-08-20 | 2026-08-29 04:16:13.845452+00:00 | efa4c63a07455c5fc776c431d345284fd4082ddd
+742fc436-6dc5-4820-a9b3-b67758f01f33 | sentinel2 | 2026 | S2C_MSIL2A_20260820T173901_R098_T13TEE_20260820T223509 | snapshot | 2026-08-20 | 2026-08-29 04:17:49.202883+00:00 | efa4c63a07455c5fc776c431d345284fd4082ddd
+7ef10b5c-24ae-4279-bc49-2234431e38c8 | sentinel2 | 2026 | S2C_MSIL2A_20260820T173901_R098_T13TEE_20260820T223509 | snapshot | 2026-08-20 | 2026-08-29 04:19:32.049922+00:00 | efa4c63a07455c5fc776c431d345284fd4082ddd
+b0ca9bbc-b7dc-46fb-8e7b-6aa1a356bb62 | sentinel2 | 2026 | S2B_MSIL2A_20260828T160819_R140_T17TPH_20260828T200359 | selection | 2026-08-28 | 2026-08-29 04:29:19.342619+00:00 | efa4c63a07455c5fc776c431d345284fd4082ddd
+d38891fc-1310-4230-b4ed-dc9e255a97df | sentinel2 | 2026 | S2B_MSIL2A_20260828T160819_R140_T17TPH_20260828T200359 | selection | 2026-08-28 | 2026-08-29 04:37:26.298693+00:00 | efa4c63a07455c5fc776c431d345284fd4082ddd
+e195a200-24b2-4322-83b4-9bcd7dcc7069 | sentinel2 | 2026 | S2B_MSIL2A_20260827T163859_R126_T16TER_20260827T203142 | selection | 2026-08-27 | 2026-08-29 04:41:26.056028+00:00 | efa4c63a07455c5fc776c431d345284fd4082ddd
+
+== the 2 'selection' scenes rows in full
+source | collection | item_id | capture_date | resolution_m | cloud | platform | provenance | fp | fp_pts | fetched_at
+sentinel2 | sentinel-2-l2a | S2B_MSIL2A_20260827T163859_R126_T16TER_20260827T203142 | 2026-08-27 | 10.0 | 0.249 | S2B | selection | ST_Polygon | 5 | 2026-08-29 04:41:26.056028+00:00
+sentinel2 | sentinel-2-l2a | S2B_MSIL2A_20260828T160819_R140_T17TPH_20260828T200359 | 2026-08-28 | 10.0 | 1.122 | S2B | selection | ST_Polygon | 5 | 2026-08-29 04:29:19.342619+00:00
+
+== the 7 new imagery_snapshots rows
+parcel_id | source | capture_date | stac_item_id | resolution_m | created_at
+39fc3efc-957f-4cd0-b177-57d7b2c510c0 | sentinel2 | 2026-08-20 | S2C_MSIL2A_20260820T173901_R098_T13TEE_20260820T223509 | 10.0 | 2026-08-29 04:09:15.889245+00:00
+71d85fbd-3ef1-45f4-b3e1-dfd551700ca4 | sentinel2 | 2026-08-20 | S2C_MSIL2A_20260820T173901_R098_T13TEE_20260820T223509 | 10.0 | 2026-08-29 04:16:13.612910+00:00
+742fc436-6dc5-4820-a9b3-b67758f01f33 | sentinel2 | 2026-08-20 | S2C_MSIL2A_20260820T173901_R098_T13TEE_20260820T223509 | 10.0 | 2026-08-29 04:17:48.970626+00:00
+7ef10b5c-24ae-4279-bc49-2234431e38c8 | sentinel2 | 2026-08-20 | S2C_MSIL2A_20260820T173901_R098_T13TEE_20260820T223509 | 10.0 | 2026-08-29 04:19:31.821316+00:00
+b0ca9bbc-b7dc-46fb-8e7b-6aa1a356bb62 | sentinel2 | 2026-08-28 | S2B_MSIL2A_20260828T160819_R140_T17TPH_20260828T200359 | 10.0 | 2026-08-29 04:29:19.111805+00:00
+d38891fc-1310-4230-b4ed-dc9e255a97df | sentinel2 | 2026-08-28 | S2B_MSIL2A_20260828T160819_R140_T17TPH_20260828T200359 | 10.0 | 2026-08-29 04:37:26.071308+00:00
+e195a200-24b2-4322-83b4-9bcd7dcc7069 | sentinel2 | 2026-08-27 | S2B_MSIL2A_20260827T163859_R126_T16TER_20260827T203142 | 10.0 | 2026-08-29 04:41:25.712860+00:00
+
+== the 3 distinct new items: already held or newly inserted?
+item_id | provenance | fetched_at
+S2B_MSIL2A_20260827T163859_R126_T16TER_20260827T203142 | selection | 2026-08-29 04:41:26.056028+00:00
+S2B_MSIL2A_20260828T160819_R140_T17TPH_20260828T200359 | selection | 2026-08-29 04:29:19.342619+00:00
+S2C_MSIL2A_20260820T173901_R098_T13TEE_20260820T223509 | snapshot | 2026-08-25 21:50:54.207680+00:00
+
+== scenes totals now
+scenes | snap | enr | sel | murl
+6663 | 6156 | 505 | 2 | 0
+
+== NORM-13 backlog: NAIP rows still carrying the 1.0 constant
+tbl | at_1_0 | total
+imagery_snapshots | 1305 | 1305
+scenes/snapshot | 1102 | 1102
+
+== NORM-7 backlog: snapshot scenes rows with NULL footprint
+null_footprint
+6156
+
+== full-window ledger (pilot + remainder), non-ok
+source | outcome | reason | count
+naip | absent | no_scenes | 1892
+naip | indeterminate | naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation | 7
+naip | suppressed | naip_no_point_coverage | 9
+sentinel2 | absent | all_cloud_filtered | 9
+usgs_topo | absent | no_scenes | 7
+usgs_topo | indeterminate | TNM response hit its row cap at usgs_topo.search_usgs_topo_products; a decade absent from the response may be truncation | 2
+
+== full-window ledger totals
+rows | failed
+14770 | 0
+
+== requests, whole session window
+status | origin | count
+complete | heal | 189
