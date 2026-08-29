@@ -1,0 +1,176 @@
+{
+ "taken_at": "2026-08-29T18:55:17.655006+00:00",
+ "readonly_proof": "InternalError: (psycopg2.errors.ReadOnlySqlTransaction) cannot execute UPDATE in a read-only transaction",
+ "alembic": [
+  {
+   "version_num": "0017"
+  }
+ ],
+ "counts": [
+  {
+   "scenes": 6663,
+   "parcel_scenes": 12884,
+   "imagery_snapshots": 12884
+  }
+ ],
+ "by_provenance": [
+  {
+   "provenance": "enriched",
+   "n": 505
+  },
+  {
+   "provenance": "selection",
+   "n": 2
+  },
+  {
+   "provenance": "snapshot",
+   "n": 6156
+  }
+ ],
+ "queue_total": [
+  {
+   "n": 5387
+  }
+ ],
+ "queue_by_source": [
+  {
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "n": 3174,
+   "bbox_null": 0,
+   "capture_date_null": 0
+  },
+  {
+   "source": "naip",
+   "collection": "naip",
+   "n": 1102,
+   "bbox_null": 0,
+   "capture_date_null": 0
+  },
+  {
+   "source": "sentinel2",
+   "collection": "sentinel-2-l2a",
+   "n": 1111,
+   "bbox_null": 0,
+   "capture_date_null": 0
+  }
+ ],
+ "queue_distinct_item": [
+  {
+   "n": 5387
+  }
+ ],
+ "topo_excluded": [
+  {
+   "n": 769,
+   "res_null": 769
+  }
+ ],
+ "snapshot_with_footprint": [
+  {
+   "n": 0
+  }
+ ],
+ "queue_naip_resolution": [
+  {
+   "resolution_m": 1.0,
+   "n": 1102
+  }
+ ],
+ "queue_landsat_resolution": [
+  {
+   "resolution_m": 30.0,
+   "n": 3174
+  }
+ ],
+ "queue_sentinel2_resolution": [
+  {
+   "resolution_m": 10.0,
+   "n": 1111
+  }
+ ],
+ "imagery_snapshots_naip_resolution": [
+  {
+   "resolution_m": 1.0,
+   "n": 1305
+  }
+ ],
+ "bbox_null_all_scenes": [
+  {
+   "n": 0
+  }
+ ],
+ "existing_footprints": [
+  {
+   "n": 507,
+   "polygons": 507,
+   "equals_bbox": 0
+  }
+ ],
+ "bbox_fingerprint": [
+  {
+   "md5_comma": "f1809593fd050be14736aaaea4b09ed5",
+   "md5_empty": "7be91b787bb8ce8bfbaf6e4cdc79bebe",
+   "md5_newline": "b898552bcca4b5721f1d66920ee39c2e",
+   "md5_pipe": "53886746c277f1a0ceb0c1491537ff1e",
+   "rows": 6663
+  }
+ ],
+ "freshness": [
+  {
+   "max_fetched_at": "2026-08-29 04:41:26.056028+00:00",
+   "max_selected_at": "2026-08-29 04:41:26.056028+00:00",
+   "scenes_since_t0": 0,
+   "parcel_scenes_since_t0": 0
+  }
+ ],
+ "selected_by": [
+  {
+   "selected_by": "efa4c63a07455c5fc776c431d345284fd4082ddd",
+   "n": 7
+  }
+ ],
+ "queue_capture_span": [
+  {
+   "source": "landsat",
+   "min_capture": "1984-03-12",
+   "max_capture": "2026-08-17"
+  },
+  {
+   "source": "naip",
+   "min_capture": "2010-04-22",
+   "max_capture": "2023-11-13"
+  },
+  {
+   "source": "sentinel2",
+   "min_capture": "2015-08-21",
+   "max_capture": "2026-08-26"
+  }
+ ],
+ "naip_token_histogram": [
+  {
+   "token": "1",
+   "n": 575
+  },
+  {
+   "token": "060",
+   "n": 395
+  },
+  {
+   "token": "030",
+   "n": 77
+  },
+  {
+   "token": ".6",
+   "n": 31
+  },
+  {
+   "token": "h",
+   "n": 13
+  },
+  {
+   "token": ".5",
+   "n": 11
+  }
+ ]
+}
