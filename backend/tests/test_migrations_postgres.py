@@ -394,3 +394,118 @@ def test_0012_rejects_an_unknown_source_and_an_unknown_origin() -> None:
                     )
         finally:
             engine.dispose()
+
+
+# ── 0018: the footprint-validity CHECK, which only PostGIS can express ────────
+
+# A self-intersecting bow-tie: five points, ST_IsValid false, and exactly the
+# class NORM-31 found twice in production (Sentinel-2 footprints written by a
+# path that predated `normalize_footprint`). Spelled as literal WKT rather than
+# built by a helper so the fixture cannot drift into validity.
+_BOWTIE = "POLYGON((0 0, 1 1, 1 0, 0 1, 0 0))"
+_VALID_SQUARE = "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"
+
+
+def _insert_scene(connection: object, *, footprint: str | None) -> None:
+    from sqlalchemy import text as sa_text
+
+    geom = "NULL" if footprint is None else "ST_GeomFromText(:fp, 4326)"
+    connection.execute(  # type: ignore[attr-defined]  # a live Connection
+        sa_text(
+            "INSERT INTO scenes (id, source, collection, item_id, capture_date,"
+            f" footprint, cog_url, provenance, fetched_at)"
+            f" VALUES (gen_random_uuid(), 'sentinel2', 'sentinel-2-l2a',"
+            f" 'S2A_' || gen_random_uuid()::text, '2020-01-01', {geom},"
+            " 'https://example.com/x.tif', 'selection', now())"
+        ),
+        {} if footprint is None else {"fp": footprint},
+    )
+
+
+@requires_postgres
+def test_0018_refuses_an_invalid_footprint_and_admits_a_valid_one() -> None:
+    """The bypass detector, against a real PostGIS.
+
+    This constraint cannot be mirrored in the SQLite test schema — SQLite has
+    no ``ST_IsValid``, and inventing one there would make the test agree with
+    the test file rather than with the database (NORM-29's rule). So it is
+    asserted here, where the predicate that runs is the one production runs.
+
+    Three cases, and the NULL one is not padding: ``footprint`` is nullable by
+    design (``usgs_topo`` has no geometry at all, and the deferred enrichment
+    queue is defined by NULL), so a constraint that rejected NULL would break
+    a live population.
+
+    Delete-the-fix: drop ``op.create_check_constraint`` from 0018's
+    ``upgrade()`` and the bow-tie inserts cleanly, which is the state
+    production was in when NORM-31 was found by a sweep rather than by the
+    database.
+    """
+    import sqlalchemy.exc
+
+    with _temp_database() as url:
+        with _database_url(url):
+            command.upgrade(_alembic_config(), "head")
+
+        engine = create_engine(url, poolclass=NullPool)
+        try:
+            with engine.begin() as connection:
+                _insert_scene(connection, footprint=_VALID_SQUARE)
+                _insert_scene(connection, footprint=None)
+
+            with pytest.raises(sqlalchemy.exc.IntegrityError), engine.begin() as connection:
+                _insert_scene(connection, footprint=_BOWTIE)
+
+            with engine.connect() as connection:
+                assert connection.execute(text("SELECT count(*) FROM scenes")).scalar_one() == 2, (
+                    "the valid and NULL rows landed; the bow-tie did not"
+                )
+        finally:
+            engine.dispose()
+
+
+@requires_postgres
+def test_0018_round_trips_without_touching_anything_else() -> None:
+    """Independently revertable: down to 0017 and back up leaves the rows alone.
+
+    The constraint is a rider on step 4 and must be removable on its own, so
+    downgrading it must not be entangled with the drop migration or with any
+    data. A row written while it is off — the bow-tie — is what makes the
+    re-upgrade a real test: PostgreSQL refuses to add a validating CHECK while
+    any row fails it, so this asserts the *precondition* discipline the
+    migration's docstring describes, using the same failure the NORM-31 heal
+    had to clear before 0018 could land at all.
+    """
+    import sqlalchemy.exc
+
+    with _temp_database() as url:
+        with _database_url(url):
+            command.upgrade(_alembic_config(), "head")
+
+        engine = create_engine(url, poolclass=NullPool)
+        try:
+            with engine.begin() as connection:
+                _insert_scene(connection, footprint=_VALID_SQUARE)
+
+            with _database_url(url):
+                command.downgrade(_alembic_config(), "0017")
+
+            # With the constraint off, the invalid row goes in.
+            with engine.begin() as connection:
+                _insert_scene(connection, footprint=_BOWTIE)
+
+            # And the re-upgrade refuses, because a validating CHECK is
+            # checked against what is already there.
+            with pytest.raises(sqlalchemy.exc.IntegrityError), _database_url(url):
+                command.upgrade(_alembic_config(), "0018")
+
+            # Clear the offender the way a heal would, and it applies.
+            with engine.begin() as connection:
+                connection.execute(text("DELETE FROM scenes WHERE NOT ST_IsValid(footprint)"))
+            with _database_url(url):
+                command.upgrade(_alembic_config(), "head")
+
+            with engine.connect() as connection:
+                assert connection.execute(text("SELECT count(*) FROM scenes")).scalar_one() == 1
+        finally:
+            engine.dispose()
