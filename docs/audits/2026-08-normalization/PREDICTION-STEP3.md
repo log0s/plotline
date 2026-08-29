@@ -170,3 +170,54 @@ user-visible — the `1m res` chip at `frontend/src/components/MapView.tsx:298-3
 * **A larger `resolution_m` population than 3 rows.** The mechanism is wider
   than the four-parcel item above, and the production claim in §4 needs
   re-deriving rather than citing.
+
+---
+
+## Observed — local, 2026-08-29
+
+Appended after the run. Everything above is unedited. Command as §1, against
+`0181c54` + this file's commit `dad8502`; capture committed as
+`step3-parity-local.md`; script exit code 1 (it exits nonzero on any
+divergence).
+
+**Every predicted quantity confirmed — 19 of 19, no deviations, no
+unpredicted class.**
+
+| # | Predicted | Observed |
+|---|---|---|
+| P1 | 45 parcels | **45** |
+| P2 | 3,082 old rows | **3,082** |
+| P3 | 3,082 new rows | **3,082** |
+| P4 | 12,560 comparisons | **12,560** |
+| P5 | 12,373 id pairs | **12,373** |
+| P6 | 3,082 / 3,082 distinct ids | **3,082 / 3,082** |
+| P7 | 12 fields per pair | **12** |
+| P8 | 12 divergences | **12** |
+| P9 | all `resolution_m` | **all `resolution_m`** |
+| P10 | parcel `11111111…`, keys naip/2018, naip/2021, naip/2023 | **as predicted** |
+| P11 | 0.6→1.0, 0.6→1.0, 0.3→1.0 | **as predicted** |
+| P12 | 3 rows × 4 sites (3/3/3/3) | **listing 3, listing[source=naip] 3, listing[start_date] 3, by_id 3** |
+| P13 | 0 `count` divergences | **0** |
+| P14 | 0 `featured` divergences | **0** |
+| P15 | 0 `revalidate_landsat` divergences | **0** |
+| P16 | 0 `row_order` | **0** |
+| P17 | 0 of each structural class | **0** — no `missing_from_*`, no `*_duplicate_group`, no `id_map_*`, no `no_id_mapping`, no `row_absent` |
+| P18 | 20 same-date reorderings | **20** |
+| P19 | item-fact table names `resolution_m` only, 3 rows / 3 scenes | **`resolution_m`, 3 / 3; no other field present** |
+
+**The bijection held over the whole database.** 12,373 id pairs recorded
+across four sites resolved to exactly 3,082 distinct old ids and 3,082
+distinct new ids, with no inconsistency and no collision — so every served
+period has exactly one `parcel_scenes` row, the same one, however it is
+reached. That is the property the id substitution rests on, measured rather
+than assumed.
+
+**Eleven of the twelve compared fields are exactly equal on all 3,082 rows**,
+`additional_cog_urls` included — 148 mosaic rows reconstructed from
+`mosaic_scene_ids` in array order, matching the stored arrays element for
+element, with no dangling reference logged.
+
+**§0 stands.** These confirmations are of a prediction written with the
+answer in hand; what they establish is that the committed code behaves as the
+debugged code did and that no class was missed, not that the outcome was
+foreseen.
