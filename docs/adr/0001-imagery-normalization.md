@@ -445,3 +445,110 @@ batch did not make it. Rule 2's `group_key` is the same `encode_group_key`
 string in both shapes — the parity check joins on it. Rule 3's uniqueness held
 through a 43-parcel sweep. Rule 4 remains true only of the `enriched` and
 `selection` rows; the `snapshot` rows' footprints are still NULL.
+
+
+---
+
+## Amendment — 2026-08-29, step 3's read cutover, built locally
+
+Appended after the five serving reads were moved from `imagery_snapshots` to
+`parcel_scenes` joined to `scenes` and a field-by-field parity harness scored
+a prediction. Everything above is unedited. Sources:
+`docs/audits/2026-08-normalization/STEP3-REPORT.md` and the "Observed" half of
+`.../PREDICTION-STEP3.md`, with the capture `.../step3-parity-local.md`.
+Commits: `0181c54` (both paths alive + the harness), `dad8502` (prediction),
+`160e7ba` (scoring), `33d952a` (shape freeze + tests), `b1acf9a` (the
+cutover).
+
+**Not deployed.** Step 3 is committed and has run against the local database
+only. Production still serves from `imagery_snapshots` and reads neither new
+table.
+
+### The migration text says "the listing endpoint, Titiler callback, preview renderer, and warmup"; the list that moved is five sites
+
+Step 4's text above enumerates read sites informally. The scope actually used
+is `STEP1-REPORT.md` §7 — the inventory `VERIFICATION.md` item 3 derived and
+step 1 carried forward verbatim — of which five are *serving* reads:
+`get_imagery_snapshots`, `get_snapshot_by_id`, `count_imagery_snapshots`, the
+featured-parcels query, and `revalidate_landsat.py`'s parcel selection. The
+tile proxy and `/warmup` are consumers of `get_snapshot_by_id` rather than
+sites of their own.
+
+**The sixth site did not move and must not be read as an oversight.**
+`reconcile_source_snapshots`' existing-rows pull still reads
+`imagery_snapshots`, because the dual-write continues until step 4 and the
+reconciler legitimately diffs against the old table. So step 3's
+delete-the-fix standard is **"no serving path touches `imagery_snapshots`"**;
+step 4 inherits "no code does". That distinction is written into
+`tests/test_read_cutover.py`'s docstring.
+
+### No feature flag, recorded as a decision
+
+The cutover is a code change and its rollback is reverting the deploy — CI
+deploys on push and `/api/v1/health` reports the running sha, both proven
+cheap through this arc. A flag would have to keep the old serving reads alive
+to have anything to fall back to, which is exactly what the delete-the-fix
+standard forbids: there would be nothing to delete and no test that could
+fail.
+
+### The served id is now `parcel_scenes.id`
+
+`parcel_scenes.id` is a fresh UUID per row and is never equal to the
+`imagery_snapshots.id` for the same served period, so the API hands out a
+different id at `/parcels/{id}/imagery` and `/featured` and resolves the same
+new space at `/imagery/{id}/tiles`, `/warmup` and `/stac`. Both ends moved in
+one commit. The substitution is well-defined and was measured, not assumed:
+**12,373 id pairs across four sites resolved to exactly 3,082 distinct old
+ids and 3,082 distinct new ids**, with no inconsistency and no collision.
+
+Two costs are accepted: a browser holding a page across the deploy has stale
+ids until it refetches, and every `stac:{snapshot_id}` Redis key is cold once.
+Nothing durable stored a snapshot id.
+
+### `additional_cog_urls` is reconstructed in Python, in array order
+
+Rule 5 made mosaics references; the read turns them back into the URL array
+the response contract carries. The resolution is one batched query plus a
+Python loop rather than `unnest(...) WITH ORDINALITY`, because the SQLite test
+database cannot express the SQL form and the order is the property most worth
+a test that runs on both. A reference resolving to no `scenes` row is logged
+and dropped rather than failing the listing — the primary still renders, and
+neither database has ever held a dangling reference.
+
+### Item facts can still disagree, and the cutover decides which copy wins
+
+The Context section's first consequence — "item facts are stored N times and
+can disagree" — is what the parity run measured, and it is the only class of
+divergence it found. `scenes` is insert-only and the snapshot upsert never
+rewrites `resolution_m`, so the two shapes agree about any row they were
+written together from and can disagree about one written twice. Locally, one
+NAIP item served by four parcels has three copies saying `1.0` (pre-NORM-9)
+and one saying the item's real `0.3`; the backfill collapsed them to one
+`scenes` row whose tie-break kept a `1.0`, and **after the cutover all four
+parcels serve 1.0**.
+
+That is rule 4's promise — item facts refreshable in one row — being *needed*
+rather than merely available: nothing implements the refresh yet, so the
+surviving copy is whichever was written first. Production had no such
+disagreement on 2026-08-29 (all 1,305 NAIP snapshot rows and all 1,102 NAIP
+`snapshot` scenes rows at 1.0), so the class is not open there today.
+STATUS.md NORM-18.
+
+### Step 4's "measured, not assumed" needs two instruments, not one
+
+Step 4 above says "log every read; expect zero". A log names *which* caller
+read the table and cannot see a reader that does not call it — which is the
+failure mode "expect zero" is most exposed to. So the batch built both halves:
+`log_imagery_snapshots_read` (one event per reconcile pull, ~4 per
+parcel-run) names the one legitimate reader, and `scripts/snapshot_reads.py`
+differences `pg_stat_user_tables` across the cooling period, counting every
+access by anything without naming any of them. The counters are incremented by
+writes too and reset on `pg_stat_reset`, both of which the script says rather
+than leaving to be rediscovered.
+
+### The production sequence is not "deploy HEAD"
+
+The harness needs both read paths alive, so it can only run against
+production from `160e7ba`. A production session deploys that, runs
+`scripts/compare_read_paths.py` read-only with a prediction written first, and
+only then deploys the cutover. `STEP3-REPORT.md` §9.
