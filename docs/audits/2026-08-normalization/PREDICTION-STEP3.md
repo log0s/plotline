@@ -339,3 +339,80 @@ comparison counter without producing an id pair, which is why PP4 ≠ PP5.
   finding: either traffic between P1 and the run (the timestamped assumption)
   or PP4's same-date tie arithmetic. Scored as a deviation and explained, not
   as a divergence.
+
+---
+
+## Observed — production, 2026-08-29
+
+Appended after the run. Everything above is unedited. Run inside the API
+machine `825d69b7e46618` at the deployed sha
+`c96dbf8fb9a6ef27a4978a4074da5d159b2c65d7`, detached with `--out
+/tmp/parity-prod.md` per NORM-8, **06:17:0xZ → 06:32Z (~15 minutes)**;
+capture committed byte-for-byte as `parity-prod.md`.
+
+**Every predicted quantity confirmed — 13 of 13 scored, 1 unobservable, no
+divergence of any class, no unpredicted class.**
+
+| # | Predicted | Observed |
+|---|---|---|
+| PP1 | 189 parcels | **189** |
+| PP2 | 12,884 old rows | **12,884** |
+| PP3 | 12,884 new rows | **12,884** |
+| PP4 | 51,725 id pairs | **51,725** |
+| PP5 | 52,488 comparisons | **52,488** |
+| PP6 | 12,884 / 12,884 distinct ids | **12,884 / 12,884** |
+| PP7 | 12 fields per pair | **12** |
+| PP8 | 0 divergences | **0** |
+| PP9 | eleven fields equal on every row | **confirmed** — "Divergences: 0. None." over 12,884 rows, `additional_cog_urls` included, no dangling reference logged |
+| PP10 | the id mapping a bijection | **confirmed** — 51,725 pairs → 12,884 distinct each way, no `id_map_*`, no `no_id_mapping` |
+| PP11 | 0 `count` / `featured` / `revalidate_landsat` / structural | **0 of each** |
+| PP12 | item-fact table empty, `resolution_m` population **0** | **"Item facts the two shapes disagree about: None."** |
+| PP13 | 0 `row_order` | **0** |
+| PP14 | exit code 0 | **not observed — see below** |
+| PP15 | reorderings nonzero, no point estimate | **76** |
+
+**PP4 is the result worth keeping.** It was derived from the harness's
+control flow rather than from any run — 3 × 12,884 for `listing`,
+`listing[source=…]` and `by_id`, plus 12,884 + 189 for the two date windows on
+the prediction that **exactly one row per parcel shares that parcel's midpoint
+capture date** — and it landed on the nose over 189 parcels. The stated
+fragile assumption held: not one of the 189 midpoints is shared by two
+sources, even though 76 same-date reorderings prove same-date pairs are common
+elsewhere in the data.
+
+**PP14 is unobservable and is scored as such rather than as confirmed.** The
+run was launched `setsid nohup … &` so that a killed ssh client could not take
+it with it (NORM-8), and the parent shell exited without its status. The
+script returns 1 if and only if `report.divergences` is non-empty, and the
+capture says 0, so the exit code was 0 — but that is an inference from the
+code and the artifact, not a reading of `$?`. Recorded because "the exit code
+was 0" and "the exit code must have been 0" are different claims.
+**Improvement for the next detached production run:** have the launcher write
+`echo $? > /tmp/<name>.rc` after the command, so the status survives the
+client.
+
+**PP15's abstention was the right call and cost nothing.** 76 reorderings
+against 20 locally — 3.8× on 4.2× the parcels. Any point estimate written
+before the run would have been a guess, and `row_order` divergences are **0**,
+which is the claim that actually matters: §2e's `capture_date ASC, source ASC`
+tie-break is deployed and deterministic over a population with far more
+same-date pairs than the local database has.
+
+**What this run establishes that the local one could not.** The local scoring
+was of a prediction written with the answer in hand (§0). This one was not:
+the harness had never been run against production, and every structural and
+volumetric claim was derived rather than remembered. **PP12 remains the
+exception disclosed in P0** — the 0 population reproduces a direct 12,884-pair
+measurement taken in the pre-flight at ~05:53Z, so what it confirms is that
+two routes to that number agree, and that nothing moved between 05:53Z and
+06:32Z.
+
+**NORM-18's class exists in production at size zero, measured.** The mechanism
+is unchanged and the finding stays open: the class opens the first time a NAIP
+selection is rewritten against a `scenes` row written before the NORM-9 fix.
+Zero today is a fact about today's data, not a repair.
+
+**The traffic-drift assumption held.** `parcel_scenes` and
+`imagery_snapshots` were both 12,884 at 06:14Z and the run compared 12,884 on
+each path; `max(selected_at)` was 04:41:26.056Z before the run, and no
+pipeline task ran during it.
