@@ -1,34 +1,43 @@
 # The snapshot-scene enrichment heal against PRODUCTION — attempt 4
 
-Session of 2026-08-29, 18:50–19:25Z. Items 1–6 of the prompt's eight.
+Session of 2026-08-29, 18:50–19:55Z. All eight items, with one deferral (§8).
 
-**Outcome, in two parts, and the second one is the finding.**
+**Outcome. The heal is DONE. Queue 5,387 → 0, every row enriched, `.rc` = 0 on
+both the execute and the re-run.** Four sessions after the first attempt,
+NORM-7's footprint backlog, NORM-13's `scenes` arm and NORM-18's open class are
+healed in production, and the served check that had gone unscored three times
+is confirmed end to end through the live API.
 
-**One: the exit path is fixed and PROVEN, by a true positive.** The third
-production dry run reproduced the settled profile to the row and **`.rc` read
-`0`** — and not because the failure stayed away. The reaped connection
-happened: the structlog summary landed at `19:13:48.481Z`, the NORM-29 guard
-caught `sqlalchemy.exc.OperationalError` at `19:13:48.483Z` and logged
-`teardown_operational_error_after_completed_run` with the traceback, and the
-process exited **0**. The defect NORM-27 named occurred, was absorbed, and the
-exit code told the truth. That is the reading three sessions chased.
+**It took two attempts inside this session, and the reason is the session's own
+instrumentation.** The first `--execute` committed 200 rows and died on batch 2
+on `ReadOnlySqlTransaction` — because this arc's standard read-only probe,
+`SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY`, leaks through Neon's
+transaction-mode pooler and made a *shared production backend* read-only. The
+probe that proved safety was the unsafe act. New finding **NORM-30**; it was
+cleared under owner authorization, the pool was verified clean with
+`SELECT`-only reads, and the same logical run was resumed over the 5,187 rows
+that remained. **200 + 5,187 = 5,387, with no row fetched twice.**
 
-**Two: `--execute` ran, wrote 200 correct rows, and was killed on batch 2 by
-this session's own progress poll.** The run died on
-`psycopg2.errors.ReadOnlySqlTransaction: cannot execute UPDATE in a read-only
-transaction`. **The cause is the read-only probe method this whole arc has
-been using as its safety proof.** Against Neon's transaction-mode pooler,
-`SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY` persists on the
-*server-side* backend and is handed to the next client — so the probe does not
-make the prober read-only, it makes **production** read-only. New finding
-**NORM-30**.
+**Three durable results, in order of how hard they were to get:**
 
-**Production state: 200 rows healed, correctly; queue 5,187; nothing
-corrupted; and the connection pool is still carrying the leaked flag as of
-19:22:32Z.** The remaining 5,187 rows are **not** resumed in this session:
-resuming requires clearing state the authorization does not cover, and doing
-it blind would mean writing into a pool that is still poisoned. §7 states the
-two decisions that are the owner's.
+1. **NORM-27 and NORM-29 are closed by a true positive.** The third dry run met
+   the reaped connection — summary at `19:13:48.481Z`, guard at
+   `19:13:48.483Z`, `.rc = 0`. The failure occurred and was absorbed. No local
+   run could ever have shown this (§4).
+2. **The heal landed, and every invariant was measured rather than asserted**:
+   5,387 `POLYGON` footprints, 0 equal to their own `bbox`, and a `bbox`
+   fingerprint byte-identical to the pre-write baseline over all 6,663 rows
+   (§6d).
+3. **Batching survived an unplanned production abort.** The 200 committed rows
+   stayed committed and were skipped by the resume without one re-fetch — the
+   first production evidence that the re-derived queue is the resume mechanism
+   (§6c).
+
+**Two things are worse than they look and are recorded as findings, not
+footnotes:** NORM-30 above, which has a code site in a committed script; and
+**NORM-31** — two of the written footprints are self-intersecting polygons that
+every check in the pipeline passes, because they check geometry *type* and not
+validity (§6e).
 
 ---
 
@@ -40,10 +49,10 @@ two decisions that are the owner's.
 | 2. Spot re-verify, read-only, timestamped | **PASS**, zero deltas, queue 5,387 (§3) |
 | 3. Dry run, `.rc` recipe | **PASS — profile held, `.rc` = 0, guard fired** (§4) |
 | 4. Prediction committed before execute | **DONE**, `53ce6b5` (§5) |
-| 5. `--execute`, one logical run | **RAN. 200 rows written, then ABORTED on batch 2** (§6) |
-| 6. Post-run verification | **partial — done against the partial write** (§6c) |
-| 7. Score the prediction | **not reached** — the run is incomplete, and a partial run is not a scoreable one (§8) |
-| 8. Record | this file, STATUS.md NORM-30 and the touched rows |
+| 5. `--execute`, one logical run | **DONE in two pieces** — 200 rows, abort, resume of the same run, 5,187 rows (§6a–§6c) |
+| 6. Post-run verification | **DONE**, including the served check (§6d, §6e) |
+| 7. Score the prediction | **DONE** — 16 scoreable, 15 confirmed, 1 falsified (§7) |
+| 8. Record | this file, the prediction's Observed half, STATUS.md NORM-30 and NORM-31. **Step-4 readiness DEFERRED with cause** (§8) |
 
 NORM-28's rule was followed without exception: **every `fly ssh` in this
 session pinned `--machine`**, including every read of both runs' artifacts.
@@ -103,7 +112,7 @@ Committed as `snapshot-enrich-prod-prerun-3.json` (`2a00acc`).
 `SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY`, committed it, and
 recorded `ReadOnlySqlTransaction` from `UPDATE scenes SET resolution_m =
 resolution_m WHERE false`. At the time that was this arc's standard evidence.
-**§7 shows it is the mechanism that killed the write**, and the artifact is
+**§6b shows it is the mechanism that killed the write**, and the artifact is
 committed unedited with this note attached rather than retro-fitted.
 
 ### Deltas — nothing moved, for the third measurement running
@@ -236,7 +245,7 @@ names the served-check subject in advance — parcel
 `ny_m_4007306_sw_18_.5_20150522_20151109`, predicted `1.0 → 0.5` — chosen
 read-only at 18:56:51Z so it could not be selected after the fact.
 
-## 6. Item 5 — the execute: 200 rows, then killed by this session's own poll
+## 6. Item 5 — the execute: aborted at 200 rows, resumed, completed
 
 ### 6a. What ran
 
@@ -329,106 +338,220 @@ it has been running against production since at least 07:42Z.
 `ReadOnlySqlTransaction` in the retrievable buffer — a floor, not a count, on
 a capped 100-line page. The only observed victim is this session's own write.
 
-### 6c. Item 6 — verification against the partial write, 19:22:32Z
+### 6c. The resume — the same logical run, not a relaunch
 
-`snapshot-enrich-prod-partial.json`, taken with **`SELECT` only — no `SET`, no
-`UPDATE` probe**. The probe method was retired mid-session, at the point it was
-understood, rather than after the report.
+NORM-30's flag was cleared under owner authorization (§6f), and the pool was
+verified clean with `SELECT`-only reads from **both** apps at 19:30:49Z and
+19:30:57Z: **0 of 8 connections read-only**, from `log0s-plotline-api` and
+`plotline-worker` alike.
 
-| Check | Reading | Verdict |
-|---|---|---|
-| Queue remaining | **5,187** | = 5,387 − 200, exact |
-| Footprints written | **200 of 200** attempted | complete for what ran |
-| Geometry type | **200 `POLYGON`**, 0 non-Polygon, **0 invalid** | EP10, EP12 hold so far |
-| Footprints `ST_Equals` own `bbox` | **0 of 200** (0 of 707 table-wide) | **EP11 holds so far** |
-| `bbox` filled / churned | 0 / **fingerprint unchanged** `f1809593…` | **EP9 holds — measured, not argued** |
-| Row counts | 6,663 / 12,884 / 12,884 | unchanged; no inserts or deletes |
-| Provenance split | 6,156 / 505 / 2 | unchanged |
-| NAIP `resolution_m` | still **1,102 × 1.0** | expected: batch 1 is landsat |
-| landsat / sentinel2 | 3,174 × 30.0 / 1,111 × 10.0 | unchanged, as predicted |
-| `imagery_snapshots` NAIP | still **1,305 × 1.0** | the unhealed arm, as predicted |
-| `usgs_topo` | **769**, all `footprint` and `resolution_m` NULL | untouched, still unreachable |
-| Served-check subject | still `1.0`, `footprint` NULL | still queued — EP15 unscored |
+Launched **19:31:24Z**, `bg-pid=1048`, same recipe, same pinned machine.
+**19:31:26Z → 19:51:21Z, 1,195 s = 19 min 55 s.**
 
-**The 200 rows that landed are correct.** The queue is ordered
-`collection, item_id`, so batch 1 is entirely `landsat-c2-l2` — which is why
-`resolution_m` rewrites are 0 and why the run's own report says so. **Nothing
-about the partial write needs undoing**, and the resume mechanism is queue
-re-derivation, so a resumed run picks up exactly the 5,187 that remain.
+```
+Queue at start: 5187 … Rows fetched: 5187. STAC requests issued: 5187.
+matched and written 5187 | 404 0 | 403 0 | error 0
+footprint filled 5187 | bbox filled 0 | resolution_m rewritten 527
+naip 1.0 → 0.3  77 | 1.0 → 0.5  11 | 1.0 → 0.6  439
+sentinel2 carrying no gsd: 1111
+Capture-date disagreements: None.  Anomalies: None.  Findings: None.
+Wrote 5187 row(s). Queue after this run: 0.
+```
 
-## 7. The two decisions that are the owner's
+`bboxes=0 errors=0 excluded_topo=769 execute=True footprints=5187 queue=5187
+resolutions=527 unmatched_403=0 unmatched_404=0 written=5187`, and **`.rc` read
+`0`**.
 
-Neither is taken in this session. Both are stated with what they cost.
+**It opened on 5,187, not 5,387.** The queue is re-derived on every run and
+after every commit's worth of progress, so the 200 rows attempt 1 had already
+written were simply not in it. **5,187 fetched for 5,187 remaining: not one row
+was fetched twice, and not one was skipped.** `200 + 5,187 = 5,387`.
 
-**Decision 1 — clearing the leaked flag.** Backend 605 was still read-only at
-19:22:32Z. While it is, **any production write routed through it fails**,
-including the app's own. Clearing it means issuing `SET SESSION CHARACTERISTICS
-AS TRANSACTION READ WRITE` or `DISCARD ALL` against pooled connections until
-sampling reads `off` — not a data write, but a repeated mutation of shared
-production session state, blind as to how many backends carry the flag. It is
-not covered by this session's authorization and was not done. The alternative
-is to let PgBouncer's `server_lifetime` recycle the backend, which needs no
-action and no permission, but has no confirmed deadline. **A restart of the API
-machines would also clear it, and restarts are the owner's.**
+**This is the first production evidence for a claim the script's docstring has
+been making since it was written** — "this query *is* the resume mechanism, and
+it holds no state of its own" — and it was earned by an abort nobody planned.
+The kill/resume semantics were SIGKILL-tested locally
+(`test_a_killed_run_does_not_refetch_committed_rows`, `test_each_batch_commits`);
+they have now met an unplanned production failure and behaved identically.
 
-**Decision 2 — resuming the remaining 5,187.** The authorization contemplates
-resumption ("resumption after interruption is the same run, recorded with
-reason, never relaunched blind"). The reason is recorded above and the run is
-resumable by design. **It was not resumed here for one reason: the pool is
-still poisoned**, so a resume launched now would very likely die on its first
-batch and leave a third partial state. A resume is safe once decision 1 has
-landed and a `SELECT`-only sample reads `off`. **It must be launched with no
-read-only-probing poll of any kind** — progress is readable from the
-incremental report file and the queue count, both of which need only `SELECT`.
+### 6d. Item 6 — post-run verification, 19:52:27Z, `SELECT` only
 
-## 8. Item 7 — the prediction is not scored
+`snapshot-enrich-prod-postrun.json`. **No `SET`, no `UPDATE`-probe** — the
+method was retired mid-session, at the point it was understood. The probe's own
+session state is recorded in the artifact and reads `default_ro: off`, which is
+both a check on NORM-30's remediation and the honest replacement for the
+ceremony that used to stand there.
 
-**Deliberately.** A partial run is not a scoreable one, and scoring EP1–EP16
-against 200 of 5,387 rows would put a column of "unscored" and four
-"holds so far" into a file whose whole value is that its halves are written at
-different times and never edited. The Observed half is left unwritten; §6c
-records the readings that will feed it, in this file, where they can be
-revised without touching the prediction.
+| Check | Prediction | Reading | Verdict |
+|---|---|---|---|
+| Queue remaining | 0 | **0** | confirmed |
+| Footprints written | 5,387 | **5,387 of 5,387** | confirmed |
+| Geometry type | 5,387 × `ST_Polygon` | **5,387 POLYGON** (5,894 table-wide) | confirmed |
+| `ST_Equals` own `bbox` | 0 | **0 of 5,387**, 0 of 5,894 | confirmed |
+| `ST_IsValid` | *not predicted* | **2 invalid** | **NORM-31, §6e** |
+| `bbox` filled / churned | 0 / 0 | 0 / **fingerprint unchanged** | confirmed by measurement |
+| Row counts | unchanged | 6,663 / 12,884 / 12,884 | confirmed |
+| Provenance split | unchanged | 6,156 / 505 / 2 | confirmed |
+| NAIP `resolution_m` | 575 / 439 / 11 / 77 | **575 × 1.0, 439 × 0.6, 11 × 0.5, 77 × 0.3** | confirmed |
+| landsat / sentinel2 | unchanged | 3,174 × 30.0 / 1,111 × 10.0 | confirmed |
+| `imagery_snapshots` NAIP | 1,305 × 1.0 | **1,305 × 1.0** | confirmed — the unhealed arm |
+| `usgs_topo` | untouched | **769**, `footprint` and `resolution_m` both NULL | confirmed |
 
-What §6c does establish is that **no gate was tripped by the data**: 0 errors,
-0 403s, 0 404s, 0 anomalies, 0 bbox churn, 0 footprints equal to their bbox.
-Gate 5 (dry-run and execute totals must agree) is intact where they overlap —
-batch 1 wrote what batch 1 planned. The run stopped on the environment, not on
-the pass.
+**The `bbox` fingerprint is the load-bearing one.** `f1809593fd050be14736aaaea4b09ed5`
+before the write and after it, over all 6,663 rows, from the identical
+`string_agg` expression. **5,387 rows were updated and not one `bbox` moved** —
+gate 6 answered by measurement, not by re-reading the guard.
+
+**The served check, EP15 — NORM-18's first production observation.** The subject
+was named in the prediction at `53ce6b5`, *before* the write, so it could not be
+selected after the fact:
+
+```
+$ curl -s https://log0s-plotline-api.fly.dev/api/v1/parcels/a79522ab-…/imagery?source=naip
+   2015-05-22  res= 0.5  item= ny_m_4007306_sw_18_.5_20150522_20151109
+HTTP/2 200 ; cache-control: no-cache
+```
+
+**The live API serves `0.5`** where it served `1.0` this morning — the
+`1m res` chip at `frontend/src/components/MapView.tsx:298-301` reads `50cm` for
+this parcel. Fleet-wide, **617 served NAIP rows moved off 1.0** (94 at 0.3, 13
+at 0.5, 510 at 0.6); 688 stay at 1.0 because that is what their items say.
+
+**The dry re-run, 19:53:37Z:** queue **0**, rows fetched **0**, STAC requests
+**0**, **`.rc` = 0**. Captures: `snapshot-enrich-prod-dryrun-4.txt`.
+
+### 6e. NORM-31 — two invalid polygons that every check passes
+
+**Two of the 5,387 written footprints fail `ST_IsValid`.** Both Sentinel-2,
+both self-intersecting, both served:
+
+| item_id | capture | reason | `ST_NPoints` | fp / bbox area | `parcel_scenes` |
+|---|---|---|---|---|---|
+| `S2B_MSIL2A_20181226T153639_R111_T19TCG_20201008T131747` | 2018-12-26 | `Self-intersection[-71.00403 41.90664113]` | 28 | 0.765 / 0.951 | 1 |
+| `S2B_MSIL2A_20190602T162839_R083_T16TEK_20201005T212018` | 2019-06-02 | `Self-intersection[-86.75983 39.91487413]` | 22 | 1.039 / 1.206 | 2 |
+
+Enumerated in `snapshot-enrich-prod-invalid-footprints.json`.
+
+**Nothing in the pipeline asked the question.** The pass's anomaly check is a
+geometry *type* check — a non-Polygon is reported and leaves the footprint NULL
+— and these are Polygons. `geometry(POLYGON,4326)` accepts an invalid polygon;
+PostGIS validates on neither insert nor constraint. So the column type, the
+pass's check and the prediction all asked "is this a polygon" and **none asked
+"is this a valid one"**, and all three answered correctly.
+
+**The geometry is upstream's and was stored faithfully** — PC publishes these
+two footprints self-intersecting, and rule 4's whole point is that the item
+wins. This is not a defect in the heal. It is a gap in what the heal is able to
+notice, and it now sits behind a GiST index (`idx_scenes_footprint`) that the
+serving path will eventually query: GEOS predicates over a self-intersecting
+polygon can raise `TopologyException` rather than return false. **Recorded
+unfixed.** Two rows out of 5,387 is not an argument for leaving it; it is an
+argument that nobody would have found it by sampling.
+
+### 6f. NORM-30 — cleared, under authorization, and verified
+
+The owner authorized clearing the leaked flag. On each poisoned connection:
+`COMMIT`, `DISCARD ALL`, `SET SESSION CHARACTERISTICS AS TRANSACTION READ
+WRITE`, over 30 sequential connections at 19:29Z. **Verified afterwards by a
+`SELECT`-only sample from both apps: 0 of 8 read-only, 19:30:49Z and
+19:30:57Z**, and again by the post-run probe's own session state at 19:52:27Z
+(`default_ro: off`). Neither the clear nor any verification touched a data row.
+
+**The flag is gone. The class is not.** `scripts/snapshot_reads.py:138-139` is
+
+```python
+db.execute(sa_text("SET default_transaction_read_only = on"))
+db.commit()
+```
+
+— the same statement, **committed**, in a script the ADR's step-4 procedure
+prescribes and which produced `reads-t0.json` and `reads-t1.json`. It is not an
+ad-hoc session habit; it is checked in. Left unfixed per this session's
+constraint, and it is the reason §8 defers the step-4 reading.
+
+## 7. Item 7 — the prediction, scored
+
+Appended to `PREDICTION-SNAPSHOT-ENRICH.md` as `## Observed — production, THE
+EXECUTE`; the prediction halves were diffed byte-for-byte against their
+pre-append state and are untouched. **16 scoreable, 15 confirmed, 1 falsified.**
+
+EP1–EP11 and EP13–EP16 confirmed, several to the row: 5,387 fetched and
+enriched with remainder 0, 527 rewrites split exactly 77 / 11 / 439, 0 landsat
+and 0 sentinel-2 changes with all 1,111 in the no-`gsd` bucket, 0 capture-date
+disagreements, 0 bbox churn by fingerprint, `.rc = 0` twice, the served check
+`yes`, and 1,195 s inside the 18–24 min band.
+
+**EP12 is scored falsified** — "non-Polygon geometry anomalies: 0" is literally
+correct and the quantity it stood in for, *no bad geometry landed*, is false
+(§6e). Scoring the narrow reading as a pass would be the prediction grading its
+own wording.
+
+**EP14's scope, restated so the `0`s are not over-read.** The execute commits
+every ~200 rows, so it never idles long enough to be reaped, and the re-run
+fetches nothing; **neither could reproduce NORM-27's trigger, and neither is
+evidence about the guard.** EP14 said so before the runs. The evidence is §4's
+dry run, and it is a true positive.
+
+## 8. Item 8 — step-4 readiness: DEFERRED, with cause
+
+**Not taken, and not skipped.** The reading requires
+`scripts/snapshot_reads.py`, and §6f shows that script commits the exact GUC
+that killed this session's first write. Running it would have re-poisoned the
+pool immediately after clearing it, to measure a cooling period. **The
+instrument is the hazard**, so the measurement waits for the script to be
+fixed.
+
+What can be said without it: `imagery_snapshots` was **not written to by this
+heal** — the pass touches `scenes` only, and the table's row count is 12,884
+before and after, with NAIP still 1,305 × 1.0. `max(parcel_scenes.selected_at)`
+is still `2026-08-29 04:41:26+00`, so no selection has run. **The cooling span
+from t0 (`2026-08-29T06:41:47Z`) to 19:52:27Z is 13 h 10 m 40 s**, and the
+prior session's instrument readings through 18:36:04Z stand unchanged.
+
+**Do not start step 4.** The prompt says so; nothing here argues otherwise; and
+the readiness evidence is now one instrument short until NORM-30's code site is
+fixed.
 
 ## 9. State left behind
 
-* **Production carries 200 rows of authorized, correct write** — the first
-  writes this arc's heal has ever landed. All 200 `POLYGON`, none equal to its
-  own `bbox`, none invalid. **Queue 5,187.**
-* **The bbox fingerprint is unchanged** at `f1809593fd050be14736aaaea4b09ed5`.
-  Nothing outside `footprint` moved; no row was inserted or deleted.
-* **The connection pool is still carrying `default_transaction_read_only = on`**
-  as of 19:22:32Z, on the one backend observed (pid 605, 24 of 24 samples).
-  **Production writes are impaired until that clears.** This session caused it
-  and did not fix it, because fixing it is outside its authorization.
-* **NORM-27 and NORM-29 are closed by measurement**, on a true positive rather
-  than an absence.
-* **NORM-7, NORM-13 and NORM-18 are 200/5,387 of the way through their
-  production heal** and are annotated as partial, not resolved.
-* **769 `usgs_topo` rows remain excluded and unhealed.** No mechanism exists.
-* **The read-only probe method is retired** in this session's later probes and
-  recorded as NORM-30. Earlier artifacts committed today still contain it and
-  are left unedited.
+* **The heal is complete in production.** `provenance = 'snapshot'`,
+  non-topo: **5,387 of 5,387 rows carry a real `ST_Polygon` footprint**, none
+  equal to its own `bbox`. Queue **0**. Dry re-run confirms 0 rows, 0 fetches,
+  `.rc = 0`.
+* **NORM-13's `scenes` arm is healed**: NAIP `snapshot` rows are now
+  **575 × 1.0, 439 × 0.6, 11 × 0.5, 77 × 0.3**, from 1,102 × 1.0.
+* **NORM-18's class is closed in production** and observed end to end: 617
+  served NAIP rows moved off the 1.0 chip; the pre-named subject serves `0.5`
+  through the live API.
+* **`imagery_snapshots` is deliberately unhealed** — still 1,305 × 1.0, so the
+  two tables now disagree on 527 items with `scenes` holding the true value and
+  being the one that serves. Predicted, not a defect; step 4 drops that table.
+* **769 `usgs_topo` rows remain excluded and unhealed**, `footprint` and
+  `resolution_m` both NULL. No mechanism exists. ADR rule 4 stays false for
+  topo.
+* **Nothing outside `footprint` and NAIP `resolution_m` moved.** bbox
+  fingerprint identical; row counts identical; provenance split identical.
+* **NORM-27 and NORM-29 are closed by measurement.** NORM-30 is cleared in the
+  pool but **unfixed in `scripts/snapshot_reads.py`**. NORM-31 is open and
+  unfixed.
 * **Nothing is pushed.** Commits are on `main`, local only.
 
 ## 10. Deviations from the prompt
 
-1. **The execute did not complete, and was not resumed.** §7 decision 2.
-2. **Item 7 (scoring) was not done**, and item 8's step-4 readiness reading was
-   not taken — the cooling-span counters are read through
-   `scripts/snapshot_reads.py`, and this session stopped issuing production
-   probes once it understood that its probing was the hazard. Deferred rather
-   than skipped.
-3. **The session poisoned the production connection pool** at 18:55:17Z,
-   18:56:51Z, 19:17:33Z and 19:18:22Z, using the method inherited from prior
-   sessions in this arc. Recorded as an action against production the prompt
-   did not intend, not merely as a finding about a method.
-4. **The 24-connection sample at 19:21:14Z** opened and disposed 24 engines
-   against production to size the contamination. Reads only, and recorded
-   because it is traffic the prompt did not name.
+1. **The execute ran in two pieces**, the second a resumption of the same
+   logical run after an abort this session caused. Recorded with its reason in
+   §6a–§6c, per the authorization's "resumption after interruption is the same
+   run, recorded with reason, never relaunched blind".
+2. **The session poisoned the production connection pool** at 18:55:17Z,
+   18:56:51Z, 19:17:33Z and 19:18:22Z using the method inherited from prior
+   sessions, and then **cleared it under an authorization obtained mid-session**
+   — 30 connections issued `DISCARD ALL` and `SET … READ WRITE` at 19:29Z.
+   Neither the poisoning nor the clearing was in the prompt.
+3. **A 24-connection sample at 19:21:14Z** opened and disposed 24 engines
+   against production to size the contamination. Reads only.
+4. **One `GET /api/v1/parcels/{id}/imagery` against production** at 19:53Z for
+   EP15. A read, and the whole content of the served check.
+5. **Step-4 readiness was not measured** (§8), because its instrument carries
+   NORM-30.
+6. **`ps` still does not exist in the image**; every process check used a
+   `/proc/*/cmdline` scan.

@@ -1159,3 +1159,122 @@ runs' rather than centred on them: **18–24 min**.
    remote process is still running: verify by `/proc` scan and queue count,
    record what was found, and resume the same logical run with the reason
    written down. Never relaunch blind.
+
+---
+
+## Observed — production, THE EXECUTE
+
+*(Appended 2026-08-29 after the write completed. Everything above this line is
+as committed in `93ff05c`, `c16f570`, `82cbda9`, `261f6af` and `53ce6b5` and
+has not been edited.)*
+
+**The heal ran in two pieces, and that is part of the record rather than a
+footnote.** Attempt 1 (19:16:29Z) committed batch 1 — 200 rows — and died on
+batch 2 when this session's own read-only progress poll leaked
+`default_transaction_read_only = on` through Neon's transaction-mode pooler
+(**NORM-30**). Attempt 2 (19:31:26Z → 19:51:21Z, 1,195 s) was the **same
+logical run resumed**, not a relaunch: the resume mechanism is queue
+re-derivation, so it opened on the 5,187 rows that remained and never re-fetched
+the 200 already written. **5,187 + 200 = 5,387.** Captures committed unedited:
+`snapshot-enrich-prod-run.{md,txt}`, `snapshot-enrich-prod-run-resume.{md,txt}`,
+`snapshot-enrich-prod-postrun.json`.
+
+### Scorecard — 16 scoreable, 15 confirmed, 1 falsified
+
+| # | Predicted | Observed | Verdict |
+|---|---|---|---|
+| EP1 | 5,387 fetched | **200 + 5,187 = 5,387** | confirmed |
+| EP2 | 0 × 403 / 0 × 404 | **0 / 0** | confirmed |
+| EP3 | 5,387 enriched, remainder 0 | **5,387**, remainder **0** | confirmed |
+| EP4 | 527 NAIP rewrites, 77 / 11 / 439 | **527**, **77 / 11 / 439** | confirmed |
+| EP5 | 0 landsat changes | **0** over 3,174 | confirmed |
+| EP6 | 0 sentinel2 changes / 1,111 no-`gsd` | **0** / **1,111** | confirmed |
+| EP7 | 0 capture-date disagreements | **0** over 5,387 | confirmed |
+| EP8 | 0 bboxes filled | **0** | confirmed |
+| EP9 | 0 bbox churn | fingerprint **unchanged**, `f1809593fd050be14736aaaea4b09ed5` | **confirmed by measurement** |
+| EP10 | 5,387 × `ST_Polygon` | **5,387 × POLYGON** | confirmed |
+| EP11 | 0 footprints `ST_Equals` own `bbox` | **0 of 5,387** (0 of 5,894 table-wide) | confirmed |
+| EP12 | 0 geometry anomalies | **0 by the pass's own definition; 2 invalid polygons it does not check** | **falsified — see below** |
+| EP13 | queue 0 / 27 batches | **queue 0** / 1 + 26 batches across the two pieces | confirmed |
+| EP14 | `.rc` 0 on execute and on the re-run | **0** and **0**, both read from the file | confirmed |
+| EP15 | the named parcel serves the new value | **0.5, end to end through the API** | confirmed |
+| EP16 | 18–24 min | **1,195 s = 19 min 55 s** (resume), ~20 min of fetching in total | confirmed |
+
+### EP12 — falsified, and the pass could not have caught it
+
+**Two of the 5,387 written footprints fail `ST_IsValid`.** Both Sentinel-2,
+both self-intersecting, both served:
+
+| item_id | capture | reason | `ST_NPoints` | fp area / bbox area | `parcel_scenes` |
+|---|---|---|---|---|---|
+| `S2B_MSIL2A_20181226T153639_R111_T19TCG_20201008T131747` | 2018-12-26 | `Self-intersection[-71.00403 41.90664113]` | 28 | 0.765 / 0.951 | 1 |
+| `S2B_MSIL2A_20190602T162839_R083_T16TEK_20201005T212018` | 2019-06-02 | `Self-intersection[-86.75983 39.91487413]` | 22 | 1.039 / 1.206 | 2 |
+
+**The prediction and the run's report both say "0 anomalies", and both are
+correct on their own terms.** The pass's anomaly check is a *geometry type*
+check — a non-Polygon is reported and leaves the footprint NULL — and these are
+Polygons. `geometry(POLYGON,4326)` accepts an invalid polygon; PostGIS does not
+validate on insert. So the column constraint, the pass's check and the
+prediction all asked "is this a polygon" and none asked "is this a valid one".
+
+**EP12 is scored falsified rather than confirmed-with-a-note on purpose.** It
+was written as "non-Polygon geometry anomalies: 0" and that number is right;
+but the quantity it was standing in for — "no bad geometry landed" — is false,
+and scoring the narrow reading as a pass would be the prediction grading its own
+wording. **The geometry is upstream's**, faithfully stored: PC publishes these
+two footprints self-intersecting, and the pass wrote what the item said. It is
+recorded as **NORM-31**, unfixed.
+
+### EP15 — the served check, first production observation of the NORM-18 fix
+
+Subject named in advance (§EP15, committed at `53ce6b5` before the write):
+parcel `a79522ab-0681-4629-a4fe-935ab4d856c2`, scene
+`1f4276e5-d41e-4c3d-8cf5-90be04b5c4fe`, item
+`ny_m_4007306_sw_18_.5_20150522_20151109`, predicted `1.0 → 0.5`.
+
+```
+$ curl -s https://log0s-plotline-api.fly.dev/api/v1/parcels/a79522ab-…/imagery?source=naip
+parcel a79522ab-0681-4629-a4fe-935ab4d856c2  snapshots 7
+   2015-05-22  res= 0.5  item= ny_m_4007306_sw_18_.5_20150522_20151109
+HTTP/2 200 ; cache-control: no-cache
+```
+
+**The production API serves `0.5`** — the `1m res` chip at
+`frontend/src/components/MapView.tsx:298-301` now reads `50cm` for this parcel.
+That is both halves of what EP15 was predicting at once: the cutover reads
+`scenes`, and nothing cached the old value.
+
+**Across the fleet, 617 served NAIP rows moved off 1.0**: 94 at 0.3, 13 at 0.5,
+510 at 0.6, with 688 staying at 1.0 because 1.0 is what their items say.
+
+### EP9 — the invariant that was measured rather than argued
+
+The `bbox` fingerprint over all 6,663 rows reads
+`f1809593fd050be14736aaaea4b09ed5` after the write — **byte-identical to the
+pre-write baseline**. 5,387 rows were updated and not one `bbox` moved. This is
+the reading the guard was never asked to vouch for, taken twice against the same
+`string_agg` expression, and it is what makes gate 6 a measurement.
+
+### What the two-piece run proved that a clean one would not have
+
+**Batching survives an abort mid-run, in production, on real data.** Attempt 1's
+200 rows were committed, stayed committed through a hard failure, and were
+skipped by the resume without a single re-fetch — 5,187 fetched for 5,187
+remaining. The kill/resume semantics that were SIGKILL-tested locally
+(`test_a_killed_run_does_not_refetch_committed_rows`, `test_each_batch_commits`)
+have now met an unplanned production abort and behaved identically. **The queue
+*is* the resume mechanism**, as the script's docstring claims, and this is the
+first production evidence for it.
+
+### Gates (§E2)
+
+| Gate | Result |
+|---|---|
+| 1. Any `error` outcome → stop | **0 errors** across both pieces |
+| 2. >10 404s or any outside `sentinel-2-l2a` → stop | **0 404s.** Never approached |
+| 3. Any 403 → enumerate + STATUS.md line | **0 403s.** NORM-23 confirmed a third time |
+| 4. Any landsat/sentinel-2 rewrite → report per row | **0 of 3,174 landsat, 0 of 1,111 sentinel-2** |
+| 5. Dry-run and execute totals must agree | **agree exactly**: 5,387 written, 527 rewrites, same 77/11/439 |
+| 6. Any existing `bbox` moved → stop | **0**, by fingerprint |
+| 7. `.rc` nonzero with a clean report → new finding | attempt 1 was `.rc = 1` with a **dirty** report — EP14 outcome 3, the ordinary contract. Not tripped |
+| 8. Interruption is not a rollback | **exercised for real.** Process verified dead by `.rc`, queue counted at 5,187, reason recorded, same run resumed — never relaunched blind |
