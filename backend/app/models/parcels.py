@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for parcels, timeline requests, and imagery snapshots."""
+"""SQLAlchemy ORM models for parcels, timeline requests, and served imagery."""
 
 from __future__ import annotations
 
@@ -62,12 +62,12 @@ class Parcel(Base):
         back_populates="parcel",
         cascade="all, delete-orphan",
     )
-    imagery_snapshots: Mapped[list[ImagerySnapshot]] = relationship(
-        "ImagerySnapshot",
-        back_populates="parcel",
-        cascade="all, delete-orphan",
-        order_by="ImagerySnapshot.capture_date",
-    )
+    # No relationship to the served-imagery tables. ``parcel_scenes`` cascades
+    # on delete in the database (0015) and is only ever read through the
+    # service layer's raw SQL — the same PostGIS/SQLite reason ``Scene`` has no
+    # relationship either — so a collection here would be a second, lazier way
+    # to ask a question ``get_served_scenes`` already answers. The one that
+    # used to be here went with the denormalized table in ADR 0001 step 4.
     census_snapshots: Mapped[list[CensusSnapshot]] = relationship(
         "CensusSnapshot",
         back_populates="parcel",
@@ -297,12 +297,12 @@ class TimelineTaskYear(Base):
     happened to each year/decade the source tried, so "never attempted" and
     "attempted and came back empty" stop being the same absence.
 
-    It deliberately holds no reference to the row that got served (no
-    ``snapshot_id``, no FK to ``imagery_snapshots``). The served row for a
-    group is looked up by ``(parcel_id, source, group_key)`` at read time —
-    rule 1 of docs/adr/0001-imagery-normalization.md, which is what lets the
-    normalization pass replace the snapshot storage without touching this
-    table.
+    It deliberately holds no reference to the row that got served — no
+    ``snapshot_id``, no ``parcel_scene_id``, no FK to any storage table. The
+    served row for a group is looked up by ``(parcel_id, source, group_key)``
+    at read time — rule 1 of docs/adr/0001-imagery-normalization.md, which is
+    what let the normalization replace the storage under it, table by table
+    and then table gone, without this model changing at all.
 
     Constraint names are spelled out here and match
     ``alembic/versions/0011_timeline_task_years.py`` exactly. The parent table
@@ -352,84 +352,18 @@ class TimelineTaskYear(Base):
         return f"<TimelineTaskYear {self.source} {self.group_key} {self.outcome}>"
 
 
-class ImagerySnapshot(Base):
-    """A single aerial/satellite imagery scene found for a parcel."""
-
-    __tablename__ = "imagery_snapshots"
-
-    VALID_SOURCES = ("naip", "landsat", "sentinel2", "usgs_topo")
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        server_default=func.gen_random_uuid(),
-    )
-    parcel_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("parcels.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    source: Mapped[str] = mapped_column(Text, nullable=False)
-    capture_date: Mapped[date] = mapped_column(Date, nullable=False)
-    stac_item_id: Mapped[str] = mapped_column(Text, nullable=False)
-    stac_collection: Mapped[str] = mapped_column(Text, nullable=False)
-    bbox: Mapped[str | None] = mapped_column(
-        Geometry(geometry_type="POLYGON", srid=4326),
-        nullable=True,
-    )
-    cog_url: Mapped[str] = mapped_column(Text, nullable=False)
-    additional_cog_urls: Mapped[list[str] | None] = mapped_column(
-        ARRAY(Text),
-        nullable=True,
-    )
-    thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    resolution_m: Mapped[float | None] = mapped_column(Double, nullable=True)
-    cloud_cover_pct: Mapped[float | None] = mapped_column(Double, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-
-    # Relationships
-    parcel: Mapped[Parcel] = relationship(
-        "Parcel",
-        back_populates="imagery_snapshots",
-    )
-
-    __table_args__ = (
-        CheckConstraint(
-            "source IN ('naip', 'landsat', 'sentinel2', 'usgs_topo')",
-            name="ck_imagery_snapshots_source",
-        ),
-        UniqueConstraint(
-            "parcel_id",
-            "stac_item_id",
-            name="uq_imagery_snapshots_parcel_stac_item",
-        ),
-        Index("idx_imagery_parcel_date", "parcel_id", "capture_date"),
-        Index("idx_imagery_bbox", "bbox", postgresql_using="gist"),
-    )
-
-    def __repr__(self) -> str:
-        return (
-            f"<ImagerySnapshot source={self.source!r} "
-            f"date={self.capture_date} parcel={self.parcel_id}>"
-        )
-
-
 class Scene(Base):
     """One catalogued imagery item, stored once however many parcels serve it.
 
-    The item half of docs/adr/0001-imagery-normalization.md. Nothing reads
-    this yet — step 1 creates and backfills it, step 3 cuts the read paths
-    over — so it is additive to ``ImagerySnapshot``, not a replacement for it.
+    The item half of docs/adr/0001-imagery-normalization.md, and since step 4
+    the only place an item's facts are stored: step 1 created and backfilled
+    it, step 2 made the pipeline write it, step 3 cut the serving reads over,
+    and step 4 retired the denormalized table it was additive to.
 
     ``footprint`` is the item's real geometry rather than its bbox envelope,
-    and is NULL on every row the step-1 backfill writes because
-    ``imagery_snapshots`` never held item geometry. ``provenance`` — not
-    ``footprint IS NULL`` — is what says where a row came from.
+    and was NULL on every row the step-1 backfill wrote, because the table it
+    copied never held item geometry. ``provenance`` — not ``footprint IS
+    NULL`` — is what says where a row came from.
 
     Constraint names match ``alembic/versions/0015_scenes_and_parcel_scenes.py``
     exactly, so this table starts without the ORM/database name drift M7
@@ -440,20 +374,23 @@ class Scene(Base):
 
     VALID_SOURCES = ("naip", "landsat", "sentinel2", "usgs_topo")
 
-    #: ``snapshot`` — copied from an ``imagery_snapshots`` row, so ``item_id``
-    #: is the catalogued STAC id. ``mosaic_url`` — synthesized by parsing a
-    #: mosaic tile URL that no snapshot row served directly, so ``item_id`` is
-    #: a URL-derived candidate that has never been checked against a catalog.
-    #: ``enriched`` — was ``mosaic_url``, and a catalogued item whose image
-    #: asset href equals this row's ``cog_url`` exactly has since replaced the
-    #: candidate id and filled the item facts
+    #: ``snapshot`` — copied by the step-1 backfill out of the denormalized
+    #: table ADR 0001 retired, so ``item_id`` is the catalogued STAC id.
+    #: ``mosaic_url`` — synthesized by parsing a mosaic tile URL that no
+    #: backfilled row served directly, so ``item_id`` is a URL-derived
+    #: candidate that has never been checked against a catalog. ``enriched``
+    #: — was ``mosaic_url``, and a catalogued item whose image asset href
+    #: equals this row's ``cog_url`` exactly has since replaced the candidate
+    #: id and filled the item facts
     #: (``scripts/enrich_synthesized_scenes.py``). ``selection`` — written by
     #: the pipeline at selection time from the STAC item itself
-    #: (``reconcile_source_snapshots``' dual-write, ADR step 2), so it carries
-    #: ``footprint`` from birth and was never an ``imagery_snapshots`` copy.
+    #: (``reconcile_source_snapshots``, ADR steps 2 and 4), so it carries
+    #: ``footprint`` from birth and was never a copy of anything.
     #: "Is this ``item_id`` catalogued" is ``provenance <> 'mosaic_url'``;
-    #: "was this copied out of ``imagery_snapshots``" is
+    #: "was this backfilled rather than selected" is
     #: ``provenance = 'snapshot'``, which is also NORM-7's footprint queue.
+    #: **These four values outlive the table two of them refer to**: they are
+    #: a row's origin story, and a dropped table does not un-write a row.
     VALID_PROVENANCE = ("snapshot", "mosaic_url", "enriched", "selection")
 
     id: Mapped[uuid.UUID] = mapped_column(

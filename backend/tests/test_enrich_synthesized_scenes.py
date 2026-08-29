@@ -1,7 +1,8 @@
 """Tests for scripts/enrich_synthesized_scenes.py.
 
 The script lives outside the backend package, so it is loaded by path the way
-``test_backfill_scenes.py`` loads its subject. **No network:** the STAC layer
+``test_remove_uncovered_snapshots.py`` loads its subject. **No network:** the
+STAC layer
 is one injected object with two methods, and every test supplies a fake whose
 catalog is a dict. That is deliberate — a pass whose acceptance criterion is
 "the item's image href equals this row's ``cog_url``" is exactly the thing a

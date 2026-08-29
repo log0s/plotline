@@ -314,7 +314,6 @@ async def test_fetch_source_chunk_by_year_skips_failed_years() -> None:
             return_value=date(2021, 7, 1),
         ),
         patch("app.tasks.timeline.stac_service.extract_bbox_wkt", return_value=None),
-        patch("app.tasks.timeline.imagery_service.upsert_imagery_snapshot", return_value=True),
         patch("app.tasks.timeline.imagery_service.update_request_task"),
     ):
         count = await _fetch_source(
@@ -1014,8 +1013,11 @@ async def test_fetch_source_persist_failure_marks_task_failed() -> None:
         ),
         patch("app.tasks.timeline.stac_service.extract_thumbnail_url", return_value=None),
         patch("app.tasks.timeline.stac_service.extract_bbox_wkt", return_value=None),
+        # Persistence is one call since ADR step 4: the reconcile writes the
+        # scenes and parcel_scenes rows and commits them. A failure there is
+        # what "the persist step exploded" now looks like.
         patch(
-            "app.tasks.timeline.imagery_service.upsert_imagery_snapshot",
+            "app.tasks.timeline.imagery_service.reconcile_source_snapshots",
             side_effect=RuntimeError("db exploded"),
         ),
         patch("app.tasks.timeline.imagery_service.update_request_task") as mock_update,
@@ -1560,17 +1562,17 @@ async def test_fetch_usgs_topo_skips_products_without_source_id() -> None:
             side_effect=lambda i: "" if i["id"] == "no-id" else "SRC-1",
         ),
         patch("app.tasks.timeline.topo_service.extract_bbox_wkt", return_value=None),
-        patch(
-            "app.tasks.timeline.imagery_service.upsert_imagery_snapshot", return_value=True
-        ) as mock_upsert,
-        patch("app.tasks.timeline.imagery_service.reconcile_source_snapshots"),
+        patch("app.tasks.timeline.imagery_service.reconcile_source_snapshots") as mock_reconcile,
         patch("app.tasks.timeline.imagery_service.update_request_task"),
     ):
         count = await _fetch_usgs_topo((-105, 39, -104, 40), parcel_id, req_id)
 
+    # Since ADR step 4 the loop stages selections and the reconcile writes
+    # them, so what the loop decided is read off the reconcile's argument
+    # rather than off a per-row upsert that no longer exists.
     assert count == 1
-    assert mock_upsert.call_count == 1
-    assert mock_upsert.call_args.kwargs["stac_item_id"] == "SRC-1"
+    selected = mock_reconcile.call_args.args[3]
+    assert [s.item_id for s in selected] == ["SRC-1"]
 
 
 @pytest.mark.asyncio
@@ -1615,19 +1617,16 @@ async def test_fetch_usgs_topo_skips_products_with_unparseable_date(
             side_effect=lambda i: f"https://example.com/{i['id']}.tif",
         ),
         patch("app.tasks.timeline.topo_service.extract_bbox_wkt", return_value=None),
-        patch(
-            "app.tasks.timeline.imagery_service.upsert_imagery_snapshot", return_value=True
-        ) as mock_upsert,
-        patch("app.tasks.timeline.imagery_service.reconcile_source_snapshots"),
+        patch("app.tasks.timeline.imagery_service.reconcile_source_snapshots") as mock_reconcile,
         patch("app.tasks.timeline.imagery_service.update_request_task"),
         caplog.at_level(logging.WARNING, logger="app.tasks.timeline"),
     ):
         count = await _fetch_usgs_topo((-105, 39, -104, 40), parcel_id, req_id)
 
     assert count == 1
-    assert mock_upsert.call_count == 1
-    assert mock_upsert.call_args.kwargs["stac_item_id"] == "SRC-GOOD"
-    assert mock_upsert.call_args.kwargs["capture_date"] == date(1965, 1, 1)
+    selected = mock_reconcile.call_args.args[3]
+    assert [s.item_id for s in selected] == ["SRC-GOOD"]
+    assert [s.capture_date for s in selected] == [date(1965, 1, 1)]
     assert "Skipping topo product with unparseable publicationDate" in caplog.text
 
 

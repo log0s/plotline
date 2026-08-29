@@ -1,4 +1,4 @@
-"""The serving read paths are served from parcel_scenes/scenes, not imagery_snapshots.
+"""The serving reads come from parcel_scenes joined to scenes.
 
 ADR 0001 step 3. **Scope, stated precisely because "every read site" is
 wrong:** these tests are about the *serving* reads —
@@ -10,14 +10,26 @@ wrong:** these tests are about the *serving* reads —
 * ``served_scene_bounds`` (the featured cards)
 * ``parcels_serving_source`` (``scripts/revalidate_landsat.py``)
 
-They are **not** about ``reconcile_source_snapshots``, which still reads
-``imagery_snapshots`` to diff this run's selection against what is stored, and
-still writes it. Dual-write continues through step 3; the old table is retired
-in step 4, and *that* is the step whose test standard is "no code touches it".
-Until then the standard here is **no serving path touches it**, which is what
-the fixture below is built to prove: it seeds rows that exist on one side
-only, in both directions, so a read that had silently kept its old source
-would serve the wrong set.
+**What step 4 took away from this file, and why that is not a weakening.**
+Step 3's standard was *no serving path touches the denormalized table*, and
+the fixture proved it by seeding rows on one side only, in both directions: a
+read that had silently kept its old source would have served the old-side-only
+row and missed the new-side-only one. Step 4 deleted the last code path to
+that table, so the old-side-only half of the fixture cannot be written any
+more — there is nothing to write it to. That direction of the proof is
+**frozen in the step-3 commits** (``b1acf9a``, and
+``docs/audits/2026-08-normalization/step3-parity-local.md``) and is not
+re-derivable here; re-deriving it was never the plan, because a cutover is
+proved once, while it is happening.
+
+What replaces it is a stronger and differently-shaped guard:
+``test_no_imagery_snapshots_references.py`` asserts that no file under
+``app/`` or ``scripts/`` so much as names the table. Step 3 needed a
+behavioural test because the table was still legitimately in use; step 4 can
+assert absence directly.
+
+The new-side-only row stays, and still earns its place: it is the row a read
+must produce, and a read pointed anywhere else cannot.
 """
 
 from __future__ import annotations
@@ -49,9 +61,10 @@ PS_NAIP = "cccccccc-0000-4000-8000-000000000002"
 PS_TOPO = "cccccccc-0000-4000-8000-000000000003"
 PS_NEW_ONLY = "cccccccc-0000-4000-8000-000000000004"
 
-# Present only in imagery_snapshots: no parcel_scenes row names it. A serving
-# read still pointed at the old table would return it.
-SNAPSHOT_ONLY_ID = "dddddddd-0000-4000-8000-000000000001"
+# The id space the API hands out is ``parcel_scenes.id``. This one belongs to
+# no row at all, and is what "an id from somewhere else" looks like now that
+# the somewhere-else table is gone.
+UNKNOWN_SERVED_ID = "dddddddd-0000-4000-8000-000000000001"
 
 GOLDEN = Path(__file__).parent / "fixtures" / "step3_served_shape.json"
 
@@ -168,8 +181,7 @@ def served(db: Session) -> Session:
         capture_date="1965-01-01",
         cog_url="https://example.com/topo-1965.tif",
     )
-    # The new-side-only row: a served period with no imagery_snapshots row at
-    # all. A serving read on the old table cannot produce it.
+    # A served period that exists only because ``parcel_scenes`` says so.
     _scene(
         db,
         SCENE_NEW_ONLY,
@@ -193,17 +205,6 @@ def served(db: Session) -> Session:
     _parcel_scene(db, PS_TOPO, source="usgs_topo", group_key="1960s", scene_id=SCENE_TOPO)
     _parcel_scene(db, PS_NEW_ONLY, source="sentinel2", group_key="2024", scene_id=SCENE_NEW_ONLY)
 
-    # The old-side-only row: an imagery_snapshots row no parcel_scenes row
-    # names. A serving read on the new tables cannot produce it.
-    db.execute(
-        text(
-            "INSERT INTO imagery_snapshots (id, parcel_id, source, capture_date,"
-            " stac_item_id, stac_collection, cog_url)"
-            " VALUES (:id, :pid, 'landsat', '1999-06-01', 'LT05_L2SP_1999',"
-            " 'landsat-c2-l2', 'https://example.com/landsat-1999.json')"
-        ),
-        {"id": SNAPSHOT_ONLY_ID, "pid": str(PARCEL_ID)},
-    )
     db.flush()
     return db
 
@@ -211,18 +212,12 @@ def served(db: Session) -> Session:
 # ── The five serving sites, each against a fixture that separates the tables ──
 
 
-def test_the_listing_serves_parcel_scenes_and_not_imagery_snapshots(served: Session) -> None:
+def test_the_listing_serves_every_parcel_scenes_row_in_capture_order(served: Session) -> None:
     rows = imagery_service.get_served_scenes(served, PARCEL_ID)
 
     ids = [str(r.id) for r in rows]
     assert ids == [PS_TOPO, PS_LANDSAT, PS_NAIP, PS_NEW_ONLY], "capture_date ASC"
-
-    # The row that exists only in parcel_scenes is served ...
     assert "S2A_new_only_2024" in {r.stac_item_id for r in rows}
-    # ... and the row that exists only in imagery_snapshots is not. Pointing
-    # this read back at the old table fails both assertions at once.
-    assert "LT05_L2SP_1999" not in {r.stac_item_id for r in rows}
-    assert SNAPSHOT_ONLY_ID not in ids
 
 
 def test_the_listing_filters_read_the_new_tables_columns(served: Session) -> None:
@@ -235,14 +230,14 @@ def test_the_listing_filters_read_the_new_tables_columns(served: Session) -> Non
     assert [str(r.id) for r in windowed] == [PS_LANDSAT, PS_NAIP]
 
 
-def test_by_id_resolves_a_parcel_scenes_id_and_never_a_snapshot_id(served: Session) -> None:
+def test_by_id_resolves_a_parcel_scenes_id_and_nothing_else(served: Session) -> None:
     row = imagery_service.get_served_scene_by_id(served, uuid.UUID(PS_NEW_ONLY))
     assert row is not None
     assert row.stac_item_id == "S2A_new_only_2024"
 
-    # The Titiler callback's id space moved with the listing's: an
-    # imagery_snapshots id is not resolvable any more.
-    assert imagery_service.get_served_scene_by_id(served, uuid.UUID(SNAPSHOT_ONLY_ID)) is None
+    # The Titiler callback resolves the same id space the listing hands out,
+    # and an id from outside it is None rather than an error.
+    assert imagery_service.get_served_scene_by_id(served, uuid.UUID(UNKNOWN_SERVED_ID)) is None
 
 
 def test_count_counts_served_periods_not_scenes(served: Session) -> None:
@@ -251,18 +246,13 @@ def test_count_counts_served_periods_not_scenes(served: Session) -> None:
     assert imagery_service.count_served_scenes(served, PARCEL_ID, "naip") == 1
     assert len(imagery_service.get_served_scenes(served, PARCEL_ID, source="naip")) == 1
 
-    # landsat has one parcel_scenes row and two imagery_snapshots-side items
-    # (the 2020 one and the old-side-only 1999 one). Counting the old table
-    # would say 2.
     assert imagery_service.count_served_scenes(served, PARCEL_ID, "landsat") == 1
     assert imagery_service.count_served_scenes(served, PARCEL_ID, "sentinel2") == 1
 
 
 def test_featured_bounds_come_from_parcel_scenes(served: Session) -> None:
     bounds = imagery_service.served_scene_bounds(served, [str(PARCEL_ID)])
-    # Earliest is the 1965 topo row and latest the 2024 sentinel2 row, both of
-    # which have a parcel_scenes row; the 1999 snapshot-only row would have
-    # been the earliest had the old table been read.
+    # Earliest is the 1965 topo row and latest the 2024 sentinel2 row.
     assert bounds[str(PARCEL_ID)] == (PS_TOPO, PS_NEW_ONLY)
 
 
@@ -338,31 +328,13 @@ def test_the_served_row_shape_is_byte_identical_to_the_frozen_capture(
     assert _freeze(imagery_service.get_served_scenes(served, PARCEL_ID)) == frozen
 
 
-# ── Step 4's measurement hook ─────────────────────────────────────────────────
-
-
-def test_the_reconcilers_read_of_imagery_snapshots_is_logged(
-    served: Session, caplog: pytest.LogCaptureFixture
-) -> None:
-    """The one legitimate reader left names itself, so step 4 can count it.
-
-    ADR 0001 step 4 retires ``imagery_snapshots`` after a cooling period with
-    no reads, *measured*. This event is the naming half of that measurement:
-    after the step-3 cutover the only application read is the reconciler's
-    existing-rows pull, so any ``imagery_snapshots_read`` carrying a different
-    ``caller`` is a reader that should not exist. It cannot see an
-    uninstrumented read — ``scripts/snapshot_reads.py`` and
-    ``pg_stat_user_tables`` are what close that gap.
-    """
-    with caplog.at_level("INFO", logger="app.services.imagery"):
-        imagery_service.reconcile_source_snapshots(
-            served,
-            PARCEL_ID,
-            "landsat",
-            [("LC08_L2SP_2020", date(2020, 7, 4))],
-        )
-
-    reads = [r for r in caplog.records if r.msg == "imagery_snapshots_read"]
-    assert len(reads) == 1
-    assert reads[0].caller == "reconcile_source_snapshots.existing_rows"  # type: ignore[attr-defined]
-    assert reads[0].source == "landsat"  # type: ignore[attr-defined]
+# ── The measurement hook that used to be here ─────────────────────────────────
+#
+# ``test_the_reconcilers_read_of_imagery_snapshots_is_logged`` asserted that
+# the one legitimate reader left after step 3 named itself, so a cooling period
+# could count it. Step 4's cutover deleted that reader, and the event with it:
+# there is no caller to name, and an event that never fires is not a
+# measurement. The counter half — ``scripts/snapshot_reads.py`` over
+# ``pg_stat_user_tables`` — is what carries the cooling claim now, and it is
+# stronger unaided than it was as half of a pair, because the expected value it
+# reports is zero from anything rather than "only the reconciler".

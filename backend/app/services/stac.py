@@ -296,7 +296,7 @@ _BLOB_HOST_SUFFIX = ".blob.core.windows.net"
 # write itself: a stored cog_url / additional_cog_urls row, a STAC asset href
 # out of a search response, a TNM product URL. Anything else is refused
 # before it reaches httpx or Titiler's ``url=``. Derived from production on
-# 2026-08-22 (distinct hosts over imagery_snapshots.cog_url,
+# 2026-08-22 (distinct hosts over the served rows' cog_url,
 # additional_cog_urls and thumbnail_url — security audit REMEDIATION-1.md §4)
 # plus the Landsat band container, whose hrefs arrive inside STAC items rather
 # than rows. Adding a source means adding its host here, deliberately.

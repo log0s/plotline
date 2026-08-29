@@ -3,8 +3,8 @@
 
 The STAC enrichment pass STATUS.md NORM-7 names, and the "enrichment-first"
 half of `STEP1-PROD-REPORT.md` §9. Step 1's backfill synthesized one
-``scenes`` row per NAIP mosaic tile URL that no ``imagery_snapshots`` row
-served directly (88 rows locally, 505 in production). Each carries
+``scenes`` row per NAIP mosaic tile URL that no denormalized row served
+directly (88 rows locally, 505 in production). Each carries
 ``provenance = 'mosaic_url'``, an ``item_id`` parsed out of the URL, and NULL
 ``footprint`` / ``bbox`` / ``resolution_m``. This script fetches the real
 item and fills them in, so ``(collection, item_id)`` becomes a trustworthy
@@ -106,9 +106,9 @@ logger = logging.getLogger("enrich_synthesized_scenes")
 # is written, except a merge's repointed parcel_scenes.mosaic_scene_ids.
 QUEUE_PROVENANCE = "mosaic_url"
 
-# What an enriched row becomes. Not 'snapshot': that value means "copied from
-# an imagery_snapshots row", which an enriched row never was — see migration
-# 0016's docstring for the whole argument.
+# What an enriched row becomes. Not 'snapshot': that value means "copied by
+# the step-1 backfill out of the denormalized table", which an enriched row
+# never was — see migration 0016's docstring for the whole argument.
 ENRICHED_PROVENANCE = "enriched"
 
 # The buffer app/tasks/timeline.py:1570 searches NAIP with. Reusing it is what
@@ -144,9 +144,13 @@ def _is_postgres(db: Session) -> bool:
 def _id_array(value: Any) -> list[str]:
     """Normalise ``mosaic_scene_ids`` across Postgres uuid[] and SQLite JSON.
 
-    The same split ``backfill_scenes._extra_urls`` makes for ``text[]``: the
-    test database stores the array as the JSON literal
+    The test database stores the array as the JSON literal
     ``ParcelScene.mosaic_scene_ids``' sqlite variant reads.
+
+    A third copy of this split, after ``imagery.decode_mosaic_scene_ids`` was
+    made public for ``remove_uncovered_snapshots.py``. Left as it is because
+    this pass has already run everywhere it will ever run; folding it in is a
+    change to a finished script for no behavioural gain. STATUS.md NORM-34.
     """
     if value is None:
         return []

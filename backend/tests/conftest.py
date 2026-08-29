@@ -177,33 +177,29 @@ def _create_test_tables() -> None:
                 ON timeline_task_years (task_id)
             """)
         )
-        conn.execute(
-            text("""
-                CREATE TABLE IF NOT EXISTS imagery_snapshots (
-                    id                    TEXT PRIMARY KEY,
-                    parcel_id             TEXT NOT NULL REFERENCES parcels(id),
-                    source                TEXT NOT NULL
-                        CHECK (source IN ('naip', 'landsat', 'sentinel2', 'usgs_topo')),
-                    capture_date          TEXT NOT NULL,
-                    stac_item_id          TEXT NOT NULL,
-                    stac_collection       TEXT NOT NULL,
-                    bbox                  TEXT,
-                    cog_url               TEXT NOT NULL,
-                    additional_cog_urls   TEXT,
-                    thumbnail_url         TEXT,
-                    resolution_m          REAL,
-                    cloud_cover_pct       REAL,
-                    created_at            TEXT DEFAULT (datetime('now')),
-                    UNIQUE (parcel_id, stac_item_id)
-                )
-            """)
-        )
+        # The denormalized `imagery_snapshots` table was mirrored here until
+        # ADR 0001 step 4. It is gone from this schema in the same commit that
+        # deleted the last code path touching it, and *before* migration 0019
+        # drops it in PostgreSQL — deliberately, because that ordering makes
+        # the test database the stricter of the two: any surviving access
+        # fails with "no such table" here, loudly, in CI, rather than
+        # succeeding locally against a table production is about to lose.
         conn.execute(
             text("""
                 -- `footprint` and `bbox` are geometry(POLYGON,4326) on
-                -- PostgreSQL and plain TEXT here, the same way
-                -- imagery_snapshots.bbox already is: no spatial SQL runs
-                -- against this database.
+                -- PostgreSQL and plain TEXT here: no spatial SQL runs against
+                -- this database.
+                --
+                -- NORM-29's rule — the class a test asserts must be derived
+                -- from the real layer, not agreed with the code under test —
+                -- is why 0018's `CHECK (ST_IsValid(footprint))` is NOT
+                -- mirrored below. SQLite has no PostGIS, so any imitation of
+                -- it here would be a predicate this file invented, and a test
+                -- passing against it would prove that this file agrees with
+                -- itself. The constraint is exercised against a real server in
+                -- `test_migrations_postgres.py` instead. The limitation is
+                -- real and stated: a footprint that PostGIS would reject can
+                -- be inserted in this database.
                 CREATE TABLE IF NOT EXISTS scenes (
                     id               TEXT PRIMARY KEY,
                     source           TEXT NOT NULL
@@ -349,7 +345,6 @@ _LEDGER_TEST_TABLES = (
     "timeline_task_years",
     "parcel_scenes",
     "scenes",
-    "imagery_snapshots",
     "census_snapshots",
     "timeline_request_tasks",
     "timeline_requests",
@@ -363,10 +358,15 @@ def committing_db() -> Generator[sessionmaker[Session], None, None]:
 
     The ``db`` fixture wraps each test in a transaction it rolls back, which
     the per-year ledger tests cannot use: the fetch loops open their own
-    ``SessionLocal()`` and the upserts commit for themselves — that commit is
+    ``SessionLocal()`` and the reconcile commits for itself — that commit is
     the thing under test, since an ``ok`` ledger row is supposed to land in
-    the same transaction as its snapshot. So this hands out real sessions and
-    cleans up by deleting afterwards.
+    the same transaction as the served row it claims. So this hands out real
+    sessions and cleans up by deleting afterwards.
+
+    ADR 0001 step 4 made that commit *the only one* in a source's persist
+    loop, which is what these tests are now watching: before it, an ``ok``
+    committed early with a per-row snapshot upsert and the served row landed
+    later.
     """
     _truncate_ledger_tables()
     try:
@@ -432,11 +432,18 @@ def seed_served_scene(
     """Seed one served period in the normalized shape, and return its id.
 
     The id the serving reads hand out is ``parcel_scenes.id`` since the ADR
-    0001 step-3 cutover, so a test that needs "the id of a snapshot this
-    parcel serves" has to write ``scenes`` and ``parcel_scenes`` rather than
-    ``imagery_snapshots``. Raw SQL for the reason every other seed here uses
+    0001 step-3 cutover, so a test that needs "the id of a period this parcel
+    serves" writes ``scenes`` and ``parcel_scenes``. Since step 4 there is no
+    other shape to write. Raw SQL for the reason every other seed here uses
     it: the ORM's UUID and geometry handling do not match this TEXT-typed
     SQLite database.
+
+    **Every seed goes through this helper, and that is the finding it
+    embodies** (STATUS.md NORM-20): a test that seeds storage directly proves
+    only that the read it exercises reads the table the fixture wrote, and
+    says nothing once the storage moves. Step 3 broke 23 tests learning that;
+    step 4 moved storage again and broke far fewer, because the seeds had
+    been centralised here in between.
 
     ``group_key`` defaults to the year, which is what every source but
     ``usgs_topo`` groups by; pass ``'1950s'`` for a topo row.

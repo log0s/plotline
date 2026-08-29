@@ -4,7 +4,8 @@
 One pass over three findings, because all three are the same rows:
 
 * **NORM-7's deferred half.** Step 1's backfill built one ``scenes`` row per
-  distinct ``imagery_snapshots`` item and copied what that table held. It never
+  distinct item of the denormalized table and copied what that table held.
+  It never
   held item geometry, so every ``snapshot`` row's ``footprint`` is NULL — and
   ADR rule 4's promise, "the next geometry audit is a query over ``scenes``,
   not a refetch", is false until they are filled.
@@ -59,7 +60,8 @@ with the row left exactly as it is:
 * ``capture_date`` — **never written.** A disagreement is reported, the same
   rule the mosaic pass used.
 * ``provenance`` — **never written.** ``'snapshot'`` is frozen vocabulary
-  meaning "copied from an ``imagery_snapshots`` row", which stays true of an
+  meaning "copied by the step-1 backfill out of the denormalized table",
+  which stays true of an
   enriched-in-place row; relabelling it ``'enriched'`` would be a lie about
   where the row came from *and* would erase NORM-7's queue definition. The
   done-marker is ``footprint IS NOT NULL``, so the queue is:

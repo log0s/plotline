@@ -1,5 +1,21 @@
 #!/usr/bin/env python3
-"""Delete named imagery_snapshots rows whose imagery does not cover the parcel.
+"""Delete named served rows whose imagery does not cover the parcel.
+
+Reads ``parcel_scenes`` joined to ``scenes`` and deletes the ``parcel_scenes``
+row; the ``scenes`` rows are left alone, because a scene that does not cover
+*this* parcel is a perfectly good catalogued item that other parcels may
+legitimately serve — the wrong thing is the selection, not the item. ADR 0001
+step 4 moved this off the denormalized table it was written against; the
+condemnation rule and the evidence standard below are unchanged.
+
+**A cheaper evidence path now exists and this script deliberately does not
+take it.** ``scenes.footprint`` holds real item geometry for every row written
+since step 2 and for the enriched backfill, so ``ST_Contains(footprint,
+point)`` could condemn a row without a network call. That is a different tool
+with a different failure mode — it trusts stored geometry, where this one
+re-derives the answer from Planetary Computer — and swapping the evidence
+standard inside a deletion tool is not a migration. Recorded as a follow-up in
+STATUS.md rather than built here.
 
 The NAIP path selects tiles by how much of the *viewport* they cover, so a
 year with no covering tile in the collection is served as the nearest
@@ -38,7 +54,6 @@ import logging
 import sys
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -47,6 +62,7 @@ from sqlalchemy.orm import Session
 
 from app.logging_config import configure_script_logging
 from app.services import stac as stac_service
+from app.services.imagery import decode_mosaic_scene_ids
 
 logger = logging.getLogger("remove_uncovered_snapshots")
 
@@ -81,31 +97,48 @@ class Row:
 # ── Row lookup ────────────────────────────────────────────────────────────────
 
 
-def _extra_urls(value: Any) -> list[str]:
-    """Normalise ``additional_cog_urls`` across Postgres text[] and SQLite text."""
-    if value is None:
+def _mosaic_urls(db: Session, mosaic_scene_ids: object) -> list[str]:
+    """The ``cog_url`` of each additional tile, in ``mosaic_scene_ids`` order.
+
+    The normalized shape stores references where the old one stored a URL
+    array, so the array this script condemns against is reconstructed the same
+    way the serving read reconstructs it (``imagery._mosaic_cog_urls``): one
+    query, then ordered in Python. Order matters here only for the printed
+    dry-run output, but a reference that resolves to no row is a **refusal**
+    rather than a dropped entry — the serving path can render a mosaic with a
+    tile missing, and a deletion tool cannot condemn one on partial evidence.
+    """
+    ids = decode_mosaic_scene_ids(mosaic_scene_ids)
+    if not ids:
         return []
-    if isinstance(value, list):
-        return [str(v) for v in value]
-    raw = str(value).strip()
-    if not raw:
-        return []
-    if raw.startswith("{") and raw.endswith("}"):
-        raw = raw[1:-1]
-    return [part.strip().strip('"') for part in raw.split(",") if part.strip()]
+    placeholders = ",".join(f":s{i}" for i in range(len(ids)))
+    params = {f"s{i}": sid for i, sid in enumerate(ids)}
+    by_id = {
+        str(sid): url
+        for sid, url in db.execute(
+            text(f"SELECT id, cog_url FROM scenes WHERE id IN ({placeholders})"),  # noqa: S608
+            params,
+        ).all()
+    }
+    missing = [sid for sid in ids if sid not in by_id]
+    if missing:
+        raise EvidenceError(f"mosaic references resolve to no scenes row: {', '.join(missing)}")
+    return [by_id[sid] for sid in ids]
 
 
 def find_target_rows(db: Session, target: Target) -> list[Row]:
     """Rows for one (parcel, source, year), newest capture first."""
     rows = db.execute(
         text(
-            "SELECT i.id, i.parcel_id, i.source, i.capture_date, i.stac_item_id,"
-            " i.stac_collection, i.cog_url, i.additional_cog_urls, i.created_at,"
+            "SELECT ps.id, ps.parcel_id, ps.source, ps.group_key, ps.selected_at,"
+            " ps.mosaic_scene_ids, s.capture_date, s.item_id, s.collection, s.cog_url,"
             " p.address, p.latitude, p.longitude"
-            " FROM imagery_snapshots i JOIN parcels p ON p.id = i.parcel_id"
-            " WHERE i.parcel_id = :parcel_id AND i.source = :source"
-            " AND i.capture_date >= :start AND i.capture_date < :end"
-            " ORDER BY i.capture_date DESC"
+            " FROM parcel_scenes ps"
+            " JOIN scenes s ON s.id = ps.scene_id"
+            " JOIN parcels p ON p.id = ps.parcel_id"
+            " WHERE ps.parcel_id = :parcel_id AND ps.source = :source"
+            " AND s.capture_date >= :start AND s.capture_date < :end"
+            " ORDER BY s.capture_date DESC"
         ),
         {
             "parcel_id": target.parcel_id,
@@ -117,6 +150,7 @@ def find_target_rows(db: Session, target: Target) -> list[Row]:
 
     found = []
     for row in rows:
+        mosaic = _mosaic_urls(db, row.mosaic_scene_ids)
         found.append(
             Row(
                 id=str(row.id),
@@ -127,19 +161,20 @@ def find_target_rows(db: Session, target: Target) -> list[Row]:
                 source=row.source,
                 year=target.year,
                 capture_date=str(row.capture_date),
-                stac_item_id=row.stac_item_id,
-                stac_collection=row.stac_collection,
+                stac_item_id=row.item_id,
+                stac_collection=row.collection,
                 cog_url=row.cog_url,
-                additional_cog_urls=_extra_urls(row.additional_cog_urls),
+                additional_cog_urls=mosaic,
             )
         )
         print(
             f"  {row.id}  {target.source} {target.year}"
             f"  capture_date={row.capture_date}"
-            f"  stac_item_id={row.stac_item_id}"
-            f"  created_at={row.created_at}"
+            f"  group_key={row.group_key}"
+            f"  stac_item_id={row.item_id}"
+            f"  selected_at={row.selected_at}"
         )
-        for url in _extra_urls(row.additional_cog_urls):
+        for url in mosaic:
             print(f"      + mosaic tile {url}")
     return found
 
@@ -227,16 +262,22 @@ async def verify_uncovered(row: Row) -> str:
 
 
 def delete_rows(db: Session, condemned: list[tuple[Row, str]]) -> int:
-    """Delete every condemned row in one transaction, logging each."""
+    """Delete every condemned row in one transaction, logging each.
+
+    Deletes the ``parcel_scenes`` row only. Its ``scenes`` row stays: the item
+    is catalogued and may be legitimately served elsewhere, and orphaning
+    ``scenes`` rows on a per-parcel deletion is how the one-row-per-item
+    promise gets quietly broken.
+    """
     for row, reason in condemned:
         db.execute(
-            text("DELETE FROM imagery_snapshots WHERE id = :id"),
+            text("DELETE FROM parcel_scenes WHERE id = :id"),
             {"id": row.id},
         )
         logger.info(
-            "Deleted uncovered imagery snapshot",
+            "Deleted uncovered served scene",
             extra={
-                "snapshot_id": row.id,
+                "parcel_scene_id": row.id,
                 "parcel_id": row.parcel_id,
                 "source": row.source,
                 "year": row.year,

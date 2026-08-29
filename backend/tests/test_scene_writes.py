@@ -1,11 +1,22 @@
-"""Tests for step 2 of the imagery-normalization ADR: the dual-write.
+"""The selection write path: ``scenes`` and ``parcel_scenes``.
 
-``reconcile_source_snapshots`` writes ``scenes`` and ``parcel_scenes``
-alongside ``imagery_snapshots``. These tests are written to the delete-the-fix
-standard: each names the line whose removal makes it fail, and each was
-confirmed failing with that line removed.
+Steps 2 and 4 of the imagery-normalization ADR. Step 2 made
+``reconcile_source_snapshots`` write these two tables *alongside* the
+denormalized one, and this file was ``test_scene_dual_write.py``; step 4
+deleted the old write, so what is left is not a dual-write and the file is
+named for what it tests. Every test is written to the delete-the-fix standard:
+each names the line whose removal makes it fail, and each was confirmed
+failing with that line removed.
 
-No read path is exercised here and none is changed — step 3 owns the cutover.
+**What step 4 changed here, beyond deleting assertions.** Step 2's parity
+tests compared the two shapes against each other — the strongest check
+available while both existed, and worthless once one does. They are replaced
+by tests that assert the served rows directly against what the fetch loop
+selected, which is the property parity was standing in for.
+
+The transactionality test at the bottom is the one that got *stronger*: it now
+covers the ledger as well, because step 4 folded the ``ok`` rows into the same
+commit (STATUS.md NORM-14).
 """
 
 from __future__ import annotations
@@ -15,7 +26,7 @@ import uuid
 from contextlib import ExitStack
 from datetime import date
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import Uuid, bindparam, text
@@ -23,7 +34,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.services.imagery import (
     SelectedScene,
-    encode_group_key,
     normalize_resolution_m,
     reconcile_source_snapshots,
 )
@@ -41,32 +51,6 @@ def _insert_parcel(db: Session, parcel_id: uuid.UUID) -> None:
             " VALUES (:id, '1 Test St', 39.5, -104.5)"
         ),
         {"id": str(parcel_id)},
-    )
-
-
-def _insert_snapshot(
-    db: Session,
-    parcel_id: uuid.UUID,
-    source: str,
-    item_id: str,
-    capture_date: str,
-    collection: str = "landsat-c2-l2",
-) -> None:
-    db.execute(
-        text(
-            "INSERT INTO imagery_snapshots"
-            " (id, parcel_id, source, capture_date, stac_item_id, stac_collection, cog_url)"
-            " VALUES (:id, :p, :source, :capture_date, :item_id, :collection, :cog_url)"
-        ),
-        {
-            "id": str(uuid.uuid4()),
-            "p": str(parcel_id),
-            "source": source,
-            "capture_date": capture_date,
-            "item_id": item_id,
-            "collection": collection,
-            "cog_url": f"https://example.com/{item_id}.tif",
-        },
     )
 
 
@@ -173,17 +157,17 @@ async def _run_naip(
     parcel_id: uuid.UUID,
     request_id: uuid.UUID,
     items: list[Any],
-    *,
-    snapshot_writes: Any = None,
 ) -> int:
     """Drive the real NAIP fetch loop over a fixed item list.
 
-    ``snapshot_writes`` replaces ``upsert_imagery_snapshot`` with the supplied
-    mock. Only the mosaic test uses it, and only because
-    ``additional_cog_urls`` is a PostgreSQL array that SQLite cannot bind — a
-    limitation of the test database, not of the write. The mock lets that test
-    assert what the URL array *would* hold and compare it against the
-    reference array the dual-write did write.
+    Step 2's version took a ``snapshot_writes`` mock, because
+    ``additional_cog_urls`` was a PostgreSQL array SQLite could not bind and
+    the mosaic test had to read the URL array off the call rather than out of
+    the database. Step 4 deleted that column with its table; a mosaic is
+    ``mosaic_scene_ids`` now, which SQLite stores as JSON, so the mock and the
+    ``extract_bbox_wkt`` patch that went with it are both gone — the write
+    path under test is PostGIS-free on SQLite by construction
+    (``_ensure_scene``'s ``_is_postgres`` branch).
     """
     from app.tasks.timeline import _fetch_source
 
@@ -205,20 +189,7 @@ async def _run_naip(
             "app.tasks.timeline.stac_service.filter_groups_containing_point",
             side_effect=lambda groups, lat, lng: (groups, []),
         ),
-        # The test database is SQLite and has no PostGIS, so a bbox WKT would
-        # reach ST_GeomFromEWKT in upsert_imagery_snapshot. The existing
-        # ledger harness patches the same call for the same reason; the
-        # item's `bbox` list is untouched, so the mosaic selector still sees
-        # real footprints to score coverage against.
-        patch("app.tasks.timeline.stac_service.extract_bbox_wkt", return_value=None),
     ]
-    if snapshot_writes is not None:
-        patches.append(
-            patch(
-                "app.tasks.timeline.imagery_service.upsert_imagery_snapshot",
-                snapshot_writes,
-            )
-        )
     with ExitStack() as stack:
         for p in patches:
             stack.enter_context(p)
@@ -228,20 +199,23 @@ async def _run_naip(
 
 
 @pytest.mark.asyncio
-async def test_a_pipeline_run_writes_both_shapes_in_agreement(
+async def test_a_pipeline_run_writes_the_periods_it_selected(
     committing_db: sessionmaker[Session],
 ) -> None:
-    """Parity, driven through the real fetch loop.
+    """The fetch loop's selection reaches ``parcel_scenes``, group for group.
 
-    Delete-the-fix, both directions: remove the ``_write_selection_shapes``
-    call in ``reconcile_source_snapshots`` and ``parcel_scenes`` is empty
-    while ``imagery_snapshots`` is not; remove the ``upsert_imagery_snapshot``
-    call in ``_search_and_persist_source`` and the reverse holds. Either way
-    the set comparison fails.
+    Step 2 asserted this as *parity* between two shapes, which was the
+    strongest check available while both existed and is not available now.
+    The property parity stood in for is this one: every group the selector
+    picked is a served row naming that group's item, and nothing else is.
+
+    Delete-the-fix: remove the ``_write_selection_shapes`` call in
+    ``reconcile_source_snapshots`` and ``parcel_scenes`` is empty while the
+    loop reports two items saved.
     """
     parcel_id, request_id = _seed_request(committing_db, ("naip",))
 
-    await _run_naip(
+    saved = await _run_naip(
         committing_db,
         parcel_id,
         request_id,
@@ -252,26 +226,16 @@ async def test_a_pipeline_run_writes_both_shapes_in_agreement(
     )
 
     with committing_db() as db:
-        snapshots = {
-            (r.source, encode_group_key("year", date.fromisoformat(str(r.capture_date)[:10]))): (
-                r.stac_collection,
-                r.stac_item_id,
-            )
-            for r in db.execute(
-                text(
-                    "SELECT source, capture_date, stac_collection, stac_item_id"
-                    " FROM imagery_snapshots WHERE parcel_id = :p"
-                ),
-                {"p": str(parcel_id)},
-            ).all()
-        }
         served = {
             (r.source, r.group_key): (r.collection, r.item_id)
             for r in _parcel_scene_rows(db, parcel_id)
         }
 
-    assert snapshots, "the fixture selected nothing; the test proves nothing"
-    assert served == snapshots
+    assert saved == 2, "the fixture selected nothing; the test proves nothing"
+    assert served == {
+        ("naip", "2021"): ("naip", "naip_2021_a"),
+        ("naip", "2022"): ("naip", "naip_2022_a"),
+    }
 
 
 @pytest.mark.asyncio
@@ -323,7 +287,6 @@ async def test_a_multi_tile_naip_year_catalogues_every_tile(
     parcel_id, request_id = _seed_request(committing_db, ("naip",))
     west = (-105.0, 39.0, -104.5, 40.0)
     east = (-104.5, 39.0, -104.0, 40.0)
-    snapshot_writes = MagicMock(return_value=True)
 
     await _run_naip(
         committing_db,
@@ -333,7 +296,6 @@ async def test_a_multi_tile_naip_year_catalogues_every_tile(
             _naip_item("naip_2021_west", "2021-07-01T00:00:00Z", west, 0.6),
             _naip_item("naip_2021_east", "2021-07-02T00:00:00Z", east, 0.6),
         ],
-        snapshot_writes=snapshot_writes,
     )
 
     with committing_db() as db:
@@ -357,11 +319,19 @@ async def test_a_multi_tile_naip_year_catalogues_every_tile(
         referenced = db.execute(
             text("SELECT cog_url FROM scenes WHERE id = :id"), {"id": mosaic[0]}
         ).scalar()
+        primary_url = db.execute(
+            text("SELECT cog_url FROM scenes WHERE id = :id"), {"id": str(rows[0].scene_id)}
+        ).scalar()
 
-    # The two representations of one mosaic name the same tile: the old
-    # shape's URL array and the new shape's scene references.
-    kwargs = snapshot_writes.call_args.kwargs
-    assert kwargs["additional_cog_urls"] == [referenced]
+    # The reference resolves to the *other* tile — the one that is not the
+    # primary — at its real URL. Step 2 compared this against the old shape's
+    # ``additional_cog_urls``; there is one representation now, so the check
+    # is that it names a real tile and not the primary again.
+    assert referenced in {
+        "https://naip.example/naip_2021_west.tif",
+        "https://naip.example/naip_2021_east.tif",
+    }
+    assert referenced != primary_url
 
 
 @pytest.mark.asyncio
@@ -370,11 +340,10 @@ async def test_naip_resolution_is_the_items_gsd_not_the_source_constant(
 ) -> None:
     """NORM-9 and NORM-11 at the pipeline, both shapes.
 
-    Delete-the-fix: put ``source_cfg["resolution_m"]`` back in place of
-    ``selection.resolution_m`` at the ``upsert_imagery_snapshot`` call, or
-    drop ``normalize_resolution_m`` from ``from_stac_item``, and this fails.
-    The fixture's gsd is the exact noisy double Planetary Computer served for
-    ``az_m_3311151_nw_12_.6_20170604_20171128``.
+    Delete-the-fix: drop ``normalize_resolution_m`` from ``from_stac_item``,
+    or make ``default_resolution_m`` win over the item's ``gsd`` there, and
+    this fails. The fixture's gsd is the exact noisy double Planetary Computer
+    served for ``az_m_3311151_nw_12_.6_20170604_20171128``.
     """
     parcel_id, request_id = _seed_request(committing_db, ("naip",))
     await _run_naip(
@@ -385,16 +354,11 @@ async def test_naip_resolution_is_the_items_gsd_not_the_source_constant(
     )
 
     with committing_db() as db:
-        snapshot_res = db.execute(
-            text("SELECT resolution_m FROM imagery_snapshots WHERE parcel_id = :p"),
-            {"p": str(parcel_id)},
-        ).scalar()
         scene_res = db.execute(
             text("SELECT resolution_m FROM scenes WHERE collection = 'naip'")
         ).scalar()
 
-    assert snapshot_res == 0.6, "the constant 1.0 must not win over the item's gsd"
-    assert scene_res == 0.6, "and the two shapes must agree about it"
+    assert scene_res == 0.6, "the constant 1.0 must not win over the item's gsd"
 
 
 def test_the_rounding_rule_normalizes_every_observed_gsd() -> None:
@@ -494,18 +458,16 @@ def test_a_changed_selection_updates_the_row_in_place(db: Session) -> None:
     """
     parcel_id = uuid.uuid4()
     _insert_parcel(db, parcel_id)
-    _insert_snapshot(db, parcel_id, "landsat", "LT05_A_1987", "1987-06-01")
     reconcile_source_snapshots(db, parcel_id, "landsat", [_scene("LT05_A_1987", date(1987, 6, 1))])
     before = _parcel_scene_rows(db, parcel_id)[0]
 
     # The Landsat re-validation case: a different item for the same year.
-    _insert_snapshot(db, parcel_id, "landsat", "LT05_B_1987", "1987-07-04")
-    deleted = reconcile_source_snapshots(
+    superseded = reconcile_source_snapshots(
         db, parcel_id, "landsat", [_scene("LT05_B_1987", date(1987, 7, 4))]
     )
 
     after_rows = _parcel_scene_rows(db, parcel_id)
-    assert deleted == 1
+    assert superseded == 1
     assert len(after_rows) == 1
     after = after_rows[0]
     assert str(after.id) == str(before.id), "same selection row, not delete-and-reinsert"
@@ -535,20 +497,17 @@ def test_an_unchanged_selection_leaves_selected_at_alone(db: Session) -> None:
     assert first == second
 
 
-def test_a_group_absent_from_the_selection_survives_in_both_shapes(db: Session) -> None:
-    """The absent-group rule, mirrored. Delete-the-fix: drop the
-    ``if group_key in groups`` guard in ``reconcile_source_snapshots`` so an
-    absent group's row becomes stale — both assertions below then fail, which
-    is the point: the rule has to hold in both tables or they disagree.
+def test_a_group_absent_from_the_selection_survives(db: Session) -> None:
+    """The absent-group rule. Delete-the-fix: drop the ``if group_key in
+    groups`` guard in ``reconcile_source_snapshots`` and the 1987 row is
+    counted superseded, so the run reports 1 rather than 0.
 
     A year missing from a run usually means that chunk's search failed
-    (NORM-3), and deleting on that basis turns a transient upstream error into
-    permanent loss — in either table.
+    (NORM-3), and deleting — or now, silently repointing — on that basis turns
+    a transient upstream error into permanent loss.
     """
     parcel_id = uuid.uuid4()
     _insert_parcel(db, parcel_id)
-    _insert_snapshot(db, parcel_id, "landsat", "LT05_1987", "1987-06-01")
-    _insert_snapshot(db, parcel_id, "landsat", "LC08_2015", "2015-06-01")
     reconcile_source_snapshots(
         db,
         parcel_id,
@@ -558,26 +517,25 @@ def test_a_group_absent_from_the_selection_survives_in_both_shapes(db: Session) 
     assert len(_parcel_scene_rows(db, parcel_id)) == 2
 
     # Only 2015 came back this run.
-    deleted = reconcile_source_snapshots(
+    superseded = reconcile_source_snapshots(
         db, parcel_id, "landsat", [_scene("LC08_2015", date(2015, 6, 1))]
     )
 
-    assert deleted == 0
-    kept = {r.stac_item_id for r in db.execute(text("SELECT stac_item_id FROM imagery_snapshots"))}
-    assert kept == {"LT05_1987", "LC08_2015"}
+    assert superseded == 0
+    assert {r.item_id for r in _parcel_scene_rows(db, parcel_id)} == {"LT05_1987", "LC08_2015"}
     assert {r.group_key for r in _parcel_scene_rows(db, parcel_id)} == {"1987", "2015"}
 
 
-def test_a_suppressed_delete_is_mirrored_into_parcel_scenes(db: Session) -> None:
+def test_a_suppressed_group_loses_its_served_row(db: Session) -> None:
     """Delete-the-fix: drop the ``_delete_parcel_scene_for_item`` loop.
 
     The NAIP point-coverage gate is the only thing that may remove a served
-    row for a group this run did not select. Removing it from one table and
-    not the other is the disagreement the two shapes must be unable to have.
+    row for a group this run did not select, and since step 4 this is the
+    **only** delete the reconciler issues at all — every other supersession is
+    an update in place.
     """
     parcel_id = uuid.uuid4()
     _insert_parcel(db, parcel_id)
-    _insert_snapshot(db, parcel_id, "naip", "naip_2023_tile", "2023-08-01", collection="naip")
     reconcile_source_snapshots(
         db,
         parcel_id,
@@ -596,7 +554,7 @@ def test_a_suppressed_delete_is_mirrored_into_parcel_scenes(db: Session) -> None
 
     # This run selected nothing and positively identified the tile as not
     # covering the parcel.
-    deleted = reconcile_source_snapshots(
+    superseded = reconcile_source_snapshots(
         db,
         parcel_id,
         "naip",
@@ -604,47 +562,143 @@ def test_a_suppressed_delete_is_mirrored_into_parcel_scenes(db: Session) -> None
         suppressed={"2023": {"naip_2023_tile"}},
     )
 
-    assert deleted == 1
-    assert db.execute(text("SELECT COUNT(*) FROM imagery_snapshots")).scalar() == 0
+    assert superseded == 1
     assert _parcel_scene_rows(db, parcel_id) == []
     # The scene itself stays catalogued: it exists, it just does not serve
     # this parcel.
     assert db.execute(text("SELECT COUNT(*) FROM scenes")).scalar() == 1
 
 
-# ── Transactionality ──────────────────────────────────────────────────────────
+# ── Transactionality: NORM-14, closed ─────────────────────────────────────────
 
 
-def test_a_failure_before_the_parcel_scenes_write_commits_neither(
+def test_a_failure_before_the_parcel_scenes_write_commits_nothing(
     committing_db: sessionmaker[Session],
 ) -> None:
-    """Delete-the-fix: move ``db.commit()`` back above the dual-write.
+    """Delete-the-fix: move ``db.commit()`` above ``_write_selection_shapes``.
 
-    The two shapes commit together or not at all. Observed from a *separate*
-    session, so "not committed" means not visible to anyone, not merely not
-    flushed.
+    Observed from a *separate* session, so "not committed" means not visible
+    to anyone rather than merely not flushed.
     """
     parcel_id = uuid.uuid4()
     with committing_db() as db:
         _insert_parcel(db, parcel_id)
-        _insert_snapshot(db, parcel_id, "landsat", "LT05_A_1987", "1987-06-01")
-        _insert_snapshot(db, parcel_id, "landsat", "LT05_B_1987", "1987-07-04")
-        db.commit()
+        reconcile_source_snapshots(
+            db, parcel_id, "landsat", [_scene("LT05_A_1987", date(1987, 6, 1))]
+        )
 
-    boom = RuntimeError("the dual-write failed")
+    boom = RuntimeError("the selection write failed")
     with (
-        pytest.raises(RuntimeError, match="dual-write"),
+        pytest.raises(RuntimeError, match="selection write"),
         patch("app.services.imagery._write_selection_shapes", side_effect=boom),
         committing_db() as db,
     ):
         reconcile_source_snapshots(
-            db, parcel_id, "landsat", [_scene("LT05_B_1987", date(1987, 7, 4))]
+            db,
+            parcel_id,
+            "landsat",
+            [_scene("LT05_A_1987", date(1987, 6, 1))],
+            suppressed={"1987": {"LT05_A_1987"}},
         )
 
     with committing_db() as db:
-        survivors = {
-            r.stac_item_id
-            for r in db.execute(text("SELECT stac_item_id FROM imagery_snapshots")).all()
+        rows = _parcel_scene_rows(db, parcel_id)
+        assert [r.item_id for r in rows] == ["LT05_A_1987"], (
+            "the suppressed delete must have rolled back with the failed write"
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_crash_in_the_persist_loop_commits_no_ok_ledger_row(
+    committing_db: sessionmaker[Session],
+) -> None:
+    """The NORM-14 resolution, asserted end to end through the fetch loop.
+
+    **What this replaces.** Until ADR step 4 the persist loop committed once
+    per group, inside ``upsert_imagery_snapshot``, and the ``ok`` ledger row
+    was written uncommitted just before it so the two landed together. That
+    made ``ok`` honest about *its own group* and left a window between the
+    loop and the reconcile: a crash there committed ``ok`` rows and snapshot
+    rows for the groups already done, with no ``parcel_scenes`` row for any of
+    them. NORM-14 accepted that window because the next run repaired it.
+
+    Step 4 deleted the per-row write and its commit. The ``ok`` rows now ride
+    the reconciler's transaction — the same one that writes the served rows —
+    so the window is not narrowed, it is **gone**: a crash anywhere before that
+    commit leaves the source exactly as the run found it.
+
+    Delete-the-fix: put a ``db.commit()`` back in the persist loop after
+    ``record_year_outcome`` and the ``ok`` row survives the crash, with no
+    served row to justify it — which is precisely the state the ledger must
+    never be able to reach.
+    """
+    parcel_id, request_id = _seed_request(committing_db, ("naip",))
+
+    boom = RuntimeError("the selection write failed")
+    with patch("app.services.imagery._write_selection_shapes", side_effect=boom):
+        # _fetch_source catches, marks the task failed and returns 0; the
+        # session's transaction is never committed.
+        saved = await _run_naip(
+            committing_db,
+            parcel_id,
+            request_id,
+            [
+                _naip_item("naip_2021_a", "2021-07-01T00:00:00Z", _BBOX, 0.6),
+                _naip_item("naip_2022_a", "2022-07-01T00:00:00Z", _BBOX, 0.3),
+            ],
+        )
+
+    assert saved == 0
+    with committing_db() as db:
+        assert _parcel_scene_rows(db, parcel_id) == []
+        outcomes = [
+            r.outcome
+            for r in db.execute(
+                text(
+                    "SELECT tty.outcome FROM timeline_task_years tty"
+                    " JOIN timeline_request_tasks t ON t.id = tty.task_id"
+                    " WHERE t.timeline_request_id = :r"
+                ).bindparams(bindparam("r", type_=Uuid())),
+                {"r": request_id},
+            ).all()
+        ]
+    assert "ok" not in outcomes, "an ok row committed for work that was rolled back"
+
+
+@pytest.mark.asyncio
+async def test_a_successful_run_commits_its_ok_rows_with_its_served_rows(
+    committing_db: sessionmaker[Session],
+) -> None:
+    """The other half: the transaction that rolls back together commits together.
+
+    A test that only proves "nothing is written on failure" is also passed by
+    code that never writes anything. This is the control.
+    """
+    parcel_id, request_id = _seed_request(committing_db, ("naip",))
+
+    await _run_naip(
+        committing_db,
+        parcel_id,
+        request_id,
+        [
+            _naip_item("naip_2021_a", "2021-07-01T00:00:00Z", _BBOX, 0.6),
+            _naip_item("naip_2022_a", "2022-07-01T00:00:00Z", _BBOX, 0.3),
+        ],
+    )
+
+    with committing_db() as db:
+        served = {r.group_key for r in _parcel_scene_rows(db, parcel_id)}
+        ok_groups = {
+            r.group_key
+            for r in db.execute(
+                text(
+                    "SELECT tty.group_key FROM timeline_task_years tty"
+                    " JOIN timeline_request_tasks t ON t.id = tty.task_id"
+                    " WHERE t.timeline_request_id = :r AND tty.outcome = 'ok'"
+                ).bindparams(bindparam("r", type_=Uuid())),
+                {"r": request_id},
+            ).all()
         }
-        assert survivors == {"LT05_A_1987", "LT05_B_1987"}, "the delete must have rolled back"
-        assert db.execute(text("SELECT COUNT(*) FROM parcel_scenes")).scalar() == 0
+
+    assert served == {"2021", "2022"}
+    assert ok_groups == served, "every ok row names a group that is actually served"

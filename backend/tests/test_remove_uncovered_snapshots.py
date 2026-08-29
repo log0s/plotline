@@ -15,6 +15,7 @@ second tile.
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import uuid
 from pathlib import Path
@@ -88,7 +89,41 @@ def _insert_parcel(db: Session, parcel_id: str, lat: float, lng: float) -> None:
     )
 
 
-def _insert_snapshot(
+def _scene_id(db: Session, *, source: str, item_id: str, capture_date: str, cog_url: str) -> str:
+    """Get-or-create the ``scenes`` row for one item.
+
+    Get-*or-create*, not create: two parcels serving the same NAIP tile share
+    one ``scenes`` row, which is the whole point of the split and is exactly
+    what the ``seeded`` fixture below sets up. A helper that always inserted
+    would hit ``UNIQUE (collection, item_id)`` on the second parcel.
+    """
+    existing = db.execute(
+        text("SELECT id FROM scenes WHERE collection = :c AND item_id = :i"),
+        {"c": source, "i": item_id},
+    ).scalar()
+    if existing is not None:
+        return str(existing)
+    scene_id = str(uuid.uuid4())
+    db.execute(
+        text(
+            "INSERT INTO scenes (id, source, collection, item_id, capture_date, cog_url,"
+            " provenance, fetched_at)"
+            " VALUES (:id, :source, :source, :item_id, :capture_date, :cog_url,"
+            " 'selection', :now)"
+        ),
+        {
+            "id": scene_id,
+            "source": source,
+            "item_id": item_id,
+            "capture_date": capture_date,
+            "cog_url": cog_url,
+            "now": "2026-08-01 12:00:00",
+        },
+    )
+    return scene_id
+
+
+def _insert_served(
     db: Session,
     *,
     parcel_id: str,
@@ -97,29 +132,55 @@ def _insert_snapshot(
     stac_item_id: str,
     extras: list[str] | None = None,
 ) -> str:
-    snapshot_id = str(uuid.uuid4())
+    """One served period, and a ``scenes`` row per tile it composites."""
+    primary = _scene_id(
+        db,
+        source=source,
+        item_id=stac_item_id,
+        capture_date=capture_date,
+        cog_url=_url(stac_item_id),
+    )
+    mosaic = [
+        _scene_id(
+            db,
+            source=source,
+            item_id=_item_id_from_url(url),
+            capture_date=capture_date,
+            cog_url=url,
+        )
+        for url in (extras or [])
+    ]
+    served_id = str(uuid.uuid4())
     db.execute(
         text(
-            "INSERT INTO imagery_snapshots"
-            " (id, parcel_id, source, capture_date, stac_item_id, stac_collection,"
-            "  cog_url, additional_cog_urls)"
-            " VALUES (:id, :parcel_id, :source, :capture_date, :stac_item_id, :collection,"
-            "  :cog_url, :extras)"
+            "INSERT INTO parcel_scenes (id, parcel_id, source, group_key, scene_id,"
+            " mosaic_scene_ids, selected_at, selected_by)"
+            " VALUES (:id, :parcel_id, :source, :group_key, :scene_id, :mosaic, :now, NULL)"
         ),
         {
-            "id": snapshot_id,
+            "id": served_id,
             "parcel_id": parcel_id,
             "source": source,
-            "capture_date": capture_date,
-            "stac_item_id": stac_item_id,
-            "collection": source,
-            "cog_url": _url(stac_item_id),
-            # Postgres stores text[]; SQLite gets the same literal the driver
-            # would render, which is what _extra_urls has to parse anyway.
-            "extras": "{" + ",".join(extras) + "}" if extras else None,
+            "group_key": capture_date[:4],
+            "scene_id": primary,
+            "mosaic": json.dumps(mosaic) if mosaic else None,
+            "now": "2026-08-01 12:00:00",
         },
     )
-    return snapshot_id
+    return served_id
+
+
+def _item_id_from_url(url: str) -> str:
+    """The NAIP item id ``_url`` built the URL from, recovered.
+
+    The fixture's tiles are addressed by URL because that is how the old shape
+    stored a mosaic; the new shape needs each one to be a scene with an id, so
+    the fixture inverts its own ``_url``. The script under test derives item
+    ids from URLs itself (``naip_item_id_from_url``) and is not what is being
+    reused here — a fixture that called the code under test to build its own
+    input would be proving the derivation against itself.
+    """
+    return url.rsplit("/", 1)[-1].removesuffix(".tif")
 
 
 @pytest.fixture
@@ -128,7 +189,7 @@ def seeded(db: Session) -> dict[str, str]:
     _insert_parcel(db, PARCEL, LAT, LNG)
     _insert_parcel(db, OTHER_PARCEL, 40.7538955, -73.9997349)
     ids = {
-        "target": _insert_snapshot(
+        "target": _insert_served(
             db,
             parcel_id=PARCEL,
             source="naip",
@@ -136,21 +197,21 @@ def seeded(db: Session) -> dict[str, str]:
             stac_item_id=NJ_PRIMARY,
             extras=[_url(NJ_EXTRA)],
         ),
-        "adjacent_year": _insert_snapshot(
+        "adjacent_year": _insert_served(
             db,
             parcel_id=PARCEL,
             source="naip",
             capture_date="2022-07-19",
             stac_item_id="ny_m_4007317_nw_18_060_20220719",
         ),
-        "other_source": _insert_snapshot(
+        "other_source": _insert_served(
             db,
             parcel_id=PARCEL,
             source="landsat",
             capture_date="2023-06-01",
             stac_item_id="LC09_L2SP_013032_20230601_02_T1",
         ),
-        "other_parcel": _insert_snapshot(
+        "other_parcel": _insert_served(
             db,
             parcel_id=OTHER_PARCEL,
             source="naip",
@@ -178,7 +239,7 @@ def _patch_fetch(
 
 
 def _remaining(db: Session) -> set[str]:
-    return {str(r.id) for r in db.execute(text("SELECT id FROM imagery_snapshots")).all()}
+    return {str(r.id) for r in db.execute(text("SELECT id FROM parcel_scenes")).all()}
 
 
 # ── Argument handling ─────────────────────────────────────────────────────────

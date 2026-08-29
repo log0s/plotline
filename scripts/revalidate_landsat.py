@@ -86,7 +86,8 @@ def landsat_parcels(db: Session) -> list[uuid.UUID]:
     """Parcels serving at least one Landsat period.
 
     Reads ``parcel_scenes`` since the ADR 0001 step-3 cutover; it used to
-    ``GROUP BY parcel_id`` over ``imagery_snapshots``. The two agreed exactly
+    ``GROUP BY parcel_id`` over the denormalized table ADR 0001 step 4
+    retired. The two agreed exactly
     on every parcel of the local fleet when both paths were alive
     (`docs/audits/2026-08-normalization/step3-parity-local.md`, site
     ``revalidate_landsat``).

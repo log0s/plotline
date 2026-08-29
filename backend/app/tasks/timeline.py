@@ -1,8 +1,9 @@
 """Imagery timeline + census demographics Celery task.
 
 Searches Planetary Computer STAC for NAIP, Landsat, and Sentinel-2 imagery
-at a parcel location, then persists the results as imagery_snapshots rows.
-Also fetches Census Bureau demographic data for the parcel's tract.
+at a parcel location, then persists the results as ``scenes`` and
+``parcel_scenes`` rows. Also fetches Census Bureau demographic data for the
+parcel's tract.
 """
 
 from __future__ import annotations
@@ -386,8 +387,9 @@ async def _search_and_persist_source(
 
     # The per-year ledger for this source. Non-``ok`` outcomes accumulate
     # here through the async phase and land in the persist session; ``ok``
-    # rows are written inline beside their snapshot so the two commit
-    # together.
+    # rows are staged inline as each group is selected. Nothing commits until
+    # the reconcile at the end of the persist loop, so the ledger and the
+    # served rows land in one transaction (ADR step 4, STATUS.md NORM-14).
     ledger = year_ledger.YearOutcomeLog(source_name)
     attempted: list[str] = []
     raw_by_key: dict[str, int] = {}
@@ -689,12 +691,9 @@ async def _search_and_persist_source(
                         )
                     )
 
-            # One object, both write shapes. resolution_m is the item's own
-            # gsd wherever the item carries one (NORM-9), normalized by
-            # imagery_service.normalize_resolution_m (NORM-11), and the
-            # snapshot row below is written from the same field so the two
-            # tables cannot disagree about a row they were written from
-            # together.
+            # resolution_m is the item's own gsd wherever the item carries one
+            # (NORM-9), normalized by imagery_service.normalize_resolution_m
+            # (NORM-11).
             selection = imagery_service.SelectedScene.from_stac_item(
                 primary,
                 source=source_name,
@@ -703,12 +702,17 @@ async def _search_and_persist_source(
                 default_resolution_m=source_cfg["resolution_m"],
                 mosaic=tiles,
             )
-            additional_urls = [tile.cog_url for tile in tiles]
 
-            # Written before the upsert, uncommitted: the upsert commits for
-            # itself, so the ledger row and the snapshot it describes land in
-            # one transaction. An ``ok`` committed first would be a claim
-            # about a row that might never arrive.
+            # Staged uncommitted, and it stays that way until the reconcile
+            # below commits (ADR step 4, STATUS.md NORM-14). The rule is
+            # unchanged — an ``ok`` must never commit ahead of the row it
+            # claims — but what carries it did change: step 2 relied on
+            # ``upsert_imagery_snapshot`` committing per row, and step 4
+            # deleted that write. The ``ok`` now rides the same transaction as
+            # the ``parcel_scenes`` upsert that *is* the persisted row, which
+            # is a stronger version of the same guarantee: the ledger and the
+            # served row are now literally the same commit, not two commits
+            # ordered so the weaker one lands first.
             if task_id is not None and group_key is not None:
                 year_ledger.record_year_outcome(
                     db,
@@ -719,44 +723,32 @@ async def _search_and_persist_source(
                     detail=fallback_details.get(group_key),
                     commit=False,
                 )
-            imagery_service.upsert_imagery_snapshot(
-                db,
-                parcel_id=parcel_id,
-                source=source_name,
-                capture_date=selection.capture_date,
-                stac_item_id=selection.item_id,
-                stac_collection=selection.collection,
-                cog_url=selection.cog_url,
-                additional_cog_urls=additional_urls or None,
-                thumbnail_url=selection.thumbnail_url,
-                resolution_m=selection.resolution_m,
-                cloud_cover_pct=selection.cloud_cover_pct,
-                bbox_wkt=selection.bbox_wkt,
-            )
             items_saved += 1
             selected_refs.append(selection)
             if group_key is not None:
                 persisted.add(group_key)
 
-        # Now that the fresh selection is persisted, drop the scenes it
-        # replaced — a re-validated Landsat year picks a different item id,
-        # which the upsert inserts alongside the broken row rather than
-        # over it.
+        # This call is where the selection is *written*, not just reconciled
+        # (ADR step 4). The loop above stages ledger rows and accumulates
+        # SelectedScene objects; nothing it did is durable. This writes the
+        # scenes rows and the parcel_scenes rows, applies the suppressed
+        # deletes, and commits all of it together with the ledger rows the
+        # loop staged.
         #
-        # Reconciliation assumes every upsert above is already durable: the
-        # upsert commits per row, and this runs in the same task, after the
-        # loop. If persistence ever becomes batched or atomic, this call has
-        # to move inside that transaction. Ordering is the safety property —
-        # an interruption between persist and reconcile leaves duplicates,
-        # which the next run cleans up, never an empty source.
-        #
-        # It is also where the normalized shape is written: passing
-        # SelectedScene objects rather than (id, date) tuples makes this call
-        # write scenes and parcel_scenes in the same transaction as the
-        # deletes (ADR step 2). An interruption before it leaves the new
-        # snapshot rows with no parcel_scenes row, which the next run's
-        # reconcile writes — the same recoverable direction the ordering above
-        # already chose.
+        # **The NORM-14 window is gone, and this comment is where it was
+        # recorded.** Until step 4 the loop's upserts committed per row while
+        # the normalized shape committed here, so an interruption between them
+        # left rows in one shape and not the other — accepted then because the
+        # next run repaired it. There is now one commit and one shape, so
+        # there is no partial state to repair: an interruption anywhere before
+        # the commit leaves the source exactly as the run found it, and the
+        # next run redoes it from the search. The cost of that is real and is
+        # accepted deliberately: a source that dies at group 40 of 45 keeps
+        # none of the 40, where before it kept them in the old table only.
+        # Nothing between the loop's start and this commit performs I/O, so
+        # the transaction is short in wall-clock terms whatever the group
+        # count — every STAC fetch and every asset validation finished before
+        # the session was opened.
         imagery_service.reconcile_source_snapshots(
             db,
             parcel_id,
@@ -962,11 +954,9 @@ async def _search_and_persist_topo(
                     db, task_id, source_name, decade_key, "ok", commit=False
                 )
             # Topo products are TNM records, not STAC items: no geometry, no
-            # gsd, no platform. The dual-write still runs — parcel_scenes has
-            # to hold every group imagery_snapshots holds, or the two tables
-            # disagree about which periods a parcel serves — with the fields
-            # the source does not have left NULL, exactly as the step-1
-            # backfill wrote them.
+            # gsd, no platform. They are written with the fields the source
+            # does not have left NULL, exactly as the step-1 backfill wrote
+            # them.
             selection = imagery_service.SelectedScene(
                 source=source_name,
                 collection="usgs-historical-topo",
@@ -975,26 +965,14 @@ async def _search_and_persist_topo(
                 cog_url=cog_url,
                 bbox_wkt=topo_service.extract_bbox_wkt(item),
             )
-            imagery_service.upsert_imagery_snapshot(
-                db,
-                parcel_id=parcel_id,
-                source=source_name,
-                capture_date=selection.capture_date,
-                stac_item_id=selection.item_id,
-                stac_collection=selection.collection,
-                cog_url=selection.cog_url,
-                thumbnail_url=selection.thumbnail_url,
-                resolution_m=selection.resolution_m,
-                cloud_cover_pct=selection.cloud_cover_pct,
-                bbox_wkt=selection.bbox_wkt,
-            )
             items_saved += 1
             selected_refs.append(selection)
 
-        # Same persist-then-reconcile ordering as the STAC sources, scoped to
-        # the decade select_topo_items groups by: a later run that picks a
-        # different sheet for a decade supersedes the old row rather than
-        # stacking a second card on the same period.
+        # Same shape as the STAC sources after ADR step 4: the loop stages,
+        # this call writes and commits. Scoped to the decade select_topo_items
+        # groups by, so a later run that picks a different sheet for a decade
+        # supersedes the old row rather than stacking a second card on the
+        # same period.
         imagery_service.reconcile_source_snapshots(
             db,
             parcel_id,

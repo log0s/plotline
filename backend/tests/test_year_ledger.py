@@ -32,6 +32,8 @@ from app.services.imagery import (
     encode_group_key,
 )
 
+from .conftest import seed_served_scene
+
 # ── group_key encoding ────────────────────────────────────────────────────────
 
 
@@ -321,11 +323,18 @@ async def _run_source(
         return await _fetch_source(cfg, _BBOX, _BBOX, parcel_id, request_id, lat=39.5, lng=-104.5)
 
 
-def _snapshot_count(factory: sessionmaker[Session], parcel_id: uuid.UUID) -> int:
+def _served_count(factory: sessionmaker[Session], parcel_id: uuid.UUID) -> int:
+    """How many periods this parcel serves, in the only shape there is.
+
+    Was ``_snapshot_count`` over the denormalized table until ADR 0001 step 4.
+    The counts these tests assert are unchanged, because the two shapes always
+    held one row per served period for these fixtures — the difference between
+    them was where an item's *facts* lived, not how many periods there were.
+    """
     with factory() as db:
         return int(
             db.execute(
-                text("SELECT COUNT(*) FROM imagery_snapshots WHERE parcel_id = :p"),
+                text("SELECT COUNT(*) FROM parcel_scenes WHERE parcel_id = :p"),
                 {"p": str(parcel_id)},
             ).scalar()
             or 0
@@ -347,13 +356,14 @@ async def test_landsat_chunk_403_is_recorded_and_costs_no_rows(
     """
     parcel_id, request_id, _ = _seed_request(committing_db, ("landsat",))
     with committing_db() as db:
-        db.execute(
-            text(
-                "INSERT INTO imagery_snapshots"
-                " (id, parcel_id, source, capture_date, stac_item_id, stac_collection, cog_url)"
-                " VALUES (:id, :p, 'landsat', '2015-06-01', 'OLD_2015', 'landsat-c2-l2', 'u')"
-            ),
-            {"id": str(uuid.uuid4()), "p": str(parcel_id)},
+        seed_served_scene(
+            db,
+            parcel_id=parcel_id,
+            source="landsat",
+            capture_date=date(2015, 6, 1),
+            stac_item_id="OLD_2015",
+            stac_collection="landsat-c2-l2",
+            cog_url="u",
         )
         db.commit()
 
@@ -377,9 +387,13 @@ async def test_landsat_chunk_403_is_recorded_and_costs_no_rows(
 
     with committing_db() as db:
         kept = db.execute(
-            text("SELECT stac_item_id FROM imagery_snapshots WHERE capture_date = '2015-06-01'")
+            text(
+                "SELECT s.item_id FROM parcel_scenes ps JOIN scenes s ON s.id = ps.scene_id"
+                " WHERE ps.parcel_id = :p AND ps.group_key = '2015'"
+            ),
+            {"p": str(parcel_id)},
         ).scalar()
-    assert kept == "OLD_2015", "a 403 year must not delete the row a prior run landed"
+    assert kept == "OLD_2015", "a 403 year must not disturb the row a prior run landed"
 
 
 @pytest.mark.asyncio
@@ -472,7 +486,7 @@ async def test_signing_429_exhausting_the_walk_records_sign_429(
 
     row = _ledger_rows(committing_db)[("landsat", "2016")]
     assert (row["outcome"], row["reason"]) == ("failed", "sign_429")
-    assert _snapshot_count(committing_db, parcel_id) == 0
+    assert _served_count(committing_db, parcel_id) == 0
 
 
 @pytest.mark.asyncio
@@ -505,17 +519,20 @@ async def test_a_year_rescued_by_the_fallback_ends_ok_with_the_swap_in_detail(
     assert "LC08_broken -> LC08_good" in row["detail"]
 
 
-# ── Delete-the-fix: the ok row beside its snapshot ───────────────────────────
+# ── Delete-the-fix: the ok row beside the row it claims ──────────────────────
 
 
 @pytest.mark.asyncio
-async def test_a_served_year_writes_an_ok_row_with_its_snapshot(
+async def test_a_served_year_writes_an_ok_row_with_its_served_row(
     committing_db: sessionmaker[Session],
 ) -> None:
-    """Delete-the-fix: the `record_year_outcome(..., "ok", ...)` before the upsert.
+    """Delete-the-fix: the `record_year_outcome(..., "ok", ...)` in the loop.
 
-    The prediction's falsifiable check is "zero groups with a served snapshot
-    row and no ok ledger row", so this is the pair that check counts.
+    The prediction's falsifiable check is "zero groups with a served row and
+    no ok ledger row", so this is the pair that check counts. Since ADR 0001
+    step 4 the two are one transaction rather than two ordered commits —
+    ``test_scene_writes.py``'s crash test is the half that proves the ok row
+    cannot outlive a rolled-back write.
     """
     parcel_id, request_id, _ = _seed_request(committing_db, ("landsat",))
 
@@ -534,7 +551,7 @@ async def test_a_served_year_writes_an_ok_row_with_its_snapshot(
     rows = _ledger_rows(committing_db)
     assert rows[("landsat", "2015")]["outcome"] == "ok"
     assert rows[("landsat", "2016")]["outcome"] == "ok"
-    assert _snapshot_count(committing_db, parcel_id) == 2
+    assert _served_count(committing_db, parcel_id) == 2
 
 
 # ── Delete-the-fix: the NAIP point-coverage gate ─────────────────────────────
@@ -581,7 +598,7 @@ async def test_naip_year_with_no_covering_tile_is_suppressed(
     row = _ledger_rows(committing_db)[("naip", "2023")]
     assert (row["outcome"], row["reason"]) == ("suppressed", "naip_no_point_coverage")
     assert "naip_nj_2023" in row["detail"]
-    assert _snapshot_count(committing_db, parcel_id) == 0
+    assert _served_count(committing_db, parcel_id) == 0
 
 
 # ── Delete-the-fix: USGS topo ────────────────────────────────────────────────
@@ -658,7 +675,7 @@ async def test_topo_product_with_no_source_id_is_suppressed(
 
     row = _ledger_rows(committing_db)[("usgs_topo", "1950s")]
     assert (row["outcome"], row["reason"]) == ("suppressed", "topo_no_source_id")
-    assert _snapshot_count(committing_db, parcel_id) == 0
+    assert _served_count(committing_db, parcel_id) == 0
 
 
 @pytest.mark.asyncio
