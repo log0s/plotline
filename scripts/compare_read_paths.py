@@ -53,6 +53,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.featured import _snapshot_ids_for_parcels
 from app.db import SessionLocal
 from app.services import imagery as imagery_service
+from app.logging_config import configure_script_logging
 
 # The scope each source's selector groups by, which is what turns a
 # capture_date into the group_key ``parcel_scenes`` stores. Not re-derived:
@@ -425,6 +426,7 @@ def render(report: Report) -> str:
 
 
 def main() -> int:
+    configure_script_logging()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", help="Write the report here as well as to stdout")
     args = parser.parse_args()
