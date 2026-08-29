@@ -1,0 +1,517 @@
+{
+ "taken_at": "2026-08-29T19:22:32.693723+00:00",
+ "method": "SELECT only; no SET, no UPDATE probe",
+ "observed_session_state": [
+  {
+   "default_ro": "on",
+   "txn_ro": "on",
+   "backend_pid": 605
+  }
+ ],
+ "counts": [
+  {
+   "scenes": 6663,
+   "parcel_scenes": 12884,
+   "imagery_snapshots": 12884
+  }
+ ],
+ "by_provenance": [
+  {
+   "provenance": "enriched",
+   "n": 505
+  },
+  {
+   "provenance": "selection",
+   "n": 2
+  },
+  {
+   "provenance": "snapshot",
+   "n": 6156
+  }
+ ],
+ "queue_remaining": [
+  {
+   "n": 5187
+  }
+ ],
+ "queue_remaining_rows": [
+  {
+   "id": "2a8ef6ac-2465-4881-adab-9bd2b7bde5e5",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_016037_20210925_02_T1",
+   "capture_date": "2021-09-25"
+  },
+  {
+   "id": "4bf6dd32-414a-454e-9544-1d8db9911aa2",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_016037_20221014_02_T1",
+   "capture_date": "2022-10-14"
+  },
+  {
+   "id": "082f5152-eef6-4410-83eb-c9c2496eaed1",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_016037_20251022_02_T1",
+   "capture_date": "2025-10-22"
+  },
+  {
+   "id": "619b6d0e-4051-441c-8a94-b3681b0f5785",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_016040_20130328_02_T1",
+   "capture_date": "2013-03-28"
+  },
+  {
+   "id": "7701b6ac-6dc4-4537-ad83-92997da807f3",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_016040_20140330_02_T1",
+   "capture_date": "2014-03-30"
+  },
+  {
+   "id": "768f05ef-4a91-46a8-b17c-eb4d59c03122",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_016040_20151112_02_T1",
+   "capture_date": "2015-11-12"
+  },
+  {
+   "id": "d71b2193-b055-446d-aa64-dab60ce6c6e9",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_016040_20161216_02_T1",
+   "capture_date": "2016-12-16"
+  },
+  {
+   "id": "8c41fb0a-b8e3-45e4-9be7-f6d978a9f3e9",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_016040_20170407_02_T1",
+   "capture_date": "2017-04-07"
+  },
+  {
+   "id": "403fc6ba-076e-4d18-aa71-fc1d5bd903f3",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_016040_20180309_02_T1",
+   "capture_date": "2018-03-09"
+  },
+  {
+   "id": "490b5d52-3845-4e5a-b0e2-c30e15c4075d",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_016040_20190208_02_T1",
+   "capture_date": "2019-02-08"
+  },
+  {
+   "id": "c1aacb71-de17-4871-be68-a647e7e5b0e9",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_016040_20201125_02_T1",
+   "capture_date": "2020-11-25"
+  },
+  {
+   "id": "982b8454-e02e-4931-aedc-e0f495cb93bf",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_016040_20210317_02_T1",
+   "capture_date": "2021-03-17"
+  },
+  {
+   "id": "ca8edbdd-4ff2-44b3-a779-c39762591129",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017030_20131012_02_T1",
+   "capture_date": "2013-10-12"
+  },
+  {
+   "id": "0b9bfb32-a262-4771-9346-9c0511cc1da6",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017030_20140217_02_T1",
+   "capture_date": "2014-02-17"
+  },
+  {
+   "id": "eb083346-4f83-4a3d-bdcd-a91521d2649f",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017030_20150916_02_T1",
+   "capture_date": "2015-09-16"
+  },
+  {
+   "id": "3615ca61-e93e-475f-a494-c8943d3d1fad",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017030_20160427_02_T1",
+   "capture_date": "2016-04-27"
+  },
+  {
+   "id": "5df82e0e-9ac8-4b6f-bf76-1ffa6ddf5ee7",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017030_20170414_02_T1",
+   "capture_date": "2017-04-14"
+  },
+  {
+   "id": "8551f491-7106-4d5a-b140-1c877533e926",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017030_20170921_02_T1",
+   "capture_date": "2017-09-21"
+  },
+  {
+   "id": "ada753e7-70cf-4258-bdda-77e831594b55",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017030_20180823_02_T1",
+   "capture_date": "2018-08-23"
+  },
+  {
+   "id": "b46214dd-c488-4994-b2ef-668837f3d61f",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017030_20190506_02_T1",
+   "capture_date": "2019-05-06"
+  },
+  {
+   "id": "560b0314-bd24-4522-aa43-1b94312d58df",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017030_20191013_02_T1",
+   "capture_date": "2019-10-13"
+  },
+  {
+   "id": "dfacc663-2312-4005-b76a-80ca6ff80369",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017030_20200406_02_T1",
+   "capture_date": "2020-04-06"
+  },
+  {
+   "id": "ec0bd979-462b-44c2-9782-10cd4bc8f5a8",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017030_20221005_02_T1",
+   "capture_date": "2022-10-05"
+  },
+  {
+   "id": "1fc7270f-866e-4b91-90d4-835ca3e7ac63",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017030_20230922_02_T1",
+   "capture_date": "2023-09-22"
+  },
+  {
+   "id": "f5ef7188-6d98-4b4e-ba6f-0b99e936630e",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017030_20260712_02_T1",
+   "capture_date": "2026-07-12"
+  },
+  {
+   "id": "892da039-c296-42c8-a65a-cef352de1fc7",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017036_20131113_02_T1",
+   "capture_date": "2013-11-13"
+  },
+  {
+   "id": "90e7d0b1-4c3e-4ef1-9f1e-bcb390bb4db2",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017036_20140828_02_T1",
+   "capture_date": "2014-08-28"
+  },
+  {
+   "id": "cf02eb27-7b17-46e4-b900-fee5f54a73dd",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017036_20151018_02_T1",
+   "capture_date": "2015-10-18"
+  },
+  {
+   "id": "311ee25f-6dfa-4801-8005-9b7c680cd723",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017036_20161105_02_T1",
+   "capture_date": "2016-11-05"
+  },
+  {
+   "id": "d024096c-c553-4b09-bca6-bbc99313a35f",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017036_20171124_02_T1",
+   "capture_date": "2017-11-24"
+  },
+  {
+   "id": "eb81ce21-5da9-4030-81da-999887fd0746",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017036_20180417_02_T1",
+   "capture_date": "2018-04-17"
+  },
+  {
+   "id": "980f7ee1-3272-4867-9500-32220ccdda34",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017036_20181127_02_T1",
+   "capture_date": "2018-11-27"
+  },
+  {
+   "id": "66612db7-ee77-4c5b-98be-fa08de0e5aee",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017036_20190404_02_T1",
+   "capture_date": "2019-04-04"
+  },
+  {
+   "id": "49d7bac6-cbf8-45d8-b172-de9dec8796c4",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017036_20201116_02_T1",
+   "capture_date": "2020-11-16"
+  },
+  {
+   "id": "1f7593fe-cd44-480d-92f3-23a40dccda3c",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017036_20211018_02_T1",
+   "capture_date": "2021-10-18"
+  },
+  {
+   "id": "0b88a261-05ed-41b5-9809-ec743ebab46f",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017036_20221005_02_T1",
+   "capture_date": "2022-10-05"
+  },
+  {
+   "id": "21689008-284a-4a12-831f-94090cd918f5",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_017036_20260423_02_T1",
+   "capture_date": "2026-04-23"
+  },
+  {
+   "id": "e77d14e3-4003-4479-8d1d-99580fdf5ba1",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_018030_20130917_02_T1",
+   "capture_date": "2013-09-17"
+  },
+  {
+   "id": "9c462b72-7063-4d81-b732-8dd6fc26457d",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_018030_20140531_02_T1",
+   "capture_date": "2014-05-31"
+  },
+  {
+   "id": "efda4a3c-1c23-4b6c-b38f-af818389109f",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_018030_20160808_02_T1",
+   "capture_date": "2016-08-08"
+  },
+  {
+   "id": "5bcd4eda-83ae-44ac-aff5-6d94b544b69b",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_018030_20180611_02_T1",
+   "capture_date": "2018-06-11"
+  },
+  {
+   "id": "df4ed757-cf02-42c6-8d8f-c647b5bafc99",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_018030_20200920_02_T1",
+   "capture_date": "2020-09-20"
+  },
+  {
+   "id": "4e606f8c-90a4-474e-9872-3e2e0b176ba0",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_018031_20130917_02_T1",
+   "capture_date": "2013-09-17"
+  },
+  {
+   "id": "a4eaa129-032b-4e8f-a0b4-b67b320121d5",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_018031_20140531_02_T1",
+   "capture_date": "2014-05-31"
+  },
+  {
+   "id": "1427dc96-055d-4b56-93b4-083acd18eff3",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_018031_20150907_02_T1",
+   "capture_date": "2015-09-07"
+  },
+  {
+   "id": "21da6161-aecc-4e3d-91c5-886072267410",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_018031_20160418_02_T1",
+   "capture_date": "2016-04-18"
+  },
+  {
+   "id": "720a483f-0e56-426a-a2ea-22bb3765abac",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_018031_20170523_02_T1",
+   "capture_date": "2017-05-23"
+  },
+  {
+   "id": "def61d15-4002-4fd5-805d-c6f324e9680e",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_018031_20180713_02_T1",
+   "capture_date": "2018-07-13"
+  },
+  {
+   "id": "6f65235e-d751-4ce5-83df-71d5211ce96e",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_018031_20190918_02_T1",
+   "capture_date": "2019-09-18"
+  },
+  {
+   "id": "b847a925-07a8-40b5-8af4-3b9993284180",
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "item_id": "LC08_L2SP_018031_20200920_02_T1",
+   "capture_date": "2020-09-20"
+  }
+ ],
+ "healed_geometry": [
+  {
+   "n": 5387,
+   "with_footprint": 200,
+   "polygons": 200,
+   "equals_bbox": 0,
+   "invalid": 0
+  }
+ ],
+ "all_footprints": [
+  {
+   "n": 707,
+   "polygons": 707,
+   "equals_bbox": 0
+  }
+ ],
+ "topo_still_null": [
+  {
+   "n": 769,
+   "fp_null": 769,
+   "res_null": 769
+  }
+ ],
+ "bbox_null_all_scenes": [
+  {
+   "n": 0
+  }
+ ],
+ "bbox_fingerprint": [
+  {
+   "md5_comma": "f1809593fd050be14736aaaea4b09ed5",
+   "rows": 6663
+  }
+ ],
+ "naip_resolution_after": [
+  {
+   "resolution_m": 1.0,
+   "n": 1102
+  }
+ ],
+ "landsat_resolution_after": [
+  {
+   "resolution_m": 30.0,
+   "n": 3174
+  }
+ ],
+ "sentinel2_resolution_after": [
+  {
+   "resolution_m": 10.0,
+   "n": 1111
+  }
+ ],
+ "imagery_snapshots_naip_after": [
+  {
+   "resolution_m": 1.0,
+   "n": 1305
+  }
+ ],
+ "naip_token_vs_resolution": [
+  {
+   "token": ".5",
+   "resolution_m": 1.0,
+   "n": 11
+  },
+  {
+   "token": ".6",
+   "resolution_m": 1.0,
+   "n": 31
+  },
+  {
+   "token": "030",
+   "resolution_m": 1.0,
+   "n": 77
+  },
+  {
+   "token": "060",
+   "resolution_m": 1.0,
+   "n": 395
+  },
+  {
+   "token": "1",
+   "resolution_m": 1.0,
+   "n": 575
+  },
+  {
+   "token": "h",
+   "resolution_m": 1.0,
+   "n": 13
+  }
+ ],
+ "freshness": [
+  {
+   "max_fetched_at": "2026-08-29 04:41:26.056028+00:00",
+   "max_selected_at": "2026-08-29 04:41:26.056028+00:00"
+  }
+ ],
+ "subject_scene": [
+  {
+   "id": "1f4276e5-d41e-4c3d-8cf5-90be04b5c4fe",
+   "item_id": "ny_m_4007306_sw_18_.5_20150522_20151109",
+   "resolution_m": 1.0,
+   "capture_date": "2015-05-22",
+   "fp_type": null,
+   "fp_equals_bbox": null,
+   "fp_area": null,
+   "bbox_area": "0.00508859"
+  }
+ ],
+ "subject_parcels": [
+  {
+   "parcel_id": "a79522ab-0681-4629-a4fe-935ab4d856c2",
+   "group_key": "2015",
+   "resolution_m": 1.0,
+   "item_id": "ny_m_4007306_sw_18_.5_20150522_20151109"
+  }
+ ],
+ "served_naip_off_one": [
+  {
+   "resolution_m": 1.0,
+   "served_rows": 1305
+  }
+ ],
+ "subject_parcel_address": [
+  {
+   "id": "a79522ab-0681-4629-a4fe-935ab4d856c2",
+   "address": "25 north avenue Northport my 11768"
+  }
+ ]
+}

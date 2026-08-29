@@ -1,0 +1,66 @@
+queue (provenance = 'snapshot', footprint IS NULL, source <> 'usgs_topo'): 5387 row(s); 769 topo row(s) excluded
+batch 1: 200/5387 fetched, 200 written, 0 unmatched, 0 error(s)
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+psycopg2.errors.ReadOnlySqlTransaction: cannot execute UPDATE in a read-only transaction
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/app/scripts/enrich_snapshot_scenes.py", line 643, in <module>
+    main()
+  File "/app/scripts/enrich_snapshot_scenes.py", line 618, in main
+    out = run(
+          ^^^^
+  File "/app/scripts/enrich_snapshot_scenes.py", line 547, in run
+    asyncio.run(process())
+  File "/usr/local/lib/python3.12/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/app/scripts/enrich_snapshot_scenes.py", line 534, in process
+    apply_batch(db, fetched, out, execute=execute)
+  File "/app/scripts/enrich_snapshot_scenes.py", line 375, in apply_batch
+    _write_row(db, row, plan)
+  File "/app/scripts/enrich_snapshot_scenes.py", line 347, in _write_row
+    db.execute(
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2351, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2258, in _execute_internal
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.InternalError: (psycopg2.errors.ReadOnlySqlTransaction) cannot execute UPDATE in a read-only transaction
+
+[SQL: UPDATE scenes SET footprint = ST_GeomFromEWKT(%(footprint)s) WHERE id = %(id)s]
+[parameters: {'footprint': 'SRID=4326;POLYGON ((-80.8254722 34.2231714, -81.2801254 32.4992903, -79.354679 32.1205678, -78.8610519 33.8440708, -80.8254722 34.2231714))', 'id': '2a8ef6ac-2465-4881-adab-9bd2b7bde5e5'}]
+(Background on this error at: https://sqlalche.me/e/20/2j85)
