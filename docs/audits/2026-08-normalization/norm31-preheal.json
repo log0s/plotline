@@ -1,0 +1,160 @@
+{
+ "taken_at": "2026-08-29 20:33:59.263685",
+ "session_state": [
+  {
+   "txn_ro": "on",
+   "default_ro": "off",
+   "backend_pid": 659
+  }
+ ],
+ "write_probe": "ReadOnlySqlTransaction: cannot execute UPDATE in a read-only transaction",
+ "queue_count": [
+  {
+   "n": 2
+  }
+ ],
+ "queue_rows": [
+  {
+   "id": "6d456449-2ffb-4f3f-aa3f-ba69a502481d",
+   "source": "sentinel2",
+   "collection": "sentinel-2-l2a",
+   "item_id": "S2B_MSIL2A_20181226T153639_R111_T19TCG_20201008T131747",
+   "capture_date": "2018-12-26",
+   "reason": "Self-intersection[-71.00403 41.90664113]",
+   "npoints": 28,
+   "fp_area": "0.76542450",
+   "bbox_area": "0.95076320",
+   "eq_bbox": false,
+   "resolution_m": 10.0,
+   "provenance": "snapshot",
+   "bbox_wkt": "POLYGON((-71.43118 41.741259449822174,-70.08484 41.741259449822174,-70.08484 42.44744302996699,-71.43118 42.44744302996699,-71.43118 41.741259449822174))",
+   "footprint_wkt": "POLYGON((-70.08484 41.74125945,-70.16144 41.75630471,-70.16153 41.75603455,-70.17789 41.75908725,-70.177765 41.75940248,-70.177795 41.75940715,-70.177704 41.75968085,-70.17786 41.75971224,-70.177795 41.75992837,-70.43982 41.80876715,-70.44003 41.80807621,-70.451965 41.81030687,-70.736786 41.86136434,-70.73642 41.86247817,-71.00278 41.90673015,-71.00284 41.90650203,-71.00403 41.90669483,-71.00403 41.90664113,-71.00403 41.90664203,-71.00418 41.90623916,-71.308655 41.95555806,-71.30826 41.95675187,-71.30878 41.95682732,-71.30875 41.95695775,-71.41406 41.97222999,-71.43118 42.42690169,-70.09686 42.44744303,-70.08484 41.74125945))",
+   "footprint_md5": "5ccd9329faf92dc673cbbe78521ace7d"
+  },
+  {
+   "id": "6b114490-1bd7-47e7-a195-f5d92686559b",
+   "source": "sentinel2",
+   "collection": "sentinel-2-l2a",
+   "item_id": "S2B_MSIL2A_20190602T162839_R083_T16TEK_20201005T212018",
+   "capture_date": "2019-06-02",
+   "reason": "Self-intersection[-86.75983 39.91487413]",
+   "npoints": 22,
+   "fp_area": "1.03875393",
+   "bbox_area": "1.20564127",
+   "eq_bbox": false,
+   "resolution_m": 10.0,
+   "provenance": "snapshot",
+   "bbox_wkt": "POLYGON((-87.000244 39.72242887988659,-85.70166 39.72242887988659,-85.70166 40.650856515774606,-87.000244 40.650856515774606,-87.000244 39.72242887988659))",
+   "footprint_wkt": "POLYGON((-85.719086 39.72242888,-85.94949 39.76818507,-85.95798 39.76978942,-85.95773 39.77051912,-85.95798 39.77056401,-85.95792 39.77070097,-85.95795 39.77070348,-85.957886 39.77083547,-86.21225 39.8187806,-86.212616 39.817648,-86.50058 39.86986553,-86.50006 39.87146172,-86.758545 39.91490204,-86.75864 39.91468471,-86.75983 39.91488432,-86.75983 39.91487413,-86.75983 39.91487746,-86.76013 39.91393662,-87.000244 39.95331699,-87.000244 40.65085652,-85.70166 40.64355721,-85.719086 39.72242888))",
+   "footprint_md5": "ecbad6666d6b25894511e86b5fd57a29"
+  }
+ ],
+ "fleet_invalid_total": [
+  {
+   "invalid": 2,
+   "not_polygon": 0,
+   "equals_bbox": 0,
+   "with_footprint": 5894
+  }
+ ],
+ "invalid_by_source": [
+  {
+   "source": "sentinel2",
+   "provenance": "snapshot",
+   "n": 2
+  }
+ ],
+ "counts": [
+  {
+   "scenes": 6663,
+   "parcel_scenes": 12884,
+   "imagery_snapshots": 12884
+  }
+ ],
+ "by_provenance": [
+  {
+   "provenance": "enriched",
+   "n": 505
+  },
+  {
+   "provenance": "selection",
+   "n": 2
+  },
+  {
+   "provenance": "snapshot",
+   "n": 6156
+  }
+ ],
+ "bbox_fingerprint": [
+  {
+   "md5_comma": "f1809593fd050be14736aaaea4b09ed5",
+   "rows": 6663
+  }
+ ],
+ "footprint_fingerprint_all": [
+  {
+   "md5_comma": "54a1a8a55bd93e2bafd6aa0a1b51f4bc",
+   "rows": 6663
+  }
+ ],
+ "footprint_fingerprint_outside_queue": [
+  {
+   "md5_comma": "b605a050fb49731dd45175d13e89ac9c",
+   "rows": 6661
+  }
+ ],
+ "resolution_fingerprint_all": [
+  {
+   "md5_comma": "b30a4fc5c7b6ff36aae6573714e049ec",
+   "rows": 6663
+  }
+ ],
+ "freshness": [
+  {
+   "max_fetched_at": "2026-08-29 04:41:26.056028+00",
+   "max_selected_at": "2026-08-29 04:41:26.056028+00",
+   "fetched_since_postrun": 0
+  }
+ ],
+ "selection_rows": [
+  {
+   "id": "8f72982e-7b99-4d67-a479-2eb24e786d8a",
+   "source": "sentinel2",
+   "item_id": "S2B_MSIL2A_20260828T160819_R140_T17TPH_20260828T200359",
+   "fetched_at": "2026-08-29 04:29:19.342619+00",
+   "has_footprint": true,
+   "valid": true
+  },
+  {
+   "id": "7ae1310e-66e9-4a5f-a442-e279279d3621",
+   "source": "sentinel2",
+   "item_id": "S2B_MSIL2A_20260827T163859_R126_T16TER_20260827T203142",
+   "fetched_at": "2026-08-29 04:41:26.056028+00",
+   "has_footprint": true,
+   "valid": true
+  }
+ ],
+ "queue_parcel_points": [
+  {
+   "item_id": "S2B_MSIL2A_20181226T153639_R111_T19TCG_20201008T131747",
+   "parcel_id": "b494f235-ba1d-4658-b57f-e5ef18d7a628",
+   "lon": -70.7948434,
+   "lat": 42.1339997,
+   "address": "22 Riverside Drive, Norw"
+  },
+  {
+   "item_id": "S2B_MSIL2A_20190602T162839_R083_T16TEK_20201005T212018",
+   "parcel_id": "31929a9c-955d-4849-b918-2c0ca10b8c1e",
+   "lon": -86.029790650648,
+   "lat": 39.967219365955,
+   "address": "208 Orchard Blvd, Fishers, IN 46038"
+  },
+  {
+   "item_id": "S2B_MSIL2A_20190602T162839_R083_T16TEK_20201005T212018",
+   "parcel_id": "d6cf2ac8-b93b-4c78-add8-bd7ddecc4663",
+   "lon": -86.276848,
+   "lat": 39.9642377,
+   "address": "55 Blackstone place Zion"
+  }
+ ]
+}

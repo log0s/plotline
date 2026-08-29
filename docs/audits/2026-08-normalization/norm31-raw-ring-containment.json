@@ -1,0 +1,23 @@
+[
+ {
+  "item_id": "S2B_MSIL2A_20181226T153639_R111_T19TCG_20201008T131747",
+  "parcel_id": "b494f235-ba1d-4658-b57f-e5ef18d7a628",
+  "lon": -70.7948434,
+  "lat": 42.1339997,
+  "raw_ring_contains": true
+ },
+ {
+  "item_id": "S2B_MSIL2A_20190602T162839_R083_T16TEK_20201005T212018",
+  "parcel_id": "31929a9c-955d-4849-b918-2c0ca10b8c1e",
+  "lon": -86.029790650648,
+  "lat": 39.967219365955,
+  "raw_ring_contains": true
+ },
+ {
+  "item_id": "S2B_MSIL2A_20190602T162839_R083_T16TEK_20201005T212018",
+  "parcel_id": "d6cf2ac8-b93b-4c78-add8-bd7ddecc4663",
+  "lon": -86.276848,
+  "lat": 39.9642377,
+  "raw_ring_contains": true
+ }
+]
