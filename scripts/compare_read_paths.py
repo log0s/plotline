@@ -52,6 +52,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.featured import _snapshot_ids_for_parcels
 from app.db import SessionLocal
+from app.logging_config import configure_script_logging
 from app.services import imagery as imagery_service
 
 # The scope each source's selector groups by, which is what turns a
@@ -429,6 +430,7 @@ def main() -> int:
     parser.add_argument("--out", help="Write the report here as well as to stdout")
     args = parser.parse_args()
 
+    configure_script_logging()
     report = Report()
     with SessionLocal() as db:
         if imagery_service._is_postgres(db):

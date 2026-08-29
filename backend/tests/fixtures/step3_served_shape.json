@@ -1,0 +1,65 @@
+[
+  {
+    "id": "<served-id>",
+    "parcel_id": "aaaaaaaa-0000-4000-8000-000000000001",
+    "source": "usgs_topo",
+    "capture_date": "1965-01-01",
+    "stac_item_id": "CO_Denver_1965",
+    "stac_collection": "usgs-topo",
+    "cog_url": "https://example.com/topo-1965.tif",
+    "thumbnail_url": null,
+    "resolution_m": null,
+    "cloud_cover_pct": null,
+    "additional_cog_urls": null,
+    "bbox": null,
+    "created_at": null
+  },
+  {
+    "id": "<served-id>",
+    "parcel_id": "aaaaaaaa-0000-4000-8000-000000000001",
+    "source": "landsat",
+    "capture_date": "2020-07-04",
+    "stac_item_id": "LC08_L2SP_2020",
+    "stac_collection": "landsat-c2-l2",
+    "cog_url": "https://example.com/landsat-2020.json",
+    "thumbnail_url": null,
+    "resolution_m": 30.0,
+    "cloud_cover_pct": 3.5,
+    "additional_cog_urls": null,
+    "bbox": null,
+    "created_at": null
+  },
+  {
+    "id": "<served-id>",
+    "parcel_id": "aaaaaaaa-0000-4000-8000-000000000001",
+    "source": "naip",
+    "capture_date": "2021-08-01",
+    "stac_item_id": "co_m_naip_2021",
+    "stac_collection": "naip",
+    "cog_url": "https://example.com/naip-2021-primary.tif",
+    "thumbnail_url": "https://example.com/naip-2021.png",
+    "resolution_m": 0.6,
+    "cloud_cover_pct": null,
+    "additional_cog_urls": [
+      "https://example.com/naip-2021-tile-a.tif",
+      "https://example.com/naip-2021-tile-b.tif"
+    ],
+    "bbox": null,
+    "created_at": null
+  },
+  {
+    "id": "<served-id>",
+    "parcel_id": "aaaaaaaa-0000-4000-8000-000000000001",
+    "source": "sentinel2",
+    "capture_date": "2024-05-05",
+    "stac_item_id": "S2A_new_only_2024",
+    "stac_collection": "sentinel-2-l2a",
+    "cog_url": "https://example.com/s2-2024.tif",
+    "thumbnail_url": null,
+    "resolution_m": 10.0,
+    "cloud_cover_pct": null,
+    "additional_cog_urls": null,
+    "bbox": null,
+    "created_at": null
+  }
+]
