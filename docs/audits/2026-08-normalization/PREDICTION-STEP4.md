@@ -381,3 +381,284 @@ Migration 0019 applied to the local database at 22:09Z.
   again; `scenes` 1,342 and `parcel_scenes` 3,082 untouched throughout.
 
 **The local database is at 0019 with the table dropped. Production is not.**
+
+---
+
+# Production — step 4's deploy-1 fleet sweep
+
+Written and **committed before the pilot invocation runs**, in an unattended
+session. Nothing above this line is edited, including the local Observed half.
+The Observed section for this half is appended later and this half is never
+edited to match it.
+
+## P0. Blindness, stated first
+
+* **Not run:** `scripts/requeue_parcels.py` against production, in any mode,
+  including `--dry-run`. No sweep outcome below has been observed.
+* **Run, and reported as measurement rather than outcome:** the six deploy
+  gates of §PB below, and the two baseline readings
+  `step4-prod-reads-t0.json` and `step4-prod-battery-t0.json`. A prediction of
+  deltas needs a baseline; every prediction in this arc took one the same way.
+* **Known before writing this:** the local scored sweep
+  (`PREDICTION-STEP4.md` Observed, 45 parcels), the local old-code control
+  (§0 of that half), the step-2 production sweep over the same 189 parcels and
+  the same 30-parcel pilot set (`STEP2-PROD-REPORT.md`), and STATUS.md
+  NORM-12, NORM-15 and NORM-17. These are priors and they are cited where they
+  move a number. They are not observations of this sweep.
+
+## PB. The baseline this is differenced against
+
+**Deploy.** Image `03867c4b1e531b461665d41cab7b8a8f4196c60d` built
+**2026-08-29T23:04:25Z**; API machines booted 23:04:56Z and 23:05:14Z, worker
+23:05:09Z. Six gates verified at artifact level before any of this was
+written: health SHA, `GH_SHA` on all four machines, `alembic_version = 0018`,
+`ck_scenes_footprint_valid` present and `convalidated = true` in
+`pg_constraint`, `imagery_snapshots` present with **12,884 rows / 13
+columns**, process starts postdating the build, and the deployed
+`app/`+`scripts/` byte-identical to the repo at `03867c4`.
+
+**Counters, `step4-prod-reads-t0.json`, read 2026-08-29T23:11:57.497954Z —
+this timestamp is cooling **t0**:**
+
+| table | seq_scan | seq_tup_read | idx_scan | idx_tup_fetch | ins / upd / del | n_live_tup |
+|---|---|---|---|---|---|---|
+| `imagery_snapshots` | 3,945 | 30,606,005 | 158,669 | 1,238,541 | 15,492 / 61,406 / 2,608 | 12,884 |
+| `parcel_scenes` | 158 | 1,648,887 | 59,132 | 101,734 | 12,884 / 7 / 0 | 12,884 |
+| `scenes` | 217 | 1,272,497 | 142,679 | 538,102 | 6,663 / 5,894 / 0 | 6,663 |
+
+**Invariants, `step4-prod-battery-t0.json`, read 23:12:47.640332Z:** parcels
+**189**, scenes **6,663**, parcel_scenes **12,884**; **7 of 7** zero-checks at
+**0**; provenance snapshot **6,156** · enriched **505** · selection **2**;
+landsat **43 on all 189 parcels, 8,127 rows**; ledger last-24h **14,770 rows,
+0 `failed`**; requests complete 1,299 / failed 3 / partial 40, **none in
+flight**. Every total and the provenance split are **identical** to the last
+recorded production state (`NORM31-PROD-REPORT.md` P15, 2026-08-29T20:39Z), so
+there is no unexplained drift to account for and the sweep starts from a quiet
+fleet.
+
+**The one non-zero delta since that last recorded state, and its
+attribution.** From `reads-t2.json` (20:39:20Z) to t0: `imagery_snapshots`
+`seq_scan` **+1** / `seq_tup_read` **+12,884** — exactly one whole-table scan,
+which is this session's gate-1d `probe_count`, logged as an `audit_probe`
+event at 23:11:07Z. `parcel_scenes` **+1** scan / **+12,884** tuples — this
+session's context probe. `scenes` **+2** scans / **+13,326** tuples = exactly
+two whole scans: one is this session's context probe, the other is **migration
+0018 validating its CHECK against all 6,663 rows during the deploy**, which is
+what a validating CHECK costs and is independent evidence that 0018 really
+ran. `imagery_snapshots` `idx_scan`, `idx_tup_fetch` and all three row
+counters are **unmoved since 06:41Z** — sixteen hours in which nothing
+exercised the imagery pipeline at all.
+
+**That last fact is why P3 is load-bearing and is stated here, not in the
+scoring.** A window with no traffic cannot distinguish "the code no longer
+reads the table" from "nothing ran". The sweep is the traffic.
+
+---
+
+## P1. The load-bearing prediction — `imagery_snapshots` takes ZERO access
+
+**All seven counters — `seq_scan`, `seq_tup_read`, `idx_scan`,
+`idx_tup_fetch`, `n_tup_ins`, `n_tup_upd`, `n_tup_del` — are `+0` from t0
+across the entire sweep window**, pilot and remainder together, and
+`n_live_tup` stays **12,884**.
+
+**Modulo this session's own attributed probe scans, which are enumerated here
+in advance and, by design, are none.** Between t0 and the closing reading this
+session issues **zero** probes against `imagery_snapshots`: the invariant
+battery probes only `parcels`, `scenes`, `parcel_scenes`,
+`timeline_task_years` and `timeline_requests`, and `snapshot_reads.py` reads
+`pg_stat_user_tables` and never the tables it reports on. **The enumerated set
+is empty and the subtraction is therefore zero**, so the predicted delta is
+exactly `+0` with nothing subtracted. If that plan changes, each probe is
+named with its `audit_probe` timestamp and subtracted by count, and the
+statement becomes `+0` net rather than `+0` raw.
+
+**The magnitude this zero is measured against, derived rather than asserted.**
+The local old-code control (Observed §0) put **3,082 groups** through the
+step-3 pipeline and moved `idx_scan` **+3,265** and `n_tup_upd` **+3,069** —
+1.06 and 1.00 per group. Production's sweep puts **12,884 groups** through the
+same shape, so the step-3 code would have moved `idx_scan` by **≈13,700** and
+`n_tup_upd` by **≈12,900**. **P1 predicts zero where the prior code predicts
+roughly thirteen thousand.** That gap, not the zero on its own, is the
+measurement.
+
+**P1 is falsified by any nonzero delta on any of the seven counters.** The one
+movement that would be a deviation rather than a falsification is named in
+advance, as it was locally: an autovacuum or ANALYZE moving `n_live_tup` while
+every scan counter stays 0. With zero writes autovacuum has no work, so I
+predict this does not happen either.
+
+## P2. The control — the normalized tables take heavy traffic in the same window
+
+The local scored sweep moved `parcel_scenes.idx_scan` **+3,787** and
+`scenes.idx_scan` **+8,081** over 3,082 groups: 1.23 and 2.62 per group.
+Scaled to 12,884 groups that is ≈15,800 and ≈33,800.
+
+* **P2a, pilot** (2,075 groups): `parcel_scenes.idx_scan` **> 1,000** and
+  `scenes.idx_scan` **> 1,000**.
+* **P2b, fleet** (12,884 groups): `parcel_scenes.idx_scan` **> 8,000** and
+  `scenes.idx_scan` **> 8,000**.
+
+**If P1 holds and P2 fails, the sweep did not happen and P1 is worthless.**
+
+## P3. The write arms, and the pilot's honest limit
+
+NORM-12: a database whose selections are current cannot exercise an insert
+path. Production was fully swept 19 hours ago (03:50–04:50Z), and NORM-15
+found the churn between fleet sweeps is a measure of Planetary Computer's
+health rather than of selection drift — the 2026-08-29 sweep changed **7
+groups out of 12,884**, all Sentinel-2 `2026` recency, zero historic years.
+
+* **P3a.** `parcel_scenes.n_tup_ins` delta **0–10**, point estimate **0**. An
+  insert needs a genuinely new `group_key`; Sentinel-2 recency lands on the
+  existing `2026` row and is an update, not an insert.
+* **P3b.** `parcel_scenes.n_tup_upd` delta **0–40**, point estimate **8**.
+  This is the arm that changed shape in step 4 — superseding a group is now an
+  upsert of one row where it used to be a DELETE — and it has **zero**
+  production exercises before this sweep.
+* **P3c.** `parcel_scenes.n_tup_del` delta **0**, band **0–5**. A delete now
+  requires a `suppressed` outcome naming a served item; the baseline's 9 NAIP
+  suppressions are already reflected in the current state.
+* **P3d.** `scenes.n_tup_ins` delta **0–25**, point estimate **4**. Bounded
+  above by P3a + P3b plus mosaic tiles.
+* **P3e, the decomposition, committed in advance.** Every new `scenes` row is
+  reported with its collection, item id and the `group_key` of the
+  `parcel_scenes` row referencing it, and classified as **recency**
+  (`group_key` = `2026`, the current year) or **anything else**. I predict
+  **100% recency**. *Any insert on a historic period is "anything else" and is
+  a finding*, decomposed against NORM-15's hypothesis that historic-year churn
+  tracks upstream signing failures rather than better selections.
+
+**P3f — the pilot's write arms are predicted INERT, and the decision rule for
+that is written here rather than after the fact.** The same 30 parcels in the
+step-2 production sweep wrote **nothing at all** over 2,075 groups
+(NORM-12: *"a pilot proves a write path only if it writes"*). I therefore
+predict the pilot's `parcel_scenes` ins/upd/del are **0 / 0 / 0**.
+
+**The rule, in advance:** an all-zero pilot write reading is NORM-12's
+expected branch on a current database. It is neither a pass nor a failure of
+the write arms — it is an **absence**, and passing a gate on absence is the
+mistake NORM-17 exists to prevent. So the pilot is gated on the read path and
+the ledger, which it *can* discharge (P2a, P5, P6), and the write-arm question
+moves to the fleet reading, where the remaining 159 parcels are the widening.
+**If the fleet reading is also all-zero on writes, this sweep exercised the
+new upsert arm zero times in production and NORM-17 is updated to say exactly
+that** — never "fleet-scale insert-path evidence", which is the misreading
+NORM-17 was written to block.
+
+## P4. NORM-17 — the expected exercise counts, derived from group counts
+
+Every group now takes the step-4 write path: the reconciler diffs
+`parcel_scenes ⋈ scenes` and `_upsert_parcel_scene` decides. Derived from the
+baseline ledger's per-source `ok` counts (landsat 8,127 + naip 1,305 +
+sentinel2 2,259 + usgs_topo 1,153 = **12,844**) and 189 parcels × 4 imagery
+sources:
+
+| arm | expected count, fleet | expected count, pilot |
+|---|---|---|
+| `reconcile_source_snapshots` invocations (one per task, one transaction each) | **756** | **120** |
+| `_upsert_parcel_scene` exercises (one per selected group) | **12,700–12,950**, point **12,844** | **2,000–2,120**, point **2,075** |
+| …of which the `unchanged` early return | **≥ 12,700** (≥ 99%) | **≥ 2,000** |
+| …of which the superseding **upsert** arm (was a DELETE before step 4; **0** prior production exercises) | **0–40**, point **8** | **0**, band 0–5 |
+| `_ensure_scene` lookup arm | **≈ 12,844** | **≈ 2,075** |
+| `_ensure_scene` INSERT arm | **0–25**, point **4** | **0**, band 0–3 |
+| suppressed-delete arm | **0**, band 0–5 | **0** |
+
+**What this sweep can and cannot add to NORM-17.** It can establish that the
+reconciler's new `parcel_scenes` diff and the single-transaction commit ran
+**756 times over 12,884 groups** — the first fleet-scale exercise of either,
+since step 2's sweep ran the *old* reconciler against `imagery_snapshots`. It
+**cannot** turn a handful of recency inserts into fleet-scale insert-path
+evidence, and the row will say so.
+
+## P5. NORM-14 in production — one `created_at` per task
+
+`timeline_task_years.created_at` defaults to `now()`, which in PostgreSQL is
+**transaction start time**, so the number of distinct `created_at` values
+among one task's `ok` rows is the number of transactions that wrote them.
+
+**Every task in the sweep window with at least one `ok` row has exactly ONE
+distinct `created_at` across all of its `ok` rows.** Measured per task across
+all 756 tasks, not on a sample. Locally this went 43 → 1 for Landsat tasks
+under the cutover; production is the same code at 189-parcel scale.
+
+**P5 is falsified by any task whose `ok` rows carry more than one distinct
+`created_at`.** If one appears it is decomposed rather than counted: a second
+value could mean a second reconcile call by design for that source, or it
+could mean the persist loop regained a commit of its own, and those are
+different findings.
+
+## P6. Parity after the sweep
+
+* **P6a.** All **7** zero-checks at **0** — `duplicate_groups`,
+  `dangling_primary`, `dangling_mosaic`, `primary_in_own_mosaic`,
+  `invalid_footprints`, `non_polygon_footprints`, `duplicate_items`.
+  `invalid_footprints` is the one with a live mechanism behind it and 0018's
+  CHECK now enforces it; a nonzero value means 0018 is admitting rows it
+  claims to refuse, which is the strongest single finding this sweep could
+  produce.
+* **P6b.** Landsat conserved **per parcel**: **43 on all 189 parcels, 8,127
+  rows**, min 43, max 43. Per parcel, not in aggregate — a total conserves
+  while two parcels swap. A parcel that *gains* a Landsat period is reported,
+  not failed; a parcel that **loses** one is a failure.
+* **P6c.** `parcels` stays **189**; `parcel_scenes` = **12,884 + P3a**;
+  `scenes` = **6,663 + P3d**.
+* **P6d.** Provenance: `mosaic_url` stays **0**, `snapshot` stays exactly
+  **6,156**, `enriched` stays exactly **88 + 417 = 505**. Both are historical
+  populations no writer produces. All growth is in `selection`, which goes
+  from **2** to **2 + P3d**.
+
+## P7. The ledger, read per NORM-3
+
+Latest row per (parcel, source, group_key), over the sweep window.
+
+* **P7a.** `landsat/ok` **≥ 8,100**; `landsat/failed` **≤ 20**, point
+  estimate **0**. Step 2's fleet sweep over these same parcels produced
+  **14,770 rows and 0 `failed`**; the local 403 storm was three sweeps inside
+  30 minutes, which this staging does not reproduce.
+* **P7b.** `naip/absent` within **±60 of 1,892** — the largest population in
+  the ledger and the one most sensitive to upstream. A rule treating its
+  movement as a defect would treat NAIP's real coverage as a defect.
+* **P7c, the hard clause.** `naip/indeterminate` **stays at 7 or falls** and
+  `usgs_topo/indeterminate` **stays at 2 or falls**. An `indeterminate` is a
+  confession that a group reached the end of the persist loop with no verdict,
+  and **this batch rewrote that loop**. A rise on any source is a **finding
+  against this batch** until traced to a named pre-existing refusal site
+  (`_classify_empty_chunk`'s cloud probe is the one the local run found).
+* **P7d.** The persist loop's own silent-drop reason — "attempted group
+  reached the end of `timeline._search_and_persist_source` with no outcome" —
+  appears **zero** times.
+* **P7e.** No task ends `failed` for a reason attributable to the rewrite.
+  Upstream 403/429/timeout are ordinary. A `failed` naming a **missing table**,
+  a missing function, or a NOT NULL/CHECK violation on `scenes` /
+  `parcel_scenes` is a finding — and a message naming `imagery_snapshots`
+  would mean a reader survived the cutover.
+
+## P8. Sweep hygiene
+
+* **P8a.** Pilot: **30 queued, 0 skipped, 0 unreached**; `.rc` = **0**, read
+  from `/tmp/step4-prod-pilot.rc` on a pinned machine, never inferred.
+* **P8b.** Remainder: **159 queued, 0 skipped, 0 unreached**; `.rc` = **0**,
+  read the same way.
+* **P8c.** **189 of 189 requests reach `complete`**, **0 `failed`**, **0
+  `partial`**, none in flight at the terminal reading. The baseline's 3
+  `failed` and 40 `partial` are historical rows for earlier requests and are
+  not expected to change.
+* **P8d.** The deploy gate is satisfied by `--require-sha 03867c4` and logs
+  `Deploy gate passed`. `--skip-deploy-check` is **not** used: this is the
+  case the gate exists for, and NORM-32 is the reason it is not waived.
+* **P8e.** The remainder's enqueue takes **longer than the pilot's** and is
+  bounded by the admission cap polling rather than refusing — step 2's
+  remainder took 38.5 minutes for the same 159 parcels. Predicted **20–60
+  minutes** to enqueue, **≤ 90 minutes** to drain.
+
+## P9. What would make me stop rather than report
+
+* **P1 nonzero.** The cooling measurement's premise is that the deployed code
+  *cannot* touch the table. A nonzero delta means it can, the cooling span
+  does not start, and the deploy-2 gate is not met by anything this session
+  produced.
+* **P6a's `invalid_footprints` nonzero.** 0018 admitting rows it claims to
+  refuse.
+* **P7c's `indeterminate` above baseline** with no named pre-existing site.
+* **The pilot failing P2a or P5 or P6** — the remainder does not run.
