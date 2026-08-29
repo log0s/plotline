@@ -391,7 +391,12 @@ def _update_scene(db: Session, resolution: Resolution, out: Outcome) -> None:
     assert item is not None
     footprint, complaint = _footprint_ewkt(item)
     if complaint:
-        out.anomalies.append(f"{row.collection}/{_item_id(item)}: {complaint}; footprint left NULL")
+        # A complaint no longer implies a NULL footprint: NORM-31's repair
+        # reports the discarded area of a multipart repair *and* stores the
+        # largest part. Say which of the two happened rather than asserting
+        # the older one.
+        tail = "footprint left NULL" if footprint is None else "footprint written as repaired"
+        out.anomalies.append(f"{row.collection}/{_item_id(item)}: {complaint}; {tail}")
 
     capture_date = _item_capture_date(item) or row.capture_date
     footprint_expr = "ST_GeomFromEWKT(:footprint)" if _is_postgres(db) else ":footprint"

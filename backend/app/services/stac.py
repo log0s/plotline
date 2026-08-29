@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx
 from shapely.geometry import Point
+from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform
 
 from app.services.imagery import encode_group_key
@@ -1492,6 +1493,11 @@ def extract_footprint_wkt(item: dict[str, object]) -> tuple[str | None, str | No
     footprint left NULL, rather than silently flattening a multipart footprint
     into one of its parts. A missing footprint is a gap a later pass can fill;
     a wrong one is a claim about where an image is.
+
+    Topological validity is ``normalize_footprint``'s question, not this
+    one's — NORM-31 is precisely that this function once asked only the type
+    one. Every write path reaches the repair through here, because this is
+    the single function all of them already call.
     """
     from shapely.geometry import shape
 
@@ -1501,6 +1507,124 @@ def extract_footprint_wkt(item: dict[str, object]) -> tuple[str | None, str | No
     if geometry.get("type") != "Polygon":
         return None, f"item geometry is {geometry.get('type')}, not Polygon"
     try:
-        return f"SRID=4326;{shape(geometry).wkt}", None
+        parsed = shape(geometry)
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
         return None, f"unparseable item geometry: {exc}"
+    stored, complaint = normalize_footprint(parsed, item_id=str(item.get("id") or ""))
+    if stored is None:
+        return None, complaint
+    return f"SRID=4326;{stored.wkt}", complaint
+
+
+# NORM-31. Two of the 5,387 footprints the production snapshot heal wrote fail
+# `ST_IsValid` — both Sentinel-2, both self-intersecting, both published that
+# way by the Planetary Computer and stored faithfully
+# (`docs/audits/2026-08-normalization/SNAPSHOT-ENRICH-PROD-REPORT-3.md` §6e).
+# Nothing in the pipeline noticed, because the column type
+# `geometry(POLYGON,4326)`, this module's non-Polygon branch and the heal's
+# prediction all asked "is this a polygon" and none asked "is this a valid
+# one". PostGIS validates on neither insert nor constraint, so an invalid ring
+# lands, sits behind the GiST index `idx_scenes_footprint`, and a GEOS
+# predicate over it can raise `TopologyException` instead of returning false —
+# a user-facing throw on data we wrote.
+#
+# The rule: test validity at write time, once, in this one function, and
+# repair rather than refuse. Refusing would leave the footprint NULL, which is
+# the state NORM-7 spent a 5,387-row heal getting out of, and it would put the
+# row back in that heal's queue forever, since the item will never change.
+#
+# **The storage rule when the repair is multipart, and why.** `make_valid` on
+# a self-intersecting ring can return a MultiPolygon (a bowtie splits into two
+# lobes) or a GeometryCollection (a polygon plus the zero-area lineal spike
+# that the self-intersection pinched off — which is what both production rows
+# actually do; see NORM31-REPORT.md). Lineal and puntal members carry no area
+# and are dropped without comment: they are artifacts of the repair, not
+# coverage. Where more than one *polygon* survives, this function stores the
+# largest by area and reports the discarded fraction.
+#
+# That choice is made against what the footprint is for. The serving question
+# is point-in-footprint — `filter_items_containing_point` asks exactly it in
+# Python, and ADR rule 4's promise that "the next geometry audit is a query
+# over `scenes`, not a refetch" means the column must answer it in SQL too. A
+# largest-part footprint can only ever *under*-claim coverage: it yields false
+# negatives (a parcel in a discarded lobe looks uncovered) and never false
+# positives (claiming coverage the image does not have), and a false positive
+# is the defect the 2026-08 geometry audit measured 33 rows of. Widening the
+# column to MULTIPOLYGON would lose nothing at all, and is the right answer the
+# moment a discarded fraction is non-trivial — but it is a production schema
+# migration, it breaks the "all footprints are `ST_Polygon`" invariant every
+# prediction file in this arc carries, and in the population that actually
+# exists it would buy zero area: both NORM-31 rows repair to a single polygon
+# of identical area. So: largest part, loudly, with the widening left costed
+# rather than taken. **If `footprint_repair_discarded_area` ever appears in the
+# logs with a fraction worth naming, widen the column — do not tune this.**
+_FOOTPRINT_REPAIR_EVENT = "footprint_repaired_invalid_geometry"
+
+
+def normalize_footprint(
+    geometry: BaseGeometry, *, item_id: str
+) -> tuple[BaseGeometry | None, str | None]:
+    """A storable, topologically valid footprint for ``geometry``.
+
+    ``(polygon, complaint)``. A geometry that is already valid is returned
+    **unchanged** — repair must not perturb good data. An invalid one is
+    repaired with ``make_valid`` (PostGIS's ``ST_MakeValid``, same GEOS call,
+    run Python-side because the parse already is) and the repair is *reported*,
+    never silent: one structlog event per occurrence carrying the item id and
+    shapely's ``explain_validity`` reason, so "how often does upstream ship
+    invalid geometry" is a grep over the logs rather than another audit.
+
+    The NORM-31 comment above this definition carries the reasoning, including
+    the deliberate storage rule for a multipart repair.
+    """
+    from shapely.validation import explain_validity, make_valid
+
+    if geometry.is_valid:
+        return geometry, None
+
+    reason = explain_validity(geometry)
+    repaired = make_valid(geometry)
+    parts = sorted(_polygonal_parts(repaired), key=lambda part: part.area, reverse=True)
+    if not parts:
+        logger.warning(
+            _FOOTPRINT_REPAIR_EVENT,
+            extra={
+                "stac_item_id": item_id,
+                "invalidity_reason": reason,
+                "repaired": False,
+                "repair_type": repaired.geom_type,
+            },
+        )
+        return None, f"invalid item geometry ({reason}) repaired to no polygon at all"
+
+    total = sum(part.area for part in parts)
+    discarded = 0.0 if total <= 0 else 1.0 - (parts[0].area / total)
+    logger.warning(
+        _FOOTPRINT_REPAIR_EVENT,
+        extra={
+            "stac_item_id": item_id,
+            "invalidity_reason": reason,
+            "repaired": True,
+            "repair_type": repaired.geom_type,
+            "polygon_parts": len(parts),
+            "footprint_repair_discarded_area": discarded,
+        },
+    )
+    complaint = None
+    if len(parts) > 1:
+        complaint = (
+            f"invalid item geometry ({reason}) repaired to {len(parts)} polygons;"
+            f" stored the largest, discarding {discarded:.6f} of the repaired area"
+        )
+    return parts[0], complaint
+
+
+def _polygonal_parts(geometry: BaseGeometry) -> list[BaseGeometry]:
+    """Every Polygon in a ``make_valid`` result. Lineal/puntal members dropped."""
+    if geometry.is_empty:
+        return []
+    if geometry.geom_type == "Polygon":
+        return [geometry]
+    if geometry.geom_type in ("MultiPolygon", "GeometryCollection"):
+        return [part for member in geometry.geoms for part in _polygonal_parts(member)]
+    return []

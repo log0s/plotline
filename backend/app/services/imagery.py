@@ -1221,8 +1221,13 @@ class SelectedScene:
             # Not a refusal: a scene with a NULL footprint is the state every
             # backfilled row is already in, and the item's identity is not in
             # question. Logged so the population stays countable.
+            # NORM-31: a complaint can also arrive with a footprint, when the
+            # repair discarded part of a multipart result. The message names
+            # which happened rather than claiming a NULL either way.
             logger.warning(
-                "Selected item has no storable footprint",
+                "Selected item has no storable footprint"
+                if footprint_wkt is None
+                else "Selected item's footprint was repaired",
                 extra={
                     "source": source,
                     "collection": collection,

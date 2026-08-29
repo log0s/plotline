@@ -36,11 +36,12 @@ with the row left exactly as it is:
 
 **What a matched row is written.**
 
-* ``footprint`` — ``item["geometry"]``, via ``extract_footprint_wkt``. The
-  geometry audit's rule: the item's real outline, never its bbox envelope. A
-  non-Polygon geometry cannot be stored in ``geometry(POLYGON,4326)``; it is
-  reported and the footprint left NULL, which means that row stays in the
-  queue.
+* ``footprint`` — ``item["geometry"]``, via ``extract_footprint_wkt``, which
+  since NORM-31 runs it through ``normalize_footprint``: the item's real
+  outline, never its bbox envelope, and topologically valid or repaired-and-
+  reported, never stored invalid. A non-Polygon geometry cannot be stored in
+  ``geometry(POLYGON,4326)``; it is reported and the footprint left NULL, which
+  means that row stays in the queue.
 * ``bbox`` — **only where it is currently NULL.** Existing bboxes were copied
   from rows the pipeline wrote and are not in question; rewriting them would
   be churn against a column no finding names.
@@ -81,6 +82,23 @@ queue and are not refetched. Writes commit in batches (``--batch-size``, 200
 by default) rather than one transaction over the whole queue — a multi-thousand
 row transaction held open for the length of the run is the wrong shape against
 pgbouncer, and it would make a kill cost the entire run's fetches.
+
+**A second mode, ``--revalidate-footprints`` (NORM-31).** Same fetch, same
+pacing, same batching, same resume; only the queue and the write set change.
+The queue becomes
+
+    footprint IS NOT NULL AND NOT ST_IsValid(footprint) AND source <> 'usgs_topo'
+
+— every row whose stored footprint is a polygon PostGIS will not vouch for, of
+**any** provenance, since the dual-write stores ``item["geometry"]`` through
+the same function this pass does. Those rows are refetched and their footprint
+rewritten through ``normalize_footprint``, which repairs and reports. Nothing
+else is written in this mode: those rows already have a bbox and a resolution
+that some earlier pass decided.
+
+Re-derivation is again the resume mechanism, for free: a repaired footprint is
+valid, so the row is gone from the queue on the next read. **Queue 0 is a clean
+run, not an error** — it is the post-sweep state, and exit is 0.
 
 Usage (dry run is the default and writes nothing; both forms do fetch):
 
@@ -163,18 +181,50 @@ def _as_date(value: Any) -> date:
     return date.fromisoformat(str(value)[:10])
 
 
-def load_queue(db: Session) -> list[QueueRow]:
-    """Every snapshot row still missing a footprint, topo excluded.
+#: The two queue shapes. ``fill`` is NORM-7's: rows with no footprint at all.
+#: ``revalidate`` is NORM-31's: rows whose footprint is stored but invalid.
+MODE_FILL = "fill"
+MODE_REVALIDATE = "revalidate"
+
+# NORM-31. The revalidate queue is *not* restricted to `provenance =
+# 'snapshot'`, unlike the fill queue. An invalid footprint is not a property of
+# where the row came from: the dual-write
+# (`app/services/imagery.py::_ensure_scene`) stores `item["geometry"]` through
+# the same function this pass does, so a `'selection'` row can carry exactly
+# the same self-intersection. Scoping the sweep to the provenance the finding
+# happened to be observed in is how a class becomes two classes.
+#
+# `usgs_topo` is still excluded for the reason the fill queue excludes it —
+# `usgs-historical-topo` is not a Planetary Computer collection, so there is no
+# item to GET — and topo footprints are NULL anyway, so the exclusion is free.
+_QUEUE_PREDICATE = {
+    MODE_FILL: "provenance = :provenance AND footprint IS NULL AND source <> :excluded",
+    MODE_REVALIDATE: "footprint IS NOT NULL AND NOT ST_IsValid(footprint) AND source <> :excluded",
+}
+
+
+def load_queue(db: Session, *, mode: str = MODE_FILL) -> list[QueueRow]:
+    """The run's queue, re-derived from the database.
+
+    ``fill``: every snapshot row still missing a footprint, topo excluded.
+    ``revalidate``: every row whose stored footprint fails ``ST_IsValid``.
 
     Re-derived on every run and after every commit's worth of progress: this
-    query *is* the resume mechanism, and it holds no state of its own.
+    query *is* the resume mechanism, and it holds no state of its own. That is
+    what makes the NORM-31 sweep resumable for free — a repaired row is valid,
+    so it is gone from the queue, exactly as a filled row is gone from the fill
+    queue.
     """
+    if mode == MODE_REVALIDATE and not _is_postgres(db):
+        # ST_IsValid is PostGIS. There is no SQLite answer to fake here, and a
+        # sweep that silently returns an empty queue would read as "clean".
+        raise RuntimeError("--revalidate-footprints requires PostGIS; this session is not Postgres")
     rows = db.execute(
         text(
             "SELECT id, source, collection, item_id, capture_date, resolution_m,"
             " bbox IS NULL AS bbox_is_null"
             " FROM scenes"
-            " WHERE provenance = :provenance AND footprint IS NULL AND source <> :excluded"
+            f" WHERE {_QUEUE_PREDICATE[mode]}"
             " ORDER BY collection, item_id"
         ),
         {"provenance": QUEUE_PROVENANCE, "excluded": EXCLUDED_SOURCE},
@@ -204,6 +254,43 @@ def count_excluded(db: Session) -> int:
             {"provenance": QUEUE_PROVENANCE, "excluded": EXCLUDED_SOURCE},
         ).scalar_one()
     )
+
+
+# NORM-31's other half. The invariant every prediction file in this arc
+# carried — "footprints all ST_Polygon, none equal to its own bbox" — passed
+# on two self-intersecting rows because it never asked about validity. It now
+# asks. Kept as one query so a prediction file, a post-run check and this
+# script's own verification cannot drift into asking different questions:
+#
+#   SELECT count(*) FILTER (WHERE GeometryType(footprint) <> 'POLYGON')  AS not_polygon,
+#          count(*) FILTER (WHERE NOT ST_IsValid(footprint))             AS invalid,
+#          count(*) FILTER (WHERE ST_Equals(footprint, ST_Envelope(footprint)))   AS equals_bbox
+#     FROM scenes WHERE footprint IS NOT NULL;
+#
+# All three must be 0. `invalid` is the column the old invariant had no
+# question for. `ST_Equals`, not the `~=` operator: since PostGIS 2.4 `~=`
+# compares *bounding boxes*, so `footprint ~= ST_Envelope(footprint)` is true
+# for every row on earth — a check of that shape reports 100% and means
+# nothing, which is this finding's own mistake in a different column.
+FOOTPRINT_INVARIANT_SQL = (
+    "SELECT"
+    " count(*) FILTER (WHERE GeometryType(footprint) <> 'POLYGON') AS not_polygon,"
+    " count(*) FILTER (WHERE NOT ST_IsValid(footprint)) AS invalid,"
+    " count(*) FILTER (WHERE ST_Equals(footprint, ST_Envelope(footprint))) AS equals_bbox"
+    " FROM scenes WHERE footprint IS NOT NULL"
+)
+
+
+def check_footprint_invariants(db: Session) -> dict[str, int] | None:
+    """The three counts above, or None where PostGIS is not available."""
+    if not _is_postgres(db):
+        return None
+    row = db.execute(text(FOOTPRINT_INVARIANT_SQL)).one()
+    return {
+        "not_polygon": int(row.not_polygon),
+        "invalid": int(row.invalid),
+        "equals_bbox": int(row.equals_bbox),
+    }
 
 
 # ── Fetching ──────────────────────────────────────────────────────────────────
@@ -240,6 +327,7 @@ async def fetch_batch(lookup: StacLookup, rows: list[QueueRow]) -> list[Fetched]
 
 @dataclass
 class Outcome:
+    mode: str = MODE_FILL
     queue_size: int = 0
     excluded_topo: int = 0
     fetched: int = 0
@@ -259,6 +347,8 @@ class Outcome:
     findings: list[str] = field(default_factory=list)
     date_disagreements: list[str] = field(default_factory=list)
     anomalies: list[str] = field(default_factory=list)
+    #: ``check_footprint_invariants`` after the run; None off PostGIS.
+    invariants: dict[str, int] | None = None
 
     def note_resolution(self, source: str, old: float | None, new: float | None) -> None:
         self.resolution_changes.setdefault(source, Counter())[(old, new)] += 1
@@ -281,12 +371,18 @@ def _item_capture_date(item: dict[str, Any]) -> date | None:
         return None
 
 
-def plan_row(fetched: Fetched, out: Outcome) -> dict[str, Any]:
+def plan_row(fetched: Fetched, out: Outcome, *, mode: str = MODE_FILL) -> dict[str, Any]:
     """What this row would be written, and every note that falls out of deciding.
 
     Shared by the dry run and the write so a capture cannot describe something
     other than what ``--execute`` does — the mistake NORM-8 is about. The
     caller is the only thing that touches the database.
+
+    In ``revalidate`` mode the plan is **footprint only**. Those rows already
+    have a bbox and a resolution that some earlier pass decided; rewriting them
+    under a geometry sweep would be churn against columns this finding does not
+    name, and it would make the sweep's diff impossible to read. Disagreements
+    are still reported — the notes are the pass's output, the writes are not.
     """
     row = fetched.row
     item = fetched.item
@@ -294,13 +390,19 @@ def plan_row(fetched: Fetched, out: Outcome) -> dict[str, Any]:
     plan: dict[str, Any] = {}
 
     footprint, complaint = extract_footprint_wkt(item)
-    if complaint:
-        out.anomalies.append(
-            f"{row.collection}/{row.item_id}: {complaint}; footprint left NULL,"
-            " so this row stays in the queue"
-        )
-    else:
+    if footprint is not None:
         plan["footprint"] = footprint
+    if complaint:
+        # NORM-31: a complaint and a storable footprint are no longer mutually
+        # exclusive. The repair reports a multipart discard *and* returns the
+        # largest part, so the two facts are recorded separately instead of
+        # the older message asserting a NULL that may not have happened.
+        tail = (
+            "footprint left NULL, so this row stays in the queue"
+            if footprint is None
+            else "footprint written as repaired"
+        )
+        out.anomalies.append(f"{row.collection}/{row.item_id}: {complaint}; {tail}")
 
     if row.bbox_is_null:
         bbox = extract_bbox_wkt(item)
@@ -329,6 +431,8 @@ def plan_row(fetched: Fetched, out: Outcome) -> dict[str, Any]:
             f"{row.collection}/{row.item_id}: row says {row.capture_date},"
             f" item says {item_date}; row keeps its own"
         )
+    if mode == MODE_REVALIDATE:
+        return {"footprint": plan["footprint"]} if "footprint" in plan else {}
     return plan
 
 
@@ -350,7 +454,9 @@ def _write_row(db: Session, row: QueueRow, plan: dict[str, Any]) -> None:
     )
 
 
-def apply_batch(db: Session, batch: list[Fetched], out: Outcome, *, execute: bool) -> None:
+def apply_batch(
+    db: Session, batch: list[Fetched], out: Outcome, *, execute: bool, mode: str = MODE_FILL
+) -> None:
     """Record every row's outcome, and write the ones that matched."""
     for fetched in batch:
         row = fetched.row
@@ -368,7 +474,7 @@ def apply_batch(db: Session, batch: list[Fetched], out: Outcome, *, execute: boo
             )
             continue
 
-        plan = plan_row(fetched, out)
+        plan = plan_row(fetched, out, mode=mode)
         if not plan:
             continue
         if execute:
@@ -396,6 +502,27 @@ def render_report(
 ) -> str:
     mode = "execute" if execute else "dry run"
     verb = "Wrote" if execute else "Would write"
+    pass_name = (
+        "footprint revalidation" if out.mode == MODE_REVALIDATE else "snapshot-scene enrichment"
+    )
+    queue_note = (
+        (
+            f"Queue at start: **{out.queue_size}** rows"
+            f" (`{_QUEUE_PREDICATE[MODE_REVALIDATE]}`, with `:excluded` = `'usgs_topo'`),"
+            f" batch size {batch_size}. NORM-31's sweep: every row whose stored"
+            " footprint fails `ST_IsValid`, of any provenance, refetched and"
+            " rewritten through `normalize_footprint`. Footprint only — no `bbox`"
+            " and no `resolution_m` is written in this mode."
+        )
+        if out.mode == MODE_REVALIDATE
+        else (
+            f"Queue at start: **{out.queue_size}** rows"
+            f" (`provenance = 'snapshot' AND footprint IS NULL AND source <> 'usgs_topo'`),"
+            f" batch size {batch_size}. Excluded from the queue: **{out.excluded_topo}**"
+            f" `usgs_topo` rows — `usgs-historical-topo` is not a Planetary Computer"
+            " collection, so those scenes have no item to fetch."
+        )
+    )
     state = (
         f"Finished {finished.isoformat(timespec='seconds')}"
         f" ({(finished - started).total_seconds():.0f} s)."
@@ -403,15 +530,11 @@ def render_report(
         else "**Incomplete — this report was written after a batch, not at the end.**"
     )
     lines = [
-        f"# Snapshot-scene enrichment — {mode}",
+        f"# {pass_name.capitalize()} — {mode}",
         "",
         f"Started {started.isoformat(timespec='seconds')}. {state}",
         "",
-        f"Queue at start: **{out.queue_size}** rows"
-        f" (`provenance = 'snapshot' AND footprint IS NULL AND source <> 'usgs_topo'`),"
-        f" batch size {batch_size}. Excluded from the queue: **{out.excluded_topo}**"
-        f" `usgs_topo` rows — `usgs-historical-topo` is not a Planetary Computer"
-        " collection, so those scenes have no item to fetch.",
+        queue_note,
         "",
         f"Rows fetched: **{out.fetched}**. STAC requests issued: **{requests}**.",
         "",
@@ -426,7 +549,8 @@ def render_report(
         "",
         "| Column | Rows |",
         "|---|---|",
-        f"| `footprint` filled | {out.footprints} |",
+        f"| `footprint` {'rewritten' if out.mode == MODE_REVALIDATE else 'filled'}"
+        f" | {out.footprints} |",
         f"| `bbox` filled (was NULL) | {out.bboxes} |",
         f"| `resolution_m` rewritten | {out.resolutions} |",
         "",
@@ -473,6 +597,28 @@ def render_report(
     lines.append("")
 
     lines += [
+        "## Footprint invariants, after the run",
+        "",
+        "All three must be `0`. The third is NORM-31's addition: every prediction"
+        " in this arc asked the first two and none asked whether the polygon was"
+        " *valid*, which is how two self-intersecting rows passed three layers of"
+        " checks.",
+        "",
+    ]
+    if out.invariants is None:
+        lines.append("Not checked: PostGIS is not available on this connection.")
+    else:
+        lines += ["| Check | Rows |", "|---|---|"]
+        lines += [
+            f"| footprint not `POLYGON` | {out.invariants['not_polygon']} |",
+            f"| footprint equal to its own bbox | {out.invariants['equals_bbox']} |",
+            f"| footprint fails `ST_IsValid` | {out.invariants['invalid']} |",
+        ]
+        lines.append("")
+        lines.append(f"Query: `{FOOTPRINT_INVARIANT_SQL}`")
+    lines.append("")
+
+    lines += [
         "## Findings",
         "",
         "Unresolved ids and unexpected resolutions, one line each. Every row named"
@@ -499,15 +645,22 @@ def run(
     report_path: Path,
     lookup: StacLookup,
     batch_size: int = DEFAULT_BATCH_SIZE,
+    mode: str = MODE_FILL,
 ) -> Outcome:
     started = datetime.now(UTC)
-    queue = load_queue(db)
-    out = Outcome(queue_size=len(queue), excluded_topo=count_excluded(db))
-    print(
-        f"queue (provenance = '{QUEUE_PROVENANCE}', footprint IS NULL,"
-        f" source <> '{EXCLUDED_SOURCE}'): {len(queue)} row(s);"
-        f" {out.excluded_topo} topo row(s) excluded"
-    )
+    queue = load_queue(db, mode=mode)
+    out = Outcome(mode=mode, queue_size=len(queue), excluded_topo=count_excluded(db))
+    if mode == MODE_REVALIDATE:
+        print(
+            f"queue (footprint IS NOT NULL AND NOT ST_IsValid(footprint),"
+            f" source <> '{EXCLUDED_SOURCE}'): {len(queue)} row(s)"
+        )
+    else:
+        print(
+            f"queue (provenance = '{QUEUE_PROVENANCE}', footprint IS NULL,"
+            f" source <> '{EXCLUDED_SOURCE}'): {len(queue)} row(s);"
+            f" {out.excluded_topo} topo row(s) excluded"
+        )
 
     def report(finished: datetime | None) -> str:
         return render_report(
@@ -531,7 +684,7 @@ def run(
             for start in range(0, len(queue), batch_size):
                 batch = queue[start : start + batch_size]
                 fetched = await fetch_batch(lookup, batch)
-                apply_batch(db, fetched, out, execute=execute)
+                apply_batch(db, fetched, out, execute=execute, mode=mode)
                 if execute:
                     db.commit()
                 _write_report(report_path, report(None))
@@ -546,6 +699,12 @@ def run(
 
     asyncio.run(process())
 
+    # Post-run verification, in both modes and both dry run and execute: the
+    # invariant is a property of the table, not of this run's writes, and a dry
+    # run that reports it is how the production queue gets measured before
+    # anything is written.
+    out.invariants = check_footprint_invariants(db)
+
     body = report(datetime.now(UTC))
     _write_report(report_path, body)
     print()
@@ -555,6 +714,7 @@ def run(
         "Enriched snapshot scenes",
         extra={
             "execute": execute,
+            "mode": mode,
             "queue": out.queue_size,
             "excluded_topo": out.excluded_topo,
             "written": out.written,
@@ -564,6 +724,7 @@ def run(
             "unmatched_404": out.unmatched_404,
             "unmatched_403": out.unmatched_403,
             "errors": out.errors,
+            "invariants": out.invariants,
         },
     )
     return out
@@ -586,6 +747,14 @@ def main() -> None:
         "--execute",
         action="store_true",
         help="Write the rows. Without it this is a dry run that still fetches.",
+    )
+    parser.add_argument(
+        "--revalidate-footprints",
+        action="store_true",
+        help="NORM-31 sweep instead of the fill pass: the queue becomes every row"
+        " whose stored footprint fails ST_IsValid (any provenance, topo excluded),"
+        " refetched and rewritten through normalize_footprint. Footprint only —"
+        " no bbox and no resolution_m is written. Requires PostGIS.",
     )
     parser.add_argument(
         "--batch-size",
@@ -621,6 +790,7 @@ def main() -> None:
                 report_path=args.report,
                 lookup=lookup,
                 batch_size=args.batch_size,
+                mode=MODE_REVALIDATE if args.revalidate_footprints else MODE_FILL,
             )
     except OperationalError:
         # An idle dry-run session can be reaped by the DB mid-teardown
