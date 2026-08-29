@@ -54,6 +54,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+from psycopg2 import OperationalError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -566,3 +567,102 @@ def test_pacing_spaces_out_dispatches() -> None:
 
     gaps = [b - a for a, b in zip(stamps, stamps[1:], strict=False)]
     assert all(gap >= 0.04 for gap in gaps), gaps
+
+
+# ── main()'s exit path (NORM-27) ───────────────────────────────────────────────
+#
+# `main` opens the DB session itself and derives its exit code from the run's
+# outcome. These tests mock the DB layer's teardown (`SessionLocal`'s context
+# manager) and `run` itself — no network, no real database — to isolate the
+# exit-path logic from the work it wraps.
+
+
+class _FakeSession:
+    def __init__(self, *, raise_on_exit: BaseException | None) -> None:
+        self._raise_on_exit = raise_on_exit
+
+    def __enter__(self) -> _FakeSession:
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+        if exc_type is None and self._raise_on_exit is not None:
+            raise self._raise_on_exit
+        return False
+
+
+def _run_main(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    outcome: Any,
+    teardown_error: BaseException | None,
+) -> None:
+    import app.db
+
+    monkeypatch.setattr(app.db, "SessionLocal", lambda: _FakeSession(raise_on_exit=teardown_error))
+    if isinstance(outcome, BaseException):
+        monkeypatch.setattr(script, "run", lambda *a, **k: (_ for _ in ()).throw(outcome))
+    else:
+        monkeypatch.setattr(script, "run", lambda *a, **k: outcome)
+    monkeypatch.setattr(
+        sys, "argv", ["enrich_snapshot_scenes.py", "--report", str(tmp_path / "report.md")]
+    )
+    script.main()
+
+
+def test_teardown_operational_error_after_success_exits_zero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Delete the try/except in main() and this exits 1 despite errors=0 (NORM-27)."""
+    with pytest.raises(SystemExit) as exc_info:
+        _run_main(
+            monkeypatch,
+            tmp_path,
+            outcome=script.Outcome(errors=0),
+            teardown_error=OperationalError("SSL connection has been closed unexpectedly"),
+        )
+
+    assert exc_info.value.code == 0
+    assert "teardown_operational_error_after_completed_run" in capsys.readouterr().out
+
+
+def test_failure_during_the_run_still_exits_nonzero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A run that never completes must not be treated as a completed one."""
+    with pytest.raises(OperationalError):
+        _run_main(
+            monkeypatch,
+            tmp_path,
+            outcome=OperationalError("connection reset mid-run"),
+            teardown_error=None,
+        )
+
+
+def test_run_errors_exit_nonzero_regardless_of_teardown(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        _run_main(
+            monkeypatch,
+            tmp_path,
+            outcome=script.Outcome(errors=3),
+            teardown_error=None,
+        )
+
+    assert exc_info.value.code == 1
+
+
+def test_run_errors_and_teardown_error_both_exit_nonzero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Both bad: the teardown catch must not mask the run's own failure."""
+    with pytest.raises(SystemExit) as exc_info:
+        _run_main(
+            monkeypatch,
+            tmp_path,
+            outcome=script.Outcome(errors=1),
+            teardown_error=OperationalError("SSL connection has been closed unexpectedly"),
+        )
+
+    assert exc_info.value.code == 1

@@ -112,6 +112,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from psycopg2 import OperationalError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -611,14 +612,24 @@ def main() -> None:
     from app.db import SessionLocal
 
     lookup = StacLookup(concurrency=args.concurrency, min_interval_s=args.min_interval_s)
-    with SessionLocal() as db:
-        out = run(
-            db,
-            execute=args.execute,
-            report_path=args.report,
-            lookup=lookup,
-            batch_size=args.batch_size,
-        )
+    out: Outcome | None = None
+    try:
+        with SessionLocal() as db:
+            out = run(
+                db,
+                execute=args.execute,
+                report_path=args.report,
+                lookup=lookup,
+                batch_size=args.batch_size,
+            )
+    except OperationalError:
+        # An idle dry-run session can be reaped by the DB mid-teardown
+        # (NORM-27): the run already finished and `out` was assigned before
+        # `Session.__exit__` raised. That is a teardown failure, not a run
+        # failure, and must not turn a completed run into a reported one.
+        if out is None:
+            raise
+        logger.error("teardown_operational_error_after_completed_run", exc_info=True)
     # The exit status a detached run's `; echo $? > /tmp/<name>.rc` captures.
     # 404s and 403s are findings about the catalogue, not failures of the run.
     sys.exit(1 if out.errors else 0)
