@@ -369,6 +369,12 @@ from the flag.**
 session** (the prompt's constraint: script bugs against prod data are
 stop-and-report).
 
+**Resolved:** `fb72aaa`, 2026-08-29 (local; not pushed, not deployed).
+`main()` catches `OperationalError` around the session block and only
+suppresses it when `run()` has already returned — teardown failure after a
+completed run no longer overrides the outcome-derived exit code. Details,
+tests, and deploy status: `SNAPSHOT-ENRICH-EXIT-FIX-REPORT.md`.
+
 The sequence in `snapshot-enrich-prod-dryrun.txt`, in order:
 
 1. `batch 27: 5387/5387 fetched, 5387 written, 0 unmatched, 0 error(s)`
