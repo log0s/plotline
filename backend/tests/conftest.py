@@ -14,14 +14,29 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import uuid
 from collections.abc import Generator, Sequence
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
+
+# `scripts/` is a sibling of `backend/`, not a child, and the script tests load
+# their subject by path — so a script that imports `scripts.shared.*` needs the
+# repo root importable. The container has it (`PYTHONPATH=/app`, with
+# `scripts/` mounted at `/app/scripts`); CI runs pytest from `backend/`, where
+# it is one level up and on nobody's path. Without this the two enrichment
+# script tests fail at collection in CI while passing everywhere locally,
+# which is NORM-21's shape.
+_REPO_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "scripts" / "seed.py").exists()
+)
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 # Must set DATABASE_URL before any app import since pydantic-settings
 # reads the environment at class definition time.
