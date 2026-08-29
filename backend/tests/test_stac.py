@@ -2140,3 +2140,150 @@ async def test_search_stac_stops_at_non_allowlisted_next_link() -> None:
     assert [i["id"] for i in items] == ["item-1"]
     mock_client.get.assert_not_awaited()
     assert mock_client.post.await_count == 1
+
+
+# ── SAS signing: startup mint (NORM-22) ──────────────────────────────────────
+
+
+class _FakeRedis:
+    """A minimal stateful Redis double — real per-key storage, not a mock.
+
+    ``_cache_miss_redis()`` always misses; these tests need the startup
+    mint's write and the request path's read to see the *same* key, which a
+    blanket ``return_value=None`` cannot exercise.
+    """
+
+    def __init__(self) -> None:
+        self.store: dict[str, bytes] = {}
+
+    async def get(self, key: str) -> bytes | None:
+        return self.store.get(key)
+
+    async def setex(self, key: str, _ttl: int, value: bytes) -> None:
+        self.store[key] = value
+
+
+@pytest.mark.asyncio
+async def test_startup_mint_populates_cache_for_every_derived_container() -> None:
+    """Startup mints exactly the derived container set into the shared cache."""
+    from app.services.stac import (
+        STARTUP_MINT_CONTAINERS,
+        _startup_mint_tasks,
+        schedule_startup_mint,
+    )
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(
+        return_value=_token_response(200, "se=2026-08-30T00:00:00Z&sr=c&sig=abc")
+    )
+    redis = _FakeRedis()
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=redis),
+    ):
+        schedule_startup_mint()
+        await asyncio.gather(*list(_startup_mint_tasks))
+
+    assert mock_client.get.await_count == len(STARTUP_MINT_CONTAINERS)
+    for account, container in STARTUP_MINT_CONTAINERS:
+        assert (
+            redis.store[f"sas-token:{account}/{container}"]
+            == b"se=2026-08-30T00:00:00Z&sr=c&sig=abc"
+        )
+
+
+@pytest.mark.asyncio
+async def test_startup_mint_failure_does_not_raise_and_leaves_cache_empty(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A PC 429 that outlasts even the batch budget degrades, it never fails boot."""
+    from app.services.stac import _startup_mint_tasks, schedule_startup_mint
+
+    mock_client = AsyncMock()
+    # 120s advised wait exceeds SIGN_WAIT_BATCH (60s) on the very first attempt,
+    # so this gives up without sleeping — mirroring STEP3-PROD-REPORT.md §5's
+    # "retry exceeds wait budget, giving up".
+    mock_client.get = AsyncMock(return_value=_token_response(429, retry_after="120"))
+    redis = _FakeRedis()
+
+    with (
+        caplog.at_level(logging.WARNING, logger="app.services.stac"),
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=redis),
+    ):
+        schedule_startup_mint()
+        # Must not raise: a startup caller awaiting these tasks (or not, since
+        # lifespan never does) must never see the app fail to boot over this.
+        await asyncio.gather(*list(_startup_mint_tasks))
+
+    assert redis.store == {}
+    failures = [r for r in caplog.records if "SAS startup mint failed" in r.getMessage()]
+    assert len(failures) == 3, "one distinct failure log line per container"
+
+
+@pytest.mark.asyncio
+async def test_startup_mint_retries_a_recoverable_429_and_still_populates_cache() -> None:
+    """A 429 that clears within the batch budget still ends in a cached token."""
+    from app.services.stac import LANDSAT_BLOB_CONTAINER, _mint_at_startup
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(
+        side_effect=[
+            _token_response(429, retry_after="1"),
+            _token_response(200, "se=2026-08-30T00:00:00Z&sr=c&sig=abc"),
+        ]
+    )
+    redis = _FakeRedis()
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=redis),
+        patch("app.services.stac.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await _mint_at_startup(*LANDSAT_BLOB_CONTAINER)
+
+    account, container = LANDSAT_BLOB_CONTAINER
+    assert (
+        redis.store[f"sas-token:{account}/{container}"] == b"se=2026-08-30T00:00:00Z&sr=c&sig=abc"
+    )
+    assert mock_client.get.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_request_path_finds_a_pre_minted_token_without_re_minting() -> None:
+    """The property the fix exists for: no mint call fires on first use after startup.
+
+    Delete ``schedule_startup_mint`` from the lifespan and this still passes
+    with a *warm* cache, but fails the moment the cache starts cold — which is
+    exactly the ``sign_pc_url`` test above already covers. What this test adds
+    is the startup path specifically: mint at boot, then read as a request
+    would, and prove the second step makes no PC call at all.
+    """
+    from app.services.stac import (
+        SIGN_WAIT_REQUEST,
+        STARTUP_MINT_CONTAINERS,
+        _container_token,
+        _startup_mint_tasks,
+        schedule_startup_mint,
+    )
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(
+        return_value=_token_response(200, "se=2026-08-30T00:00:00Z&sr=c&sig=abc")
+    )
+    redis = _FakeRedis()
+
+    with (
+        patch("app.services.stac._get_sign_client", return_value=mock_client),
+        patch("app.db.get_async_redis", return_value=redis),
+    ):
+        schedule_startup_mint()
+        await asyncio.gather(*list(_startup_mint_tasks))
+        mints_at_boot = mock_client.get.await_count
+
+        account, container = STARTUP_MINT_CONTAINERS[0]
+        token = await _container_token(account, container, wait_budget=SIGN_WAIT_REQUEST)
+
+    assert token == "se=2026-08-30T00:00:00Z&sr=c&sig=abc"
+    assert mock_client.get.await_count == mints_at_boot, "first request must not re-mint"

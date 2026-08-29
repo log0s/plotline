@@ -373,6 +373,34 @@ cached token across a deploy by persisting the cache in Redis, which is where
 wait, which converts a fast 502 into a slow tile and is the worst of the
 three. The decision belongs with whoever owns NORM-16.
 
+**Later: 2026-08-29, branch `norm22-startup-mint` (not yet merged).** Two
+factual corrections to this finding's mechanism, made reading `stac.py` on
+this batch's head rather than re-deriving from the incident alone. **The
+container-token cache is not in-process — it is Redis-backed**
+(`_cached_container_token` / `_mint_container_token`, keyed
+`sas-token:{account}/{container}`), and has been since `e8c857c` and
+`2168124` (2026-08-12), both ancestors of the deployed incident sha
+`c96dbf8`. Candidate (b) above, "persisting the cache in Redis," was already
+built at incident time; it did not prevent the 502. Since Redis is a
+separate Fly app from `log0s-plotline-api`, an API/worker deploy does not
+restart or flush it, so "a deploy empties the cache" cannot be the literal
+mechanism. The more defensible read: PC container tokens live ~45 min
+(margin-adjusted TTL, `_container_token_ttl`), this is a low-traffic app, and
+the deploy's own post-deploy smoke/health traffic is often the first request
+in a container's idle window — so a deploy *correlates* with the re-mint
+trip without *causing* it via cache emptying. **Second correction: there are
+three known `(account, container)` pairs, not four** — `naipeuwest/naip`,
+`sentinel2l2a01/sentinel2-l2`, `landsateuwest/landsat-c2` — matching the
+three mint lines this finding's own timeline shows, and cross-checked
+against `BOUNDARY-BASELINE.md` and `STATUS.md`'s G7 row. That timeline's
+`sentinel2l2a01/sentinel2-l2a` also has a stray trailing "a" against every
+other production reading of that container. Neither correction changes the
+remedy: a startup mint into the same Redis-backed cache still closes the
+observed window, because it guarantees a warm token exists before the
+post-deploy request that would otherwise trip it, regardless of which idle
+period produced the cold entry. Full reasoning and evidence:
+`NORM22-REPORT.md`.
+
 ### F3 — a detached run's exit code does not survive the client that launched it
 
 **New. Minor, and fixed by one line next time.** §3's PP14. `setsid nohup …
