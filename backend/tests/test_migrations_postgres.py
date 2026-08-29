@@ -509,3 +509,105 @@ def test_0018_round_trips_without_touching_anything_else() -> None:
                 assert connection.execute(text("SELECT count(*) FROM scenes")).scalar_one() == 1
         finally:
             engine.dispose()
+
+
+# ── 0019: the drop, and what its downgrade does and does not restore ─────────
+
+
+@requires_postgres
+def test_0019_drops_the_table_and_leaves_the_normalized_shape_alone() -> None:
+    """The retirement itself, plus the blast radius it must not have.
+
+    ``parcel_scenes`` has a foreign key to ``parcels`` and ``scenes`` and none
+    to the dropped table (ADR rule 1 kept the ledger clear of it too), so the
+    drop must take exactly one table with it. Asserting the other four are
+    still there is what makes this a test of the blast radius rather than of
+    ``DROP TABLE``.
+    """
+    with _temp_database() as url:
+        with _database_url(url):
+            command.upgrade(_alembic_config(), "0018")
+        assert _table_count(url, "imagery_snapshots") == 1
+
+        with _database_url(url):
+            command.upgrade(_alembic_config(), "0019")
+
+        assert _table_count(url, "imagery_snapshots") == 0
+        for survivor in ("scenes", "parcel_scenes", "timeline_task_years", "parcels"):
+            assert _table_count(url, survivor) == 1, f"0019 took {survivor} with it"
+
+
+@requires_postgres
+def test_0019_downgrade_restores_the_schema_and_not_the_rows() -> None:
+    """The docstring's central claim, asserted rather than asserted-in-prose.
+
+    A downgrade that silently produced an empty table would be indisputably
+    worse than one that failed: a serving read against it returns nothing,
+    which looks like a parcel with no imagery rather than like an outage. The
+    migration says so and this pins both halves — the shape comes back
+    complete, including 0007's ``additional_cog_urls`` and 0008's widened
+    CHECK, and it comes back empty.
+    """
+    with _temp_database() as url:
+        with _database_url(url):
+            command.upgrade(_alembic_config(), "0018")
+
+        engine = create_engine(url, poolclass=NullPool)
+        try:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO parcels (id, address, latitude, longitude, point)"
+                        " VALUES (gen_random_uuid(), 'x', 39.7, -105.0,"
+                        " ST_SetSRID(ST_MakePoint(-105.0, 39.7), 4326))"
+                    )
+                )
+                parcel = connection.execute(text("SELECT id FROM parcels LIMIT 1")).scalar_one()
+                connection.execute(
+                    text(
+                        "INSERT INTO imagery_snapshots (id, parcel_id, source, capture_date,"
+                        " stac_item_id, stac_collection, cog_url, additional_cog_urls)"
+                        " VALUES (gen_random_uuid(), :p, 'usgs_topo', '1965-01-01', 'T1',"
+                        " 'usgs-historical-topo', 'u', ARRAY['a','b']::text[])"
+                    ),
+                    {"p": parcel},
+                )
+
+            with _database_url(url):
+                command.upgrade(_alembic_config(), "0019")
+                command.downgrade(_alembic_config(), "0018")
+
+            with engine.connect() as connection:
+                assert (
+                    connection.execute(text("SELECT count(*) FROM imagery_snapshots")).scalar_one()
+                    == 0
+                ), "the downgrade must not appear to restore data; recovery is PITR"
+                columns = set(
+                    connection.execute(
+                        text(
+                            "SELECT column_name FROM information_schema.columns"
+                            " WHERE table_name = 'imagery_snapshots'"
+                        )
+                    ).scalars()
+                )
+            assert "additional_cog_urls" in columns, "0007's column must come back"
+
+            # 0008's widened CHECK, not 0002's: a usgs_topo row is admissible.
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO imagery_snapshots (id, parcel_id, source, capture_date,"
+                        " stac_item_id, stac_collection, cog_url)"
+                        " VALUES (gen_random_uuid(), :p, 'usgs_topo', '1965-01-01', 'T2',"
+                        " 'usgs-historical-topo', 'u')"
+                    ),
+                    {"p": parcel},
+                )
+
+            # And back up again: the revision graph is reversible even though
+            # the data is not.
+            with _database_url(url):
+                command.upgrade(_alembic_config(), "head")
+            assert _table_count(url, "imagery_snapshots") == 0
+        finally:
+            engine.dispose()
