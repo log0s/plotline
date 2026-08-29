@@ -94,3 +94,115 @@ scoped to the deploy timestamp):
 - The worker's logs showing no mint-at-startup lines at all — by design
   (`NORM22-REPORT.md` §3), the worker was not given this fix; its 60 s
   batch budget already absorbs a re-mint.
+
+---
+
+## Observed — production, 2026-08-29 deploy of `174892cc`
+
+*(Appended by the snapshot-enrich production session. Everything above this
+line is as committed in `dd6d881` and has not been edited.)*
+
+**Verdict: confirmed, on all three clauses, with full window coverage — and
+the window contained the failure mode's own trigger rather than merely being
+quiet.**
+
+### The deploy this scores
+
+`GET /api/v1/health` → `{"sha":"174892cc8164d4df7a915db279b4c77f569e1921",
+"built":"2026-08-29T17:41:26Z"}`. That sha contains `06f8f59` by way of the
+merge `0f193be` (`git merge-base --is-ancestor 0f193be 174892cc` exits 0), and
+`GH_SHA=174892cc…` on 4 of 4 machines of both apps. **This is the "next
+production deploy" this prediction defers to.**
+
+Anchor per the prediction's own rule (machine restart, not traffic start):
+
+| machine | `Plotline API starting` | window N = 10 min ends |
+|---|---|---|
+| `825d69b7e46618` | 17:41:59.371Z | 17:51:59Z |
+| `48e0de9a713918` | 17:42:17.957Z | 17:52:17Z |
+
+**Coverage is complete, not a floor.** `fly logs -a log0s-plotline-api
+--no-tail` returns a capped 100-line page; on this low-traffic app that page
+spans 07:54:34Z → the buffer head continuously, so it contains every line both
+machines emitted in both windows. The buffer was proved live rather than
+assumed: a probe `ssh` at 17:54:09Z appeared in the next capture, establishing
+that the empty span 17:47:16Z → 17:54:09Z is *no lines emitted*, not *lines
+not yet retrieved*. Capture committed unedited: `norm22-deploy-window.txt`.
+
+### Clause 1 — the mint lines are present, once per container, per machine
+
+**6 of 6 `"SAS startup mint succeeded"` lines, 0 `"SAS startup mint failed"`.**
+
+| machine | naipeuwest/naip | sentinel2l2a01/sentinel2-l2 | landsateuwest/landsat-c2 |
+|---|---|---|---|
+| `825d69b7e46618` | 17:42:00.254Z | 17:42:00.007Z | 17:42:10.139Z |
+| `48e0de9a713918` | 17:42:18.587Z | 17:42:19.034Z | 17:42:18.845Z |
+
+Each is preceded by its own `"SAS container token minted container=…"` line,
+so the mint reached the cache and did not merely log. **No container-name
+mismatch:** the three labels are exactly the three the request path reads, and
+`sentinel2l2a01/sentinel2-l2` carries no stray trailing `a` (STATUS.md
+NORM-22's own correction, confirmed against a second production reading).
+
+Every mint completed **before** its machine's window: the last one landed
+17:42:19.034Z, 11.1 s after `48e0de9a713918`'s `Application startup complete`.
+
+### Clause 2 — zero cold-cache 502s, and the clause is not vacuous
+
+**0 occurrences of `"Titiler returned 500"`, `"Band signing failed"`, or any
+502 in either window.**
+
+A quiet window on a low-traffic app would prove nothing, so **the request path
+was exercised inside the window on purpose**: a Landsat tile —
+`GET /api/v1/imagery/cc8292b9-eafb-4509-a306-055084b04542/tiles/8/47/102`
+(scene `LC09_L2SP_037037_20260817_02_T1`) — at **17:47:22Z, 5 min 23 s after
+`825d69b7e46618` booted**, returned **HTTP 200, 76,732 bytes, 4.18 s**. That
+is the same route, the same source and the same signing path that produced the
+502 at 06:39:42Z on 2026-08-29 (STEP3-PROD-REPORT.md §5/F2), inside the window
+that incident was inside. **It served.**
+
+### Clause 3 — zero re-mint 429s in the startup window, and the stronger reading
+
+**0 occurrences of `"SAS signing failed; retry exceeds wait budget, giving
+up"` anywhere in either window.**
+
+The finding worth more than the zero: **`825d69b7e46618` met the 429 anyway,
+and the fix absorbed it.** At 17:41:59.793Z — 0.42 s after
+`Application startup complete` — the startup mint for `landsateuwest/landsat-c2`
+drew `429 Too Many Requests` on `…/sas/v1/token/landsateuwest/landsat-c2`,
+backed off `wait_s=8.43`, drew a second 429 at 17:42:08.840Z, backed off
+`wait_s=1.11`, and minted at 17:42:10.111Z with `ms=10563`.
+
+**Ten and a half seconds of throttled signing, on the exact container and the
+exact endpoint of the original incident, resolved with no user-visible
+effect.** It resolved because a startup mint spends `SIGN_WAIT_BATCH` (60 s),
+not the request path's `SIGN_WAIT_REQUEST` (2.0 s): 10.56 s fits comfortably
+in the first budget and exceeds the second by 5×. **Pre-fix, that same 429
+arriving on the first Landsat tile request after this deploy is the 502.** The
+window did not merely avoid the failure mode; it contained the trigger and
+converted it into a 10-second boot delay nobody could observe.
+
+`48e0de9a713918`, minting 19 s later, met no 429 at all — consistent with the
+first machine's mint having already paid the throttle.
+
+### Falsifiers, checked one by one
+
+| Falsifier | Observed |
+|---|---|
+| A mint line missing for any container on any machine, with no matching failure line | **none** — 6 of 6 succeeded |
+| Any cold-cache 502 inside N | **none**, and a real Landsat tile inside N returned 200 |
+| A container name mismatch | **none** — all three labels match the request path's keys |
+
+### Scope, restated so this confirmation is not over-read
+
+Per this prediction's own terms and the branch prompt's: **this scores the
+deploy-triggered instance of the class, not the class.** The 429 absorbed here
+arrived *at boot*, where the 60 s budget applies. A sustained 429 storm
+arriving mid-traffic still meets the request path's 2.0 s wall — O1 act two /
+G4 territory, untouched by this fix and untouched by this observation. Nothing
+here is evidence about that case.
+
+And per the prediction's second scope note: "confirmed" means **the observable
+window was clean**, which is true under either candidate mechanism (a deploy
+emptying the cache, or idle-period TTL expiry). This session did not
+discriminate between them and did not try to.

@@ -1,0 +1,218 @@
+{
+ "taken_at": "2026-08-29T17:45:53.860433+00:00",
+ "readonly_proof": "InternalError: (psycopg2.errors.ReadOnlySqlTransaction) cannot execute UPDATE in a read-only transaction",
+ "alembic": [
+  {
+   "version_num": "0017"
+  }
+ ],
+ "counts": [
+  {
+   "scenes": 6663,
+   "parcel_scenes": 12884,
+   "imagery_snapshots": 12884
+  }
+ ],
+ "by_provenance": [
+  {
+   "provenance": "enriched",
+   "n": 505
+  },
+  {
+   "provenance": "selection",
+   "n": 2
+  },
+  {
+   "provenance": "snapshot",
+   "n": 6156
+  }
+ ],
+ "by_prov_source": [
+  {
+   "provenance": "enriched",
+   "source": "naip",
+   "n": 505,
+   "fp_null": 0,
+   "bbox_null": 0
+  },
+  {
+   "provenance": "selection",
+   "source": "sentinel2",
+   "n": 2,
+   "fp_null": 0,
+   "bbox_null": 0
+  },
+  {
+   "provenance": "snapshot",
+   "source": "landsat",
+   "n": 3174,
+   "fp_null": 3174,
+   "bbox_null": 0
+  },
+  {
+   "provenance": "snapshot",
+   "source": "naip",
+   "n": 1102,
+   "fp_null": 1102,
+   "bbox_null": 0
+  },
+  {
+   "provenance": "snapshot",
+   "source": "sentinel2",
+   "n": 1111,
+   "fp_null": 1111,
+   "bbox_null": 0
+  },
+  {
+   "provenance": "snapshot",
+   "source": "usgs_topo",
+   "n": 769,
+   "fp_null": 769,
+   "bbox_null": 0
+  }
+ ],
+ "traffic": [
+  {
+   "max_fetched_at": "2026-08-29 04:41:26.056028+00",
+   "max_selected_at": "2026-08-29 04:41:26.056028+00",
+   "scenes_since_t0": 0,
+   "ps_since_t0": 0
+  }
+ ],
+ "selected_by": [
+  {
+   "selected_by": "efa4c63a07455c5fc776c431d345284fd4082ddd",
+   "n": 7
+  }
+ ],
+ "dangling_parcel_scenes": [
+  {
+   "n": 0
+  }
+ ],
+ "queue_total": [
+  {
+   "n": 5387
+  }
+ ],
+ "queue_by_source": [
+  {
+   "source": "landsat",
+   "collection": "landsat-c2-l2",
+   "n": 3174,
+   "bbox_null": 0,
+   "capture_date_null": 0
+  },
+  {
+   "source": "naip",
+   "collection": "naip",
+   "n": 1102,
+   "bbox_null": 0,
+   "capture_date_null": 0
+  },
+  {
+   "source": "sentinel2",
+   "collection": "sentinel-2-l2a",
+   "n": 1111,
+   "bbox_null": 0,
+   "capture_date_null": 0
+  }
+ ],
+ "queue_distinct_items": [
+  {
+   "n": 5387
+  }
+ ],
+ "topo_excluded": [
+  {
+   "n": 769,
+   "fp_null": 769,
+   "res_null": 769
+  }
+ ],
+ "snapshot_fp_not_null": [
+  {
+   "n": 0
+  }
+ ],
+ "queue_naip_resolution": [
+  {
+   "resolution_m": 1.0,
+   "n": 1102
+  }
+ ],
+ "queue_landsat_sentinel_resolution": [
+  {
+   "source": "landsat",
+   "resolution_m": 30.0,
+   "n": 3174
+  },
+  {
+   "source": "sentinel2",
+   "resolution_m": 10.0,
+   "n": 1111
+  }
+ ],
+ "imagery_snapshots_naip_res": [
+  {
+   "resolution_m": 1.0,
+   "n": 1305
+  }
+ ],
+ "capture_date_span": [
+  {
+   "source": "landsat",
+   "lo": "1984-03-12",
+   "hi": "2026-08-17"
+  },
+  {
+   "source": "naip",
+   "lo": "2010-04-22",
+   "hi": "2023-11-13"
+  },
+  {
+   "source": "sentinel2",
+   "lo": "2015-08-21",
+   "hi": "2026-08-26"
+  }
+ ],
+ "existing_footprints": [
+  {
+   "n": 507,
+   "polygons": 507,
+   "eq_bbox": 0
+  }
+ ],
+ "bbox_fingerprint": [
+  {
+   "rows": 6663,
+   "md5": "f1809593fd050be14736aaaea4b09ed5"
+  }
+ ],
+ "naip_token_histogram": [
+  {
+   "tok": "1",
+   "n": 575
+  },
+  {
+   "tok": "060",
+   "n": 395
+  },
+  {
+   "tok": "030",
+   "n": 77
+  },
+  {
+   "tok": ".6",
+   "n": 31
+  },
+  {
+   "tok": "h",
+   "n": 13
+  },
+  {
+   "tok": ".5",
+   "n": 11
+  }
+ ]
+}

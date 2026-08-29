@@ -1,0 +1,88 @@
+# fly logs -a log0s-plotline-api --no-tail — captured 2026-08-29T17:54:2xZ, ANSI stripped.
+# Deploy 174892cc (built 17:41:26Z). Slice from the first deploy line to the buffer head.
+# The buffer is live and current: the 17:54:09Z line was produced by a probe ssh taken to prove it.
+
+2026-08-29T17:41:46Z runner[825d69b7e46618] lax [info]Pulling container image registry.fly.io/log0s-plotline-api@sha256:8135510c8d59f6918d11f695e07ebfb8b8e156020d54d783ffcf3b774bbda966
+2026-08-29T17:41:47Z runner[825d69b7e46618] lax [info]Successfully prepared image registry.fly.io/log0s-plotline-api@sha256:8135510c8d59f6918d11f695e07ebfb8b8e156020d54d783ffcf3b774bbda966 (1.547717894s)
+2026-08-29T17:41:48Z runner[825d69b7e46618] lax [info]Configuring firecracker
+2026-08-29T17:41:48Z app[825d69b7e46618] lax [info] INFO Sending signal SIGINT to main child process w/ PID 634
+2026-08-29T17:41:48Z app[825d69b7e46618] lax [info]INFO:     Shutting down
+2026-08-29T17:41:48Z app[825d69b7e46618] lax [info]INFO:     Waiting for application shutdown.
+2026-08-29T17:41:48Z app[825d69b7e46618] lax [info]INFO:     Application shutdown complete.
+2026-08-29T17:41:48Z app[825d69b7e46618] lax [info]INFO:     Finished server process [634]
+2026-08-29T17:41:50Z app[825d69b7e46618] lax [info] INFO Main child exited normally with code: 0
+2026-08-29T17:41:50Z app[825d69b7e46618] lax [info] INFO Starting clean up.
+2026-08-29T17:41:50Z app[825d69b7e46618] lax [info][36183.797279] reboot: Restarting system
+2026-08-29T17:41:50Z app[825d69b7e46618] lax [info]2026-08-29T17:41:50.687152544 [01M179SYRX1NQRB6DBYZRVAVHE:main] Running Firecracker v1.14.4
+2026-08-29T17:41:50Z app[825d69b7e46618] lax [info]2026-08-29T17:41:50.687310357 [01M179SYRX1NQRB6DBYZRVAVHE:main] Listening on API socket ("/fc.sock").
+2026-08-29T17:41:51Z app[825d69b7e46618] lax [info] INFO Starting init (commit: 6172d83)...
+2026-08-29T17:41:51Z app[825d69b7e46618] lax [info] INFO Preparing to run: `/entrypoint.sh uvicorn app.main:app --host 0.0.0.0 --port 8000` as root
+2026-08-29T17:41:51Z app[825d69b7e46618] lax [info] INFO [fly api proxy] listening at /.fly/api
+2026-08-29T17:41:51Z app[825d69b7e46618] lax [info]Running database migrations...
+2026-08-29T17:41:51Z app[825d69b7e46618] lax [info]2026/08/29 17:41:51 INFO SSH listening listen_address=[fdaa:58:2ead:a7b:2bf:226b:8984:2]:22
+2026-08-29T17:41:51Z runner[825d69b7e46618] lax [info]Machine created and started in 5.623s
+2026-08-29T17:41:56Z app[825d69b7e46618] lax [info]INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+2026-08-29T17:41:56Z app[825d69b7e46618] lax [info]INFO  [alembic.runtime.migration] Will assume transactional DDL.
+2026-08-29T17:41:56Z app[825d69b7e46618] lax [info]INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+2026-08-29T17:41:56Z app[825d69b7e46618] lax [info]INFO  [alembic.runtime.migration] Will assume transactional DDL.
+2026-08-29T17:41:56Z app[825d69b7e46618] lax [info]INFO  [alembic.env] Migration head check: database=['0017'] scripts=['0017']
+2026-08-29T17:41:56Z app[825d69b7e46618] lax [info]Migrations complete.
+2026-08-29T17:41:56Z app[825d69b7e46618] lax [info]Starting service...
+2026-08-29T17:41:59Z app[825d69b7e46618] lax [info]INFO:     Started server process [636]
+2026-08-29T17:41:59Z app[825d69b7e46618] lax [info]INFO:     Waiting for application startup.
+2026-08-29T17:41:59Z app[825d69b7e46618] lax [info]{"event": "Plotline API starting", "logger": "app.main", "level": "info", "env": "production", "log_level": "INFO", "timestamp": "2026-08-29T17:41:59.371055Z"}
+2026-08-29T17:41:59Z app[825d69b7e46618] lax [info]INFO:     Application startup complete.
+2026-08-29T17:41:59Z app[825d69b7e46618] lax [info]INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2026-08-29T17:41:59Z app[825d69b7e46618] lax [info]{"event": "SAS signing failed; backing off", "logger": "app.services.stac", "level": "info", "attempt": 1, "wait_s": 8.433532542622087, "error": "Client error '429 Too Many Requests' for url 'https://planetarycomputer.microsoft.com/api/sas/v1/token/landsateuwest/landsat-c2'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429", "timestamp": "2026-08-29T17:41:59.793226Z"}
+2026-08-29T17:41:59Z app[825d69b7e46618] lax [info]{"event": "SAS container token minted container=sentinel2l2a01/sentinel2-l2 se=*** ms=255", "logger": "app.services.stac", "level": "info", "timestamp": "2026-08-29T17:41:59.801955Z"}
+2026-08-29T17:42:00Z app[825d69b7e46618] lax [info]{"event": "SAS startup mint succeeded", "logger": "app.services.stac", "level": "info", "container": "sentinel2l2a01/sentinel2-l2", "timestamp": "2026-08-29T17:42:00.007167Z"}
+2026-08-29T17:42:00Z app[825d69b7e46618] lax [info]{"event": "SAS container token minted container=naipeuwest/naip se=*** ms=855", "logger": "app.services.stac", "level": "info", "timestamp": "2026-08-29T17:42:00.226594Z"}
+2026-08-29T17:42:00Z app[825d69b7e46618] lax [info]{"event": "SAS startup mint succeeded", "logger": "app.services.stac", "level": "info", "container": "naipeuwest/naip", "timestamp": "2026-08-29T17:42:00.254264Z"}
+2026-08-29T17:42:04Z runner[48e0de9a713918] lax [info]Pulling container image registry.fly.io/log0s-plotline-api@sha256:8135510c8d59f6918d11f695e07ebfb8b8e156020d54d783ffcf3b774bbda966
+2026-08-29T17:42:05Z runner[48e0de9a713918] lax [info]Successfully prepared image registry.fly.io/log0s-plotline-api@sha256:8135510c8d59f6918d11f695e07ebfb8b8e156020d54d783ffcf3b774bbda966 (1.637531418s)
+2026-08-29T17:42:06Z runner[48e0de9a713918] lax [info]Configuring firecracker
+2026-08-29T17:42:06Z app[48e0de9a713918] lax [info] INFO Sending signal SIGINT to main child process w/ PID 634
+2026-08-29T17:42:06Z app[48e0de9a713918] lax [info]INFO:     Shutting down
+2026-08-29T17:42:07Z app[48e0de9a713918] lax [info]INFO:     Waiting for application shutdown.
+2026-08-29T17:42:07Z app[48e0de9a713918] lax [info]INFO:     Application shutdown complete.
+2026-08-29T17:42:07Z app[48e0de9a713918] lax [info]INFO:     Finished server process [634]
+2026-08-29T17:42:07Z app[48e0de9a713918] lax [info] INFO Main child exited normally with code: 0
+2026-08-29T17:42:07Z app[48e0de9a713918] lax [info] INFO Starting clean up.
+2026-08-29T17:42:07Z app[48e0de9a713918] lax [info][36182.651636] reboot: Restarting system
+2026-08-29T17:42:08Z app[48e0de9a713918] lax [info]2026-08-29T17:42:08.778640373 [01M179TGG1NC2HVH93EJR4CEXC:main] Running Firecracker v1.14.4
+2026-08-29T17:42:08Z app[48e0de9a713918] lax [info]2026-08-29T17:42:08.778825557 [01M179TGG1NC2HVH93EJR4CEXC:main] Listening on API socket ("/fc.sock").
+2026-08-29T17:42:08Z app[825d69b7e46618] lax [info]{"event": "SAS signing failed; backing off", "logger": "app.services.stac", "level": "info", "attempt": 2, "wait_s": 1.1149010963157637, "error": "Client error '429 Too Many Requests' for url 'https://planetarycomputer.microsoft.com/api/sas/v1/token/landsateuwest/landsat-c2'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429", "timestamp": "2026-08-29T17:42:08.839819Z"}
+2026-08-29T17:42:09Z app[48e0de9a713918] lax [info] INFO Starting init (commit: 6172d83)...
+2026-08-29T17:42:09Z app[48e0de9a713918] lax [info] INFO Preparing to run: `/entrypoint.sh uvicorn app.main:app --host 0.0.0.0 --port 8000` as root
+2026-08-29T17:42:09Z app[48e0de9a713918] lax [info] INFO [fly api proxy] listening at /.fly/api
+2026-08-29T17:42:09Z app[48e0de9a713918] lax [info]Running database migrations...
+2026-08-29T17:42:09Z app[48e0de9a713918] lax [info]2026/08/29 17:42:09 INFO SSH listening listen_address=[fdaa:58:2ead:a7b:73d:4f2b:87a6:2]:22
+2026-08-29T17:42:09Z runner[48e0de9a713918] lax [info]Machine created and started in 5.438s
+2026-08-29T17:42:10Z app[825d69b7e46618] lax [info]{"event": "SAS container token minted container=landsateuwest/landsat-c2 se=*** ms=10563", "logger": "app.services.stac", "level": "info", "timestamp": "2026-08-29T17:42:10.111162Z"}
+2026-08-29T17:42:10Z app[825d69b7e46618] lax [info]{"event": "SAS startup mint succeeded", "logger": "app.services.stac", "level": "info", "container": "landsateuwest/landsat-c2", "timestamp": "2026-08-29T17:42:10.138922Z"}
+2026-08-29T17:42:14Z app[48e0de9a713918] lax [info]INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+2026-08-29T17:42:14Z app[48e0de9a713918] lax [info]INFO  [alembic.runtime.migration] Will assume transactional DDL.
+2026-08-29T17:42:14Z app[48e0de9a713918] lax [info]INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+2026-08-29T17:42:14Z app[48e0de9a713918] lax [info]INFO  [alembic.runtime.migration] Will assume transactional DDL.
+2026-08-29T17:42:14Z app[48e0de9a713918] lax [info]INFO  [alembic.env] Migration head check: database=['0017'] scripts=['0017']
+2026-08-29T17:42:15Z app[48e0de9a713918] lax [info]Migrations complete.
+2026-08-29T17:42:15Z app[48e0de9a713918] lax [info]Starting service...
+2026-08-29T17:42:17Z app[48e0de9a713918] lax [info]INFO:     Started server process [634]
+2026-08-29T17:42:17Z app[48e0de9a713918] lax [info]INFO:     Waiting for application startup.
+2026-08-29T17:42:17Z app[48e0de9a713918] lax [info]{"event": "Plotline API starting", "logger": "app.main", "level": "info", "env": "production", "log_level": "INFO", "timestamp": "2026-08-29T17:42:17.956662Z"}
+2026-08-29T17:42:18Z app[48e0de9a713918] lax [info]INFO:     Application startup complete.
+2026-08-29T17:42:18Z app[48e0de9a713918] lax [info]INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2026-08-29T17:42:18Z app[48e0de9a713918] lax [info]{"event": "SAS container token minted container=naipeuwest/naip se=*** ms=435", "logger": "app.services.stac", "level": "info", "timestamp": "2026-08-29T17:42:18.391887Z"}
+2026-08-29T17:42:18Z app[48e0de9a713918] lax [info]{"event": "SAS startup mint succeeded", "logger": "app.services.stac", "level": "info", "container": "naipeuwest/naip", "timestamp": "2026-08-29T17:42:18.587154Z"}
+2026-08-29T17:42:18Z app[48e0de9a713918] lax [info]{"event": "SAS container token minted container=landsateuwest/landsat-c2 se=*** ms=680", "logger": "app.services.stac", "level": "info", "timestamp": "2026-08-29T17:42:18.814148Z"}
+2026-08-29T17:42:18Z app[48e0de9a713918] lax [info]{"event": "SAS startup mint succeeded", "logger": "app.services.stac", "level": "info", "container": "landsateuwest/landsat-c2", "timestamp": "2026-08-29T17:42:18.844764Z"}
+2026-08-29T17:42:19Z app[48e0de9a713918] lax [info]{"event": "SAS container token minted container=sentinel2l2a01/sentinel2-l2 se=*** ms=870", "logger": "app.services.stac", "level": "info", "timestamp": "2026-08-29T17:42:19.003508Z"}
+2026-08-29T17:42:19Z app[48e0de9a713918] lax [info]{"event": "SAS startup mint succeeded", "logger": "app.services.stac", "level": "info", "container": "sentinel2l2a01/sentinel2-l2", "timestamp": "2026-08-29T17:42:19.034012Z"}
+2026-08-29T17:43:44Z app[48e0de9a713918] lax [info]2026/08/29 17:43:44 INFO New SSH session email=ryan.b.herman@gmail.com verified=true
+2026-08-29T17:43:46Z app[825d69b7e46618] lax [info]2026/08/29 17:43:46 INFO New SSH session email=ryan.b.herman@gmail.com verified=true
+2026-08-29T17:44:20Z app[48e0de9a713918] lax [info]2026/08/29 17:44:20 INFO New SSH session email=ryan.b.herman@gmail.com verified=true
+2026-08-29T17:44:22Z app[825d69b7e46618] lax [info]2026/08/29 17:44:22 INFO New SSH session email=ryan.b.herman@gmail.com verified=true
+2026-08-29T17:45:53Z app[825d69b7e46618] lax [info]2026/08/29 17:45:53 INFO New SSH session email=ryan.b.herman@gmail.com verified=true
+2026-08-29T17:46:34Z app[825d69b7e46618] lax [info]2026/08/29 17:46:34 INFO New SSH session email=ryan.b.herman@gmail.com verified=true
+2026-08-29T17:47:16Z app[825d69b7e46618] lax [info]2026/08/29 17:47:16 INFO New SSH session email=ryan.b.herman@gmail.com verified=true
+2026-08-29T17:54:09Z app[825d69b7e46618] lax [info]2026/08/29 17:54:09 INFO New SSH session email=ryan.b.herman@gmail.com verified=true
