@@ -1,0 +1,190 @@
+{
+ "taken_at": "2026-08-29T19:52:27.781997+00:00",
+ "method": "SELECT only; no SET, no UPDATE probe",
+ "observed_session_state": [
+  {
+   "default_ro": "off",
+   "txn_ro": "off",
+   "backend_pid": 605
+  }
+ ],
+ "counts": [
+  {
+   "scenes": 6663,
+   "parcel_scenes": 12884,
+   "imagery_snapshots": 12884
+  }
+ ],
+ "by_provenance": [
+  {
+   "provenance": "enriched",
+   "n": 505
+  },
+  {
+   "provenance": "selection",
+   "n": 2
+  },
+  {
+   "provenance": "snapshot",
+   "n": 6156
+  }
+ ],
+ "queue_remaining": [
+  {
+   "n": 0
+  }
+ ],
+ "queue_remaining_rows": [],
+ "healed_geometry": [
+  {
+   "n": 5387,
+   "with_footprint": 5387,
+   "polygons": 5387,
+   "equals_bbox": 0,
+   "invalid": 2
+  }
+ ],
+ "all_footprints": [
+  {
+   "n": 5894,
+   "polygons": 5894,
+   "equals_bbox": 0
+  }
+ ],
+ "topo_still_null": [
+  {
+   "n": 769,
+   "fp_null": 769,
+   "res_null": 769
+  }
+ ],
+ "bbox_null_all_scenes": [
+  {
+   "n": 0
+  }
+ ],
+ "bbox_fingerprint": [
+  {
+   "md5_comma": "f1809593fd050be14736aaaea4b09ed5",
+   "rows": 6663
+  }
+ ],
+ "naip_resolution_after": [
+  {
+   "resolution_m": 0.3,
+   "n": 77
+  },
+  {
+   "resolution_m": 0.5,
+   "n": 11
+  },
+  {
+   "resolution_m": 0.6,
+   "n": 439
+  },
+  {
+   "resolution_m": 1.0,
+   "n": 575
+  }
+ ],
+ "landsat_resolution_after": [
+  {
+   "resolution_m": 30.0,
+   "n": 3174
+  }
+ ],
+ "sentinel2_resolution_after": [
+  {
+   "resolution_m": 10.0,
+   "n": 1111
+  }
+ ],
+ "imagery_snapshots_naip_after": [
+  {
+   "resolution_m": 1.0,
+   "n": 1305
+  }
+ ],
+ "naip_token_vs_resolution": [
+  {
+   "token": ".5",
+   "resolution_m": 0.5,
+   "n": 11
+  },
+  {
+   "token": ".6",
+   "resolution_m": 0.6,
+   "n": 31
+  },
+  {
+   "token": "030",
+   "resolution_m": 0.3,
+   "n": 77
+  },
+  {
+   "token": "060",
+   "resolution_m": 0.6,
+   "n": 395
+  },
+  {
+   "token": "1",
+   "resolution_m": 1.0,
+   "n": 575
+  },
+  {
+   "token": "h",
+   "resolution_m": 0.6,
+   "n": 13
+  }
+ ],
+ "freshness": [
+  {
+   "max_fetched_at": "2026-08-29 04:41:26.056028+00:00",
+   "max_selected_at": "2026-08-29 04:41:26.056028+00:00"
+  }
+ ],
+ "subject_scene": [
+  {
+   "id": "1f4276e5-d41e-4c3d-8cf5-90be04b5c4fe",
+   "item_id": "ny_m_4007306_sw_18_.5_20150522_20151109",
+   "resolution_m": 0.5,
+   "capture_date": "2015-05-22",
+   "fp_type": "POLYGON",
+   "fp_equals_bbox": false,
+   "fp_area": "0.00489774",
+   "bbox_area": "0.00508859"
+  }
+ ],
+ "subject_parcels": [
+  {
+   "parcel_id": "a79522ab-0681-4629-a4fe-935ab4d856c2",
+   "group_key": "2015",
+   "resolution_m": 0.5,
+   "item_id": "ny_m_4007306_sw_18_.5_20150522_20151109"
+  }
+ ],
+ "served_naip_off_one": [
+  {
+   "resolution_m": 0.3,
+   "served_rows": 94
+  },
+  {
+   "resolution_m": 0.5,
+   "served_rows": 13
+  },
+  {
+   "resolution_m": 0.6,
+   "served_rows": 510
+  },
+  {
+   "resolution_m": 1.0,
+   "served_rows": 688
+  }
+ ],
+ "subject_parcel_address": [
+  {
+   "id": "a79522ab-0681-4629-a4fe-935ab4d856c2",
+   "address": "25 north avenue Northport my 11768"
+  }
+ ]
+}

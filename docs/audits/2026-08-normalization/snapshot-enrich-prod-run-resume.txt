@@ -1,0 +1,85 @@
+queue (provenance = 'snapshot', footprint IS NULL, source <> 'usgs_topo'): 5187 row(s); 769 topo row(s) excluded
+batch 1: 200/5187 fetched, 200 written, 0 unmatched, 0 error(s)
+batch 2: 400/5187 fetched, 400 written, 0 unmatched, 0 error(s)
+batch 3: 600/5187 fetched, 600 written, 0 unmatched, 0 error(s)
+batch 4: 800/5187 fetched, 800 written, 0 unmatched, 0 error(s)
+batch 5: 1000/5187 fetched, 1000 written, 0 unmatched, 0 error(s)
+batch 6: 1200/5187 fetched, 1200 written, 0 unmatched, 0 error(s)
+batch 7: 1400/5187 fetched, 1400 written, 0 unmatched, 0 error(s)
+batch 8: 1600/5187 fetched, 1600 written, 0 unmatched, 0 error(s)
+batch 9: 1800/5187 fetched, 1800 written, 0 unmatched, 0 error(s)
+batch 10: 2000/5187 fetched, 2000 written, 0 unmatched, 0 error(s)
+batch 11: 2200/5187 fetched, 2200 written, 0 unmatched, 0 error(s)
+batch 12: 2400/5187 fetched, 2400 written, 0 unmatched, 0 error(s)
+batch 13: 2600/5187 fetched, 2600 written, 0 unmatched, 0 error(s)
+batch 14: 2800/5187 fetched, 2800 written, 0 unmatched, 0 error(s)
+batch 15: 3000/5187 fetched, 3000 written, 0 unmatched, 0 error(s)
+batch 16: 3200/5187 fetched, 3200 written, 0 unmatched, 0 error(s)
+batch 17: 3400/5187 fetched, 3400 written, 0 unmatched, 0 error(s)
+batch 18: 3600/5187 fetched, 3600 written, 0 unmatched, 0 error(s)
+batch 19: 3800/5187 fetched, 3800 written, 0 unmatched, 0 error(s)
+batch 20: 4000/5187 fetched, 4000 written, 0 unmatched, 0 error(s)
+batch 21: 4200/5187 fetched, 4200 written, 0 unmatched, 0 error(s)
+batch 22: 4400/5187 fetched, 4400 written, 0 unmatched, 0 error(s)
+batch 23: 4600/5187 fetched, 4600 written, 0 unmatched, 0 error(s)
+batch 24: 4800/5187 fetched, 4800 written, 0 unmatched, 0 error(s)
+batch 25: 5000/5187 fetched, 5000 written, 0 unmatched, 0 error(s)
+batch 26: 5187/5187 fetched, 5187 written, 0 unmatched, 0 error(s)
+
+# Snapshot-scene enrichment — execute
+
+Started 2026-08-29T19:31:26+00:00. Finished 2026-08-29T19:51:21+00:00 (1195 s).
+
+Queue at start: **5187** rows (`provenance = 'snapshot' AND footprint IS NULL AND source <> 'usgs_topo'`), batch size 200. Excluded from the queue: **769** `usgs_topo` rows — `usgs-historical-topo` is not a Planetary Computer collection, so those scenes have no item to fetch.
+
+Rows fetched: **5187**. STAC requests issued: **5187**.
+
+## Totals
+
+| Outcome | Rows |
+|---|---|
+| matched and written | 5187 |
+| unmatched — item GET 404 | 0 |
+| unmatched — item GET 403 | 0 |
+| error | 0 |
+
+| Column | Rows |
+|---|---|
+| `footprint` filled | 5187 |
+| `bbox` filled (was NULL) | 0 |
+| `resolution_m` rewritten | 527 |
+
+Wrote 5187 row(s). Queue after this run: **0**.
+
+## `resolution_m` rewrites, by source
+
+| Source | Stored | Item | Rows |
+|---|---|---|---|
+| naip | 1.0 | 0.3 | 77 |
+| naip | 1.0 | 0.5 | 11 |
+| naip | 1.0 | 0.6 | 439 |
+
+## Items carrying no `gsd`
+
+| Source | Rows |
+|---|---|
+| sentinel2 | 1111 |
+
+`resolution_m` was left as stored for these rows. `None` is never written over a value.
+
+## Capture-date disagreements
+
+None. Every matched item's `datetime` equals the row's `capture_date`.
+
+## Anomalies
+
+None.
+
+## Findings
+
+Unresolved ids and unexpected resolutions, one line each. Every row named here was left exactly as it was.
+
+None.
+
+Report: /tmp/snapshot-enrich-prod-run-resume.md
+2026-08-29T19:51:21.663790Z [info     ] Enriched snapshot scenes       [enrich_snapshot_scenes] bboxes=0 errors=0 excluded_topo=769 execute=True footprints=5187 queue=5187 resolutions=527 unmatched_403=0 unmatched_404=0 written=5187

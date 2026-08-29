@@ -1,0 +1,51 @@
+queue (provenance = 'snapshot', footprint IS NULL, source <> 'usgs_topo'): 0 row(s); 769 topo row(s) excluded
+
+# Snapshot-scene enrichment — dry run
+
+Started 2026-08-29T19:53:37+00:00. Finished 2026-08-29T19:53:37+00:00 (1 s).
+
+Queue at start: **0** rows (`provenance = 'snapshot' AND footprint IS NULL AND source <> 'usgs_topo'`), batch size 200. Excluded from the queue: **769** `usgs_topo` rows — `usgs-historical-topo` is not a Planetary Computer collection, so those scenes have no item to fetch.
+
+Rows fetched: **0**. STAC requests issued: **0**.
+
+## Totals
+
+| Outcome | Rows |
+|---|---|
+| matched and written | 0 |
+| unmatched — item GET 404 | 0 |
+| unmatched — item GET 403 | 0 |
+| error | 0 |
+
+| Column | Rows |
+|---|---|
+| `footprint` filled | 0 |
+| `bbox` filled (was NULL) | 0 |
+| `resolution_m` rewritten | 0 |
+
+Would write 0 row(s). Queue after this run: **0**. Dry run — nothing written.
+
+## `resolution_m` rewrites, by source
+
+None: every fetched item agreed with the value already stored.
+
+## Items carrying no `gsd`
+
+None.
+
+## Capture-date disagreements
+
+None. Every matched item's `datetime` equals the row's `capture_date`.
+
+## Anomalies
+
+None.
+
+## Findings
+
+Unresolved ids and unexpected resolutions, one line each. Every row named here was left exactly as it was.
+
+None.
+
+Report: /tmp/snapshot-enrich-prod-dryrun-4.md
+2026-08-29T19:53:37.889617Z [info     ] Enriched snapshot scenes       [enrich_snapshot_scenes] bboxes=0 errors=0 excluded_topo=769 execute=False footprints=0 queue=0 resolutions=0 unmatched_403=0 unmatched_404=0 written=0

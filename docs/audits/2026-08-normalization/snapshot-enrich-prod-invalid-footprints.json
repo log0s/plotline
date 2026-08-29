@@ -1,0 +1,32 @@
+{
+ "at": "2026-08-29T19:52:50.930566+00:00",
+ "invalid_total": 2,
+ "rows": [
+  {
+   "id": "6d456449-2ffb-4f3f-aa3f-ba69a502481d",
+   "source": "sentinel2",
+   "collection": "sentinel-2-l2a",
+   "item_id": "S2B_MSIL2A_20181226T153639_R111_T19TCG_20201008T131747",
+   "capture_date": "2018-12-26",
+   "reason": "Self-intersection[-71.00403 41.90664113]",
+   "npoints": 28,
+   "fp_area": "0.76542450",
+   "bbox_area": "0.95076320",
+   "eq_bbox": false,
+   "served_rows": 1
+  },
+  {
+   "id": "6b114490-1bd7-47e7-a195-f5d92686559b",
+   "source": "sentinel2",
+   "collection": "sentinel-2-l2a",
+   "item_id": "S2B_MSIL2A_20190602T162839_R083_T16TEK_20201005T212018",
+   "capture_date": "2019-06-02",
+   "reason": "Self-intersection[-86.75983 39.91487413]",
+   "npoints": 22,
+   "fp_area": "1.03875393",
+   "bbox_area": "1.20564127",
+   "eq_bbox": false,
+   "served_rows": 2
+  }
+ ]
+}
