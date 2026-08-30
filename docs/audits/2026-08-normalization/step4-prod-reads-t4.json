@@ -1,0 +1,36 @@
+{
+  "read_at": "2026-08-30T00:16:50.632913+00:00",
+  "stats_reset": null,
+  "tables": {
+    "imagery_snapshots": {
+      "seq_scan": 3945,
+      "seq_tup_read": 30606005,
+      "idx_scan": 158669,
+      "idx_tup_fetch": 1238541,
+      "n_tup_ins": 15492,
+      "n_tup_upd": 61406,
+      "n_tup_del": 2608,
+      "n_live_tup": 12884
+    },
+    "scenes": {
+      "seq_scan": 247,
+      "seq_tup_read": 1472401,
+      "idx_scan": 186525,
+      "idx_tup_fetch": 601645,
+      "n_tup_ins": 6664,
+      "n_tup_upd": 5894,
+      "n_tup_del": 0,
+      "n_live_tup": 6664
+    },
+    "parcel_scenes": {
+      "seq_scan": 189,
+      "seq_tup_read": 2048291,
+      "idx_scan": 75075,
+      "idx_tup_fetch": 128098,
+      "n_tup_ins": 12884,
+      "n_tup_upd": 8,
+      "n_tup_del": 0,
+      "n_live_tup": 12884
+    }
+  }
+}

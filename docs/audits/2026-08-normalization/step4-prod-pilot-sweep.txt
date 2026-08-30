@@ -1,0 +1,165 @@
+Deploy gate passed — prod is running 03867c4b1e531b461665d41cab7b8a8f4196c60d.
+Re-queuing 30 parcel(s).
+2026-08-29T23:18:10.138880Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=6563dedf-23b1-4719-89db-ab135ed24fb3 request_id=e3967c53-0e8c-46f6-8bd8-57fa11e3f5f7 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:11.527149Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=e3967c53-0e8c-46f6-8bd8-57fa11e3f5f7
+  queued e3967c53-0e8c-46f6-8bd8-57fa11e3f5f7 for parcel 6563dedf-23b1-4719-89db-ab135ed24fb3 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:11.791686Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=fe065e2d-7818-408e-a1ff-d529bae67c57 request_id=bf3578a0-8059-4093-a814-37796f3bc03b sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:11.821942Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=bf3578a0-8059-4093-a814-37796f3bc03b
+  queued bf3578a0-8059-4093-a814-37796f3bc03b for parcel fe065e2d-7818-408e-a1ff-d529bae67c57 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:12.085833Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=e513188c-7de4-435e-994e-98621d88a81b request_id=a5c02140-17e8-4921-9bd1-b8a6fc74ba3d sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:12.115873Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=a5c02140-17e8-4921-9bd1-b8a6fc74ba3d
+  queued a5c02140-17e8-4921-9bd1-b8a6fc74ba3d for parcel e513188c-7de4-435e-994e-98621d88a81b [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:12.379377Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=09f35468-2695-49a1-b0ef-70823749b938 request_id=61febf72-42cd-4e92-a03f-4963e17d2c09 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:12.409230Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=61febf72-42cd-4e92-a03f-4963e17d2c09
+  queued 61febf72-42cd-4e92-a03f-4963e17d2c09 for parcel 09f35468-2695-49a1-b0ef-70823749b938 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:12.672863Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=9c35ceb0-e922-4971-87a4-1ae9aab7c8d9 request_id=0eee9676-afbc-4668-a38c-056580f2a1a0 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:12.702395Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=0eee9676-afbc-4668-a38c-056580f2a1a0
+  queued 0eee9676-afbc-4668-a38c-056580f2a1a0 for parcel 9c35ceb0-e922-4971-87a4-1ae9aab7c8d9 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:12.965870Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=4146ec5f-8860-4b91-9842-42225096e9c9 request_id=a55c0b98-a938-49b8-814d-8e23581e56d8 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:12.995677Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=a55c0b98-a938-49b8-814d-8e23581e56d8
+  queued a55c0b98-a938-49b8-814d-8e23581e56d8 for parcel 4146ec5f-8860-4b91-9842-42225096e9c9 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:13.257844Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=34efa7ae-ea51-4c03-940f-98308439d4cc request_id=28dbf7a3-08f7-4c6c-8d36-57f1cbc76908 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:13.288337Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=28dbf7a3-08f7-4c6c-8d36-57f1cbc76908
+  queued 28dbf7a3-08f7-4c6c-8d36-57f1cbc76908 for parcel 34efa7ae-ea51-4c03-940f-98308439d4cc [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:13.550569Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=39286f1d-baa2-457b-8e4a-1bee4e5fddce request_id=b61c82d2-9d7b-4215-aab3-115ab451a625 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:13.580512Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=b61c82d2-9d7b-4215-aab3-115ab451a625
+  queued b61c82d2-9d7b-4215-aab3-115ab451a625 for parcel 39286f1d-baa2-457b-8e4a-1bee4e5fddce [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:13.843356Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=dc493cc5-1b6e-4cad-b311-11b4418947c9 request_id=2cae979d-4b26-4f2a-a2c5-7b7f32b6a0e5 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:13.873026Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=2cae979d-4b26-4f2a-a2c5-7b7f32b6a0e5
+  queued 2cae979d-4b26-4f2a-a2c5-7b7f32b6a0e5 for parcel dc493cc5-1b6e-4cad-b311-11b4418947c9 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:14.134767Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=02d958d9-1a18-44fc-aa60-045e0d6740f2 request_id=1f177403-56ec-441e-8053-008b1b1eb4e6 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:14.164494Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=1f177403-56ec-441e-8053-008b1b1eb4e6
+  queued 1f177403-56ec-441e-8053-008b1b1eb4e6 for parcel 02d958d9-1a18-44fc-aa60-045e0d6740f2 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:14.427054Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=099336a2-1680-4500-843b-06c2b208ec30 request_id=d56b7c5b-efb8-4f60-b874-0da0c00e1e69 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:14.457875Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=d56b7c5b-efb8-4f60-b874-0da0c00e1e69
+  queued d56b7c5b-efb8-4f60-b874-0da0c00e1e69 for parcel 099336a2-1680-4500-843b-06c2b208ec30 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:14.720377Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=0e0abf8c-bc5f-4681-a00d-5cb6e2134d0b request_id=b0120d16-4bc0-42ed-83c7-d82b3d25190a sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:14.750110Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=b0120d16-4bc0-42ed-83c7-d82b3d25190a
+  queued b0120d16-4bc0-42ed-83c7-d82b3d25190a for parcel 0e0abf8c-bc5f-4681-a00d-5cb6e2134d0b [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:15.012647Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=0e7f4129-6c40-445b-a5ed-a5303aa0024e request_id=9a75e64a-f710-4e2d-9a3e-5c461e953893 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:15.042296Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=9a75e64a-f710-4e2d-9a3e-5c461e953893
+  queued 9a75e64a-f710-4e2d-9a3e-5c461e953893 for parcel 0e7f4129-6c40-445b-a5ed-a5303aa0024e [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:15.308799Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=100c2b8f-565f-4a6b-9fa8-cbfb3219a5ca request_id=f318300d-b018-47af-9084-a8d864e1ea48 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:15.339134Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=f318300d-b018-47af-9084-a8d864e1ea48
+  queued f318300d-b018-47af-9084-a8d864e1ea48 for parcel 100c2b8f-565f-4a6b-9fa8-cbfb3219a5ca [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:15.601879Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=1074e64b-d8db-4e67-8bef-01bce0fbf61a request_id=d0207d99-2868-4c04-ba9b-ac76a25f3a13 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:15.631583Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=d0207d99-2868-4c04-ba9b-ac76a25f3a13
+  queued d0207d99-2868-4c04-ba9b-ac76a25f3a13 for parcel 1074e64b-d8db-4e67-8bef-01bce0fbf61a [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:15.893707Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=11b0f0c1-458d-44bf-87c4-72b5e132677c request_id=85149194-5852-4381-9c5e-0d3bd9f9e48c sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:15.923311Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=85149194-5852-4381-9c5e-0d3bd9f9e48c
+  queued 85149194-5852-4381-9c5e-0d3bd9f9e48c for parcel 11b0f0c1-458d-44bf-87c4-72b5e132677c [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:16.186029Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=134ca8cd-8a85-4929-abe0-a632879c0731 request_id=8f4babdf-31de-47ab-a95e-4dd23a5d2a3f sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:16.215926Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=8f4babdf-31de-47ab-a95e-4dd23a5d2a3f
+  queued 8f4babdf-31de-47ab-a95e-4dd23a5d2a3f for parcel 134ca8cd-8a85-4929-abe0-a632879c0731 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:16.478282Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=13f20e3b-477f-4b85-9a4d-1c3ff3044a78 request_id=3ac1f85d-dd96-4a7d-bb57-582553b99f6d sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:16.508168Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=3ac1f85d-dd96-4a7d-bb57-582553b99f6d
+  queued 3ac1f85d-dd96-4a7d-bb57-582553b99f6d for parcel 13f20e3b-477f-4b85-9a4d-1c3ff3044a78 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:16.770444Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=153b4e14-94b4-4889-9e81-e2e0c350dff4 request_id=c1afd660-b5b6-4dc5-b13a-4528fedcfa1b sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:16.800222Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=c1afd660-b5b6-4dc5-b13a-4528fedcfa1b
+  queued c1afd660-b5b6-4dc5-b13a-4528fedcfa1b for parcel 153b4e14-94b4-4889-9e81-e2e0c350dff4 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:17.065180Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=1754635c-c85f-402b-9f8a-4b45f4bda428 request_id=608ef024-4361-426b-ada8-014004a4d0f9 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:17.095475Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=608ef024-4361-426b-ada8-014004a4d0f9
+  queued 608ef024-4361-426b-ada8-014004a4d0f9 for parcel 1754635c-c85f-402b-9f8a-4b45f4bda428 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:17.358680Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=177681ef-aa0f-46b8-9453-15a9cc89ef34 request_id=219a0021-9b6b-4c6d-95d9-75a5fd34a7af sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:17.388216Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=219a0021-9b6b-4c6d-95d9-75a5fd34a7af
+  queued 219a0021-9b6b-4c6d-95d9-75a5fd34a7af for parcel 177681ef-aa0f-46b8-9453-15a9cc89ef34 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:17.649892Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=189ff067-bcf9-48cb-a289-eb840d71cf13 request_id=6f8c98a8-f600-43ca-8f7b-582e330b6fb5 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:17.679765Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=6f8c98a8-f600-43ca-8f7b-582e330b6fb5
+  queued 6f8c98a8-f600-43ca-8f7b-582e330b6fb5 for parcel 189ff067-bcf9-48cb-a289-eb840d71cf13 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:17.941326Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=1a473e7c-eefd-4d0d-bf3f-7edead3f5c91 request_id=3cfab61f-ae47-43d3-a14c-5f7ba5134fcf sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:17.971111Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=3cfab61f-ae47-43d3-a14c-5f7ba5134fcf
+  queued 3cfab61f-ae47-43d3-a14c-5f7ba5134fcf for parcel 1a473e7c-eefd-4d0d-bf3f-7edead3f5c91 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:18.232785Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=1c5a3af3-3e29-4684-978b-36bee6e0283a request_id=ade62ed1-2da6-436b-8b75-4dd89eb4198d sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:18.262467Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=ade62ed1-2da6-436b-8b75-4dd89eb4198d
+  queued ade62ed1-2da6-436b-8b75-4dd89eb4198d for parcel 1c5a3af3-3e29-4684-978b-36bee6e0283a [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:18.525255Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=1cc54096-606b-41ff-8db7-802bb5b766ec request_id=19964955-aa3f-4ec3-bc21-6560cc4dcf66 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:18:18.555159Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=19964955-aa3f-4ec3-bc21-6560cc4dcf66
+  queued 19964955-aa3f-4ec3-bc21-6560cc4dcf66 for parcel 1cc54096-606b-41ff-8db7-802bb5b766ec [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:18:18.671941Z [warning  ] Admission refused              [app.services.admission] cap=25 depth=25 hard_cap=30 origin=heal reason=queue_full what=timeline_request
+2026-08-29T23:18:18.701830Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3591.2
+2026-08-29T23:18:23.732082Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3586.2
+2026-08-29T23:18:28.764274Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3581.1
+2026-08-29T23:18:33.794668Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3576.1
+2026-08-29T23:18:38.825674Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3571.1
+2026-08-29T23:18:43.856838Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3566.0
+2026-08-29T23:18:48.887186Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3561.0
+2026-08-29T23:18:53.917962Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3556.0
+2026-08-29T23:18:58.948379Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3550.9
+2026-08-29T23:19:03.979202Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3545.9
+2026-08-29T23:19:09.009947Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3540.9
+2026-08-29T23:19:14.040662Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3535.9
+2026-08-29T23:19:19.070824Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3530.8
+2026-08-29T23:19:24.101143Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3525.8
+2026-08-29T23:19:29.131808Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3520.8
+2026-08-29T23:19:34.162326Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3515.7
+2026-08-29T23:19:39.192700Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3510.7
+2026-08-29T23:19:44.223251Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3505.7
+2026-08-29T23:19:49.253404Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3500.6
+2026-08-29T23:19:54.283734Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3495.6
+2026-08-29T23:19:59.314346Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3490.6
+2026-08-29T23:20:04.344870Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3485.5
+2026-08-29T23:20:09.376455Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3480.5
+2026-08-29T23:20:14.407119Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3475.5
+2026-08-29T23:20:19.437495Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3470.5
+2026-08-29T23:20:24.468257Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3465.4
+2026-08-29T23:20:29.498906Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3460.4
+2026-08-29T23:20:34.529058Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3455.4
+2026-08-29T23:20:39.559515Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3450.3
+2026-08-29T23:20:44.589951Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3445.3
+2026-08-29T23:20:49.620974Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3440.3
+2026-08-29T23:20:54.651649Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3435.2
+2026-08-29T23:20:59.682241Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3430.2
+2026-08-29T23:21:04.712724Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3425.2
+2026-08-29T23:21:09.743142Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3420.1
+2026-08-29T23:21:14.773884Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3415.1
+2026-08-29T23:21:19.804081Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3410.1
+2026-08-29T23:21:24.834339Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3405.1
+2026-08-29T23:21:29.864824Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3400.0
+2026-08-29T23:21:34.895364Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3395.0
+2026-08-29T23:21:39.925613Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3390.0
+2026-08-29T23:21:44.956423Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3384.9
+2026-08-29T23:21:49.987063Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3379.9
+2026-08-29T23:21:55.017724Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3374.9
+2026-08-29T23:22:00.048342Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3369.8
+2026-08-29T23:22:05.078721Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3364.8
+2026-08-29T23:22:10.108957Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3359.8
+2026-08-29T23:22:15.139491Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3354.8
+2026-08-29T23:22:20.345963Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=1dbd9583-c7cd-4804-a1ea-2050914d53d4 request_id=af446209-60b7-4a69-9c8c-124309ff621f sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:22:20.403583Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=af446209-60b7-4a69-9c8c-124309ff621f
+  queued af446209-60b7-4a69-9c8c-124309ff621f for parcel 1dbd9583-c7cd-4804-a1ea-2050914d53d4 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:22:20.664223Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=2003d090-4d8a-48d4-9177-55826c25274b request_id=7c4ae4f2-5e86-40d3-b7ed-ee043196e081 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:22:20.694044Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=7c4ae4f2-5e86-40d3-b7ed-ee043196e081
+  queued 7c4ae4f2-5e86-40d3-b7ed-ee043196e081 for parcel 2003d090-4d8a-48d4-9177-55826c25274b [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:22:20.809872Z [warning  ] Admission refused              [app.services.admission] cap=25 depth=25 hard_cap=30 origin=heal reason=queue_full what=timeline_request
+2026-08-29T23:22:20.840074Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3349.1
+2026-08-29T23:22:25.870462Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3344.0
+2026-08-29T23:22:30.901524Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3339.0
+2026-08-29T23:22:35.936809Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3334.0
+2026-08-29T23:22:40.967685Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3328.9
+2026-08-29T23:22:45.998285Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3323.9
+2026-08-29T23:22:51.030899Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3318.9
+2026-08-29T23:22:56.061200Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3313.8
+2026-08-29T23:23:01.092204Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3308.8
+2026-08-29T23:23:06.122970Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3303.8
+2026-08-29T23:23:11.153294Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3298.7
+2026-08-29T23:23:16.183853Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3293.7
+2026-08-29T23:23:21.214280Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3288.7
+2026-08-29T23:23:26.244604Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3283.7
+2026-08-29T23:23:31.449448Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=23125dc1-e6b0-4149-b23a-daabda3468d3 request_id=b0f886f7-86f7-4cf3-85d4-043822fc31ac sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:23:31.507003Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=b0f886f7-86f7-4cf3-85d4-043822fc31ac
+  queued b0f886f7-86f7-4cf3-85d4-043822fc31ac for parcel 23125dc1-e6b0-4149-b23a-daabda3468d3 [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:23:31.768648Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=267aa62b-cfab-4ca2-b757-e2a739e48eff request_id=c20b02a9-fdc5-4831-a74f-01dc12fe7927 sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:23:31.798146Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=c20b02a9-fdc5-4831-a74f-01dc12fe7927
+  queued c20b02a9-fdc5-4831-a74f-01dc12fe7927 for parcel 267aa62b-cfab-4ca2-b757-e2a739e48eff [landsat,naip,sentinel2,usgs_topo]
+2026-08-29T23:23:31.914286Z [warning  ] Admission refused              [app.services.admission] cap=25 depth=25 hard_cap=30 origin=heal reason=queue_full what=timeline_request
+2026-08-29T23:23:31.944297Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3278.0
+2026-08-29T23:23:36.974603Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3272.9
+2026-08-29T23:23:42.005879Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3267.9
+2026-08-29T23:23:47.036473Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3262.9
+2026-08-29T23:23:52.067008Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3257.8
+2026-08-29T23:23:57.097345Z [info     ] Waiting for an admission slot  [app.services.admission] cap=25 depth=25 poll_seconds=5.0 wait_remaining_s=3252.8
+2026-08-29T23:24:02.321864Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=2758a216-8973-45b8-8a35-3f3fe1383b6e request_id=51df3880-0f56-446a-af08-6a2c61615fcc sources=['landsat', 'naip', 'sentinel2', 'usgs_topo']
+2026-08-29T23:24:02.379511Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=51df3880-0f56-446a-af08-6a2c61615fcc
+  queued 51df3880-0f56-446a-af08-6a2c61615fcc for parcel 2758a216-8973-45b8-8a35-3f3fe1383b6e [landsat,naip,sentinel2,usgs_topo]
+
+Done — queued 30 timeline request(s), skipped 0.

@@ -1,0 +1,162 @@
+{
+  "label": "fleet",
+  "non_ok_reasons": [
+    {
+      "n": 1892,
+      "outcome": "absent",
+      "reason": "no_scenes",
+      "sample": null,
+      "source": "naip"
+    },
+    {
+      "n": 9,
+      "outcome": "absent",
+      "reason": "all_cloud_filtered",
+      "sample": null,
+      "source": "sentinel2"
+    },
+    {
+      "n": 9,
+      "outcome": "suppressed",
+      "reason": "naip_no_point_coverage",
+      "sample": "selected tiles do not contain the parcel: ga_m_3408506_nw_16_060_20190909_20200103",
+      "source": "naip"
+    },
+    {
+      "n": 7,
+      "outcome": "indeterminate",
+      "reason": "naip search hit its item cap at timeline._search_and_persist_source; an absent year may be truncation",
+      "sample": null,
+      "source": "naip"
+    },
+    {
+      "n": 4,
+      "outcome": "failed",
+      "reason": "stac_403",
+      "sample": "Client error '403 Forbidden' for url 'https://planetarycomputer.microsoft.com/api/stac/v1/search'\nFor more information check: https://developer.mozill",
+      "source": "landsat"
+    },
+    {
+      "n": 2,
+      "outcome": "indeterminate",
+      "reason": "TNM response hit its row cap at usgs_topo.search_usgs_topo_products; a decade absent from the response may be truncation",
+      "sample": null,
+      "source": "usgs_topo"
+    }
+  ],
+  "norm14": {
+    "by_source": {
+      "landsat": {
+        "max_distinct": 1,
+        "ok_rows": 8123,
+        "tasks": 189
+      },
+      "naip": {
+        "max_distinct": 1,
+        "ok_rows": 1305,
+        "tasks": 189
+      },
+      "sentinel2": {
+        "max_distinct": 1,
+        "ok_rows": 2259,
+        "tasks": 189
+      },
+      "usgs_topo": {
+        "max_distinct": 1,
+        "ok_rows": 1193,
+        "tasks": 189
+      }
+    },
+    "distinct_created_at_histogram": {
+      "1": 756
+    },
+    "tasks_in_window": 756,
+    "tasks_with_ok_rows": 756,
+    "total_ok_rows": 12880,
+    "violations": []
+  },
+  "parcel_scenes_written": [
+    {
+      "group_key": "2026",
+      "n": 1,
+      "selected_by": "03867c4b1e531b461665d41cab7b8a8f4196c60d",
+      "source": "sentinel2"
+    }
+  ],
+  "parcel_scenes_written_total": 1,
+  "read_at": "2026-08-30T00:15:29.566918+00:00",
+  "retired_table_mentions": 0,
+  "ro_proof": "cannot execute UPDATE in a read-only transaction",
+  "scenes_fetched_in_window": [
+    {
+      "capture_date": "2026-08-28",
+      "collection": "sentinel-2-l2a",
+      "id": "6bbd7d80-5f3a-4f3a-976e-4666a77a11b2",
+      "item_id": "S2C_MSIL2A_20260828T183921_R070_T11TMM_20260828T233712",
+      "provenance": "selection",
+      "source": "sentinel2"
+    }
+  ],
+  "scenes_selection": [
+    {
+      "capture_date": "2026-08-28",
+      "collection": "sentinel-2-l2a",
+      "fetched_at": "2026-08-29 04:29:19.342619+00",
+      "group_keys": "2026",
+      "id": "8f72982e-7b99-4d67-a479-2eb24e786d8a",
+      "item_id": "S2B_MSIL2A_20260828T160819_R140_T17TPH_20260828T200359",
+      "new_in_window": false,
+      "provenance": "selection",
+      "refs": 2,
+      "source": "sentinel2"
+    },
+    {
+      "capture_date": "2026-08-27",
+      "collection": "sentinel-2-l2a",
+      "fetched_at": "2026-08-29 04:41:26.056028+00",
+      "group_keys": "2026",
+      "id": "7ae1310e-66e9-4a5f-a442-e279279d3621",
+      "item_id": "S2B_MSIL2A_20260827T163859_R126_T16TER_20260827T203142",
+      "new_in_window": false,
+      "provenance": "selection",
+      "refs": 1,
+      "source": "sentinel2"
+    },
+    {
+      "capture_date": "2026-08-28",
+      "collection": "sentinel-2-l2a",
+      "fetched_at": "2026-08-29 23:57:55.089113+00",
+      "group_keys": "2026",
+      "id": "6bbd7d80-5f3a-4f3a-976e-4666a77a11b2",
+      "item_id": "S2C_MSIL2A_20260828T183921_R070_T11TMM_20260828T233712",
+      "new_in_window": true,
+      "provenance": "selection",
+      "refs": 1,
+      "source": "sentinel2"
+    }
+  ],
+  "silent_drop_rows": 7,
+  "since": "2026-08-29T23:17:00+00:00",
+  "window_outcomes": {
+    "landsat/failed": 4,
+    "landsat/ok": 8123,
+    "naip/absent": 1892,
+    "naip/indeterminate": 7,
+    "naip/ok": 1305,
+    "naip/suppressed": 9,
+    "sentinel2/absent": 9,
+    "sentinel2/ok": 2259,
+    "usgs_topo/indeterminate": 2,
+    "usgs_topo/ok": 1193
+  },
+  "window_requests": {
+    "complete": 189
+  },
+  "window_rows": 14803,
+  "window_tasks": {
+    "landsat/complete": 189,
+    "naip/complete": 189,
+    "sentinel2/complete": 189,
+    "usgs_topo/complete": 189
+  }
+}
