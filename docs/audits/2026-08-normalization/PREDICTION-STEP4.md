@@ -662,3 +662,115 @@ Latest row per (parcel, source, group_key), over the sweep window.
   refuse.
 * **P7c's `indeterminate` above baseline** with no named pre-existing site.
 * **The pilot failing P2a or P5 or P6** — the remainder does not run.
+
+---
+
+# Observed — production, 2026-08-29T23:11Z → 2026-08-30T00:17Z
+
+Appended after both runs. **Nothing above this line is edited** — neither the
+local half nor the production prediction half.
+
+## 1. Scorecard
+
+Sweep window: pilot launched **23:18:08Z**, drained **23:30:09Z**; remainder
+launched **23:34:45Z**, enqueue done **~00:07:5xZ**, drained **00:13:57Z**.
+Counters differenced t0 (`step4-prod-reads-t0.json`, 23:11:57.497954Z) → t2
+(`step4-prod-reads-t2.json`, 00:14:31.842120Z).
+
+| # | Prediction | Observed | Verdict |
+|---|---|---|---|
+| **P1** | `imagery_snapshots` **all seven counters +0**, attributed probe set enumerated in advance and empty | seq_scan **+0**, seq_tup_read **+0**, idx_scan **+0**, idx_tup_fetch **+0**, n_tup_ins **+0**, n_tup_upd **+0**, n_tup_del **+0**; `n_live_tup` **+0** at 12,884. Nothing to subtract | **CONFIRMED** |
+| P2a | pilot: `parcel_scenes.idx_scan` > 1,000 **and** `scenes.idx_scan` > 1,000 | **+2,557** and **+7,239** | CONFIRMED |
+| **P2b** | fleet: both > 8,000 | **+15,925** and **+42,614** (the derivation predicted ≈15,800 and ≈33,800) | **CONFIRMED** |
+| P3a | `parcel_scenes.n_tup_ins` 0–10, point 0 | **+0** | CONFIRMED |
+| P3b | `parcel_scenes.n_tup_upd` 0–40, point 8 | **+1** | CONFIRMED (band), point high |
+| P3c | `parcel_scenes.n_tup_del` 0 | **+0** | CONFIRMED |
+| P3d | `scenes.n_tup_ins` 0–25, point 4 | **+1** | CONFIRMED (band), point high |
+| P3e | **100% of new `scenes` rows are recency**, `group_key` = 2026 | 1 of 1: `S2C_MSIL2A_20260828T183921_R070_T11TMM_20260828T233712`, `sentinel-2-l2a`, capture 2026-08-28, referenced at `group_key` **`2026`**. Zero historic-period inserts | CONFIRMED |
+| P3f | the **pilot's** write arms are inert: 0 / 0 / 0 | **0 / 0 / 0**; `Replaced superseded served scenes` absent from the pilot's worker log, as NORM-12 said it would be | CONFIRMED |
+| P4 | 756 reconcile invocations; 12,700–12,950 upsert exercises; superseding-upsert arm 0–40; `_ensure_scene` INSERT 0–25; suppressed-delete 0 | **756** tasks / **12,880** `ok` groups; superseding-upsert **1**; INSERT **1**; suppressed-delete **0** | CONFIRMED |
+| **P5** | every task's `ok` rows share **one** `created_at`, across all 756 | histogram **`{1: 756}`** — 756 of 756 tasks, **12,880 `ok` rows**, `max_distinct` 1 on all four sources, **zero violations** | **CONFIRMED** |
+| P6a | 7 zero-checks at 0 | **7 of 7 at 0** | CONFIRMED |
+| P6b | landsat 43 on all 189 parcels, 8,127 rows | 189 parcels, min **43**, max **43**, **8,127** rows | CONFIRMED |
+| P6c | parcels 189; parcel_scenes 12,884 + P3a; scenes 6,663 + P3d | **189** / **12,884** / **6,664** | CONFIRMED |
+| P6d | `mosaic_url` 0, `snapshot` 6,156, `enriched` 505, `selection` 2 + P3d | 0 / **6,156** / **505** / **3** | CONFIRMED |
+| P7a | `landsat/ok` ≥ 8,100; `landsat/failed` ≤ 20, point 0 | **8,123** / **4** | CONFIRMED (band), point high |
+| P7b | `naip/absent` within ±60 of 1,892 | **1,892**, unmoved | CONFIRMED |
+| P7c | **hard clause** — `naip/indeterminate` ≤ 7, `usgs_topo/indeterminate` ≤ 2 | **7** and **2**, on the **same three parcels** as step 2, from the same two named truncation sites | CONFIRMED |
+| P7d | the persist loop's silent-drop reason appears 0 times | **0** | CONFIRMED |
+| P7e | no failure attributable to the rewrite, none naming the retired table | 4 × `stac_403`; **0** ledger rows mention the table, and **0** of 3,335 worker-log lines do | CONFIRMED |
+| P8a | pilot rc 0, 30 queued, 0 skipped, 0 unreached | rc **0**, **30**, **0**, **0** | CONFIRMED |
+| P8b | remainder rc 0, 159 queued, 0 skipped, 0 unreached | rc **0**, **159**, **0**, **0** | CONFIRMED |
+| P8c | 189/189 requests complete, none in flight; historical 3 failed / 40 partial unmoved | 189 `complete`, **756/756** tasks `complete`, 0 in flight; requests 1,299 → **1,488**; failed **3**, partial **40** unmoved | CONFIRMED |
+| P8d | `--require-sha 03867c4` passes; `--skip-deploy-check` not used | `Deploy gate passed — prod is running 03867c4b1e53…` on all four invocations (two dry runs, two runs) | CONFIRMED |
+| P8e | remainder enqueue 20–60 min, drain ≤ 90 min | enqueue **33 min**, fully drained **39 min** after launch | CONFIRMED |
+
+**25 scoreable, 25 confirmed, 0 deviations, 0 falsified.**
+
+## 2. What the zero is worth — the counterfactual, restated against the result
+
+P1's derivation predicted that step-3 code over production's 12,884 groups
+would have moved `imagery_snapshots` `idx_scan` by **≈13,700** and `n_tup_upd`
+by **≈12,900**. The sweep put **12,884 groups** through the pipeline —
+confirmed by the ledger's 14,803 window rows and by 756 completed tasks — and
+moved both by **0**, while `parcel_scenes` and `scenes` took **15,925** and
+**42,614** index scans in the same window.
+
+The zero is not an idle window and this is not an argument: `parcel_scenes` and
+`scenes` are the control, and they moved by roughly fifty-eight thousand.
+
+## 3. The ledger reconciles to the row, and the absent-group rule is visible in it
+
+12,880 `ok` rows + **4** `landsat/failed` = **12,884** — exactly the
+`parcel_scenes` row count. The four failed groups (`1074e64b` 2010 and 2012,
+`11b0f0c1` 2007 and 2009, all `stac_403`) **kept their served rows**: landsat
+stays at 43 on all 189 parcels. That is `reconcile_source_snapshots`' absent-
+group rule doing precisely what its unedited docstring says — refusing to turn
+a transient upstream error into permanent data loss — observed in production
+rather than asserted.
+
+## 4. The single write, in full
+
+One group changed across 12,884. The worker log names it (23:57:56Z):
+
+```json
+{"event": "Replaced superseded served scenes", "logger": "app.services.imagery",
+ "parcel_id": "b4838b92-f07c-4ee0-8e2e-e830029fe9a9", "source": "sentinel2",
+ "replaced": 1, "suppressed_deleted": 0, "scope": "year",
+ "groups": ["2015", ..., "2026"]}
+```
+
+`replaced: 1, suppressed_deleted: 0` matches the counters exactly:
+`parcel_scenes.n_tup_upd` **+1**, `n_tup_del` **+0**, `scenes.n_tup_ins` **+1**.
+The new `parcel_scenes` row carries `selected_by =
+03867c4b1e531b461665d41cab7b8a8f4196c60d` — the deployed SHA, written by the
+code the gate verified.
+
+**This is the step-4 superseding-upsert arm's first production execution.**
+Before step 4 the same change was spelled as a DELETE plus an insert; here it is
+one upsert of one row, and it is the only one there was.
+
+## 5. Deviations from the point estimates, recorded because NORM-15 is about exactly this
+
+**Bands held everywhere; three point estimates were high.** P3b predicted 8
+changed groups and got 1; P3d predicted 4 new scenes and got 1; P7a predicted 0
+landsat failures and got 4.
+
+The first two were sized on step 2's sweep, which changed 7 groups nineteen
+hours earlier. **This is NORM-15's warning applying to my own numbers**: the
+sweep-to-sweep churn measures Planetary Computer's health, not selection drift,
+and a healthy PC produces almost nothing. Across 3,335 lines of worker log
+there are **4** upstream failures and **2** TNM row caps in the entire fleet
+run. The right lesson is the one NORM-15 already states — *this quantity is not
+a forecastable property of the fleet* — and the band, not the point, was the
+prediction.
+
+## 6. `imagery_snapshots` took +0 in four separate windows, one of them a control
+
+Not only across the sweep. The table was `+0` on all seven counters across
+t0→t2 (the sweep), t2→t3 (instruments only, no sweep), and an **isolated
+battery run** measured on its own. That last one is the control on the
+"enumerated probe set is empty" claim: it shows the invariant battery costs
+`parcel_scenes` **+7** and `scenes` **+6** whole-table scans and
+`imagery_snapshots` **+0** — the subtraction is empty by measurement, not
+merely by intent.
