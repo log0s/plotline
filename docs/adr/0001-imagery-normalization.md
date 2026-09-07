@@ -736,3 +736,106 @@ which is what NORM-33 is about. Rule 3: enforced by schema and now
 load-bearing for replacement, not only for uniqueness. Rule 4: true of every
 `scenes` row that carries a footprint, and 0018 now defends it. Rule 5:
 unchanged. **No change condition tripped.**
+
+---
+
+## Amendment — 2026-09-07, step 4's drop deployed; the ADR is complete in production
+
+The last of four steps reached production. Everything above this line is
+unedited. Sources: `../audits/2026-08-normalization/STEP4-DROP-REPORT.md` and
+the deploy-1 report it closes.
+
+### All four steps have landed
+
+| step | deployed as | date |
+|---|---|---|
+| 1 — create both tables, backfill | `4de5728` (migration 0015), backfill run once | 2026-08-28 |
+| 2 — dual-write | `efa4c63` (migration 0017), swept over 189 parcels | 2026-08-29 |
+| 3 — cut reads over | `c96dbf8` (both paths, parity harness), then `18ddb8e` | 2026-08-29 |
+| 4 — retire `imagery_snapshots` | `03867c4` (code cutover), then `bac725c` (migration 0019, the DROP) | 2026-08-29 / 2026-09-07 |
+
+`imagery_snapshots` stopped existing at **2026-09-07T03:23:59Z**. Production
+is at alembic **0019**; `to_regclass('public.imagery_snapshots')` is NULL, its
+indexes and constraints are absent from `pg_catalog`, and
+`pg_stat_user_tables` no longer lists it.
+
+### The cooling period, in two sentences
+
+The span ran **2026-08-29T23:11:57Z → 2026-09-07T02:28:37Z — 8 days
+3 h 16 m 40 s** against a gate of seven, and `imagery_snapshots` moved by
+**+0 on all seven `pg_stat_user_tables` counters** across it, with
+`stats_reset` NULL at every reading so the zeros are continuous rather than a
+reset artifact. It was not an idle window: a staged 189-parcel fleet sweep ran
+in the span's first hour and organic traffic followed it, taking `scenes` from
+6,663 to 6,743 and `parcel_scenes` from 12,884 to 13,082 — **69,992 index
+scans across the two live tables** while the retired one took zero accesses of
+any kind.
+
+Step 4's own wording in the migration path above was *"after one cooling
+period with no reads (measured, not assumed — log every read; expect zero)"*.
+It was measured, and the measurement is the database's own statistics rather
+than an application log — the reason that substitution is stronger here and
+not weaker is `scripts/snapshot_reads.py`'s module docstring.
+
+### The honest leftovers
+
+Four things this ADR promised or opened are not finished, and none of them is
+blocked on the storage change.
+
+**1. Rule 4 is false for one source: `usgs_topo` footprints are NULL by
+design.** Measured in production 2026-09-07T03:36:10Z: landsat 3,217/3,217,
+naip 1,623/1,623, sentinel2 1,132/1,132 rows carry a `footprint` — and
+`usgs_topo` **771 of 771 carry none**. Rule 4 says *"The next geometry audit is
+a query over `scenes`, not a refetch"*; for three sources that is now true, and
+for topo there is nothing to query. TNM sheets are not STAC items with a
+geometry member, so this is a property of the source rather than a gap in the
+backfill. It is why NORM-35's cheaper condemnation path cannot simply replace
+the network fetch — a topo row would fall through it — and the sentence lives
+at `scripts/remove_uncovered_snapshots.py`'s docstring as well as here.
+
+**2. The rule-4 *refresh mechanism* is unbuilt.** Rule 4's claim is that an
+item fact can be corrected in one row instead of N, and that is now
+structurally true — but nothing in the running system re-reads an item and
+rewrites its `scenes` row. `_ensure_scene` is insert-only; the two enrichment
+passes that filled `footprint` and `resolution_m` were one-shot scripts that
+have run everywhere they will run. So the cost the ADR opened is paid in
+structure and not yet in mechanism: **if an upstream item is revised, the
+stored copy goes stale and there is no path that notices.** That reopens
+NORM-18's class — the step-3 parity run's `resolution_m` divergence — one
+level up: it stopped being a disagreement between two tables and became a
+possible disagreement between the table and the catalogue. Recorded rather
+than built, because "when may a re-read overwrite a stored value" is the same
+question insert-only answers deliberately, and changing that answer is a
+decision with its own failure modes.
+
+**3. NORM-33 is latent and pinned, not fixed.** The reconciler diffs on the
+**stored** `group_key`, so a `scope` that disagrees with the source's selector
+leaves the superseded row and inserts a second one under the other key — one
+decade, two cards, which `UNIQUE (parcel_id, source, group_key)` cannot catch
+because the keys genuinely differ. `scope` is per-source configuration and
+constant, so nothing varies it at runtime; the two-row outcome is asserted by
+`tests/test_imagery.py::test_reconcile_year_scope_would_miss_a_cross_year_topo_replacement`
+so a future change that alters it is visible. The fix is a refusal rule with
+its own failure modes and was not scoped.
+
+**4. NORM-34 and NORM-35 are deliberate non-builds.** NORM-34: three decoders
+for `mosaic_scene_ids` exist and the third
+(`scripts/enrich_synthesized_scenes.py::_id_array`) is left alone, with a
+comment at the site saying why — that pass has run everywhere it will run, and
+editing a finished script for no behavioural gain is churn. NORM-35:
+`remove_uncovered_snapshots.py` could condemn a row from `ST_Contains(footprint,
+point)` instead of refetching every mosaic tile, and does not, because swapping
+the evidence standard inside a deletion tool is a different tool — and see
+leftover 1 for the topo row it would have to refuse.
+
+### The change conditions, one last time
+
+Rule 1: held throughout — the ledger never referenced either table, which is
+what let step 4 drop the storage without touching it. Rule 2: `group_key` is
+the one shared encoding and is now also the *stored* one, which is NORM-33's
+subject. Rule 3: `UNIQUE (parcel_id, source, group_key)` held, and
+`duplicate_groups` is 0 on 13,082 rows. Rule 4: true of every source that has
+a footprint, false for `usgs_topo`, and unmechanised — leftovers 1 and 2.
+Rule 5: mosaics are references; 13 stored ids reconstructed to 13 URLs on the
+smoked parcel, 0 dangling fleet-wide. **No change condition tripped, and the
+ADR is closed.**
