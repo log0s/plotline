@@ -212,6 +212,12 @@ jobs:
     needs: [changes, test]
     if: needs.changes.outputs.api == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_deploy)
     runs-on: ubuntu-latest
+    # Without this, GitHub's 360-minute default applies: a wedged flyctl
+    # holds the run for six hours instead of failing. Observed 2026-09-07,
+    # run 119 — deploy-api sat in `flyctl deploy` for 9 minutes against a
+    # 61-72s norm, no Fly release ever created, and had to be cancelled by
+    # hand. 15 minutes is ~12x the observed p100 for these jobs.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6 (master on 2026-08-22)
@@ -228,6 +234,7 @@ jobs:
     needs: [changes, test]
     if: needs.changes.outputs.worker == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_deploy)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6 (master on 2026-08-22)
@@ -242,6 +249,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.titiler == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6 (master on 2026-08-22)
