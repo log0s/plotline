@@ -1,0 +1,25 @@
+Step 4 deploy-2 serving smoke — read-only GETs against https://api.plotline.land
+Captured 2026-09-07T03:29-03:31Z, production on bac725c5a7d196a8cd8c7aa4f6da84c7bb063bda (alembic 0019).
+
+GET /api/v1/health                                    -> 200  {"status":"ok","db":"connected","redis":"connected","version":{"sha":"bac725c5a7d196a8cd8c7aa4f6da84c7bb063bda","built":"2026-09-07T03:23:17Z"}}
+GET /api/v1/featured                                  -> 200  (locations list rendered; earliest/latest snapshot ids present)
+GET /api/v1/featured/stapleton-central-park           -> 200  806 bytes
+GET /api/v1/parcels/4146ec5f-.../imagery              -> 200  63298 bytes  (NAIP-mosaic parcel)
+GET /api/v1/parcels/639541ac-.../imagery              -> 200  55078 bytes  (parcel created 2026-09-06T16:09:03Z, inside the cooling span)
+GET /api/v1/imagery/f955741d-.../stac                 -> 200  24054 bytes  application/geo+json  (Titiler STACReader callback)
+GET /api/v1/imagery/f955741d-.../tiles/11/506/783     -> 200  157015 bytes image/png  2.89s  (PNG 256x256 RGBA)
+
+parcel 4146ec5f-8860-4b91-9842-42225096e9c9 (NAIP mosaic)
+  rows returned      72
+  by source          {'landsat': 43, 'naip': 13, 'sentinel2': 12, 'usgs_topo': 4}
+  mosaic rows        13  cardinalities {1: 13}
+  ids unique         True
+
+parcel 639541ac-1c2e-4587-ae06-92f9a1cee729 (fresh, created 2026-09-06)
+  rows returned      63
+  by source          {'landsat': 43, 'naip': 8, 'sentinel2': 12}
+  mosaic rows        8  cardinalities {1: 8}
+  ids unique         True
+
+STAC callback item id: LT05_L2SP_024033_19840826_02_T1
+signed assets: ['red', 'green', 'blue']

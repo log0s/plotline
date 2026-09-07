@@ -1,0 +1,26 @@
+{
+  "read_at": "2026-09-07T03:27:37.690282+00:00",
+  "stats_reset": null,
+  "tables": {
+    "scenes": {
+      "seq_scan": 275,
+      "seq_tup_read": 1659556,
+      "idx_scan": 193557,
+      "idx_tup_fetch": 606714,
+      "n_tup_ins": 6743,
+      "n_tup_upd": 5894,
+      "n_tup_del": 0,
+      "n_live_tup": 6743
+    },
+    "parcel_scenes": {
+      "seq_scan": 190,
+      "seq_tup_read": 2061373,
+      "idx_scan": 78246,
+      "idx_tup_fetch": 143915,
+      "n_tup_ins": 13082,
+      "n_tup_upd": 8,
+      "n_tup_del": 0,
+      "n_live_tup": 13082
+    }
+  }
+}

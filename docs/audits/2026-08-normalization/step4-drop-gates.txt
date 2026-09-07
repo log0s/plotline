@@ -1,0 +1,65 @@
+2026-09-07T03:33:11.273260Z [info     ] audit_probe                    [audit_probe] purpose='step-4 deploy-2 close-out totals' table=parcels where=None
+2026-09-07T03:33:11.303250Z [info     ] audit_probe                    [audit_probe] purpose='step-4 deploy-2 close-out totals' table=scenes where=None
+2026-09-07T03:33:11.333514Z [info     ] audit_probe                    [audit_probe] purpose='step-4 deploy-2 close-out totals' table=parcel_scenes where=None
+2026-09-07T03:33:11.363811Z [info     ] audit_probe                    [audit_probe] purpose='step-4 deploy-2 stats_reset check' table=pg_stat_database
+{
+  "read_only_proof": "ReadOnlySqlTransaction: cannot execute UPDATE in a read-only transaction",
+  "alembic_version": "0019",
+  "to_regclass_imagery_snapshots": null,
+  "pg_class_relname_like": [],
+  "pg_index_on_table": [],
+  "pg_constraint_named": [],
+  "pg_stat_user_tables_imagery": [],
+  "all_public_tables": [
+    "alembic_version",
+    "census_snapshots",
+    "featured_locations",
+    "parcel_scenes",
+    "parcels",
+    "property_events",
+    "scenes",
+    "spatial_ref_sys",
+    "timeline_request_tasks",
+    "timeline_requests",
+    "timeline_task_years"
+  ],
+  "ck_scenes_footprint_valid": [
+    {
+      "conname": "ck_scenes_footprint_valid",
+      "contype": "c",
+      "convalidated": true,
+      "def": "CHECK (((footprint IS NULL) OR st_isvalid(footprint)))"
+    },
+    {
+      "conname": "ck_scenes_provenance",
+      "contype": "c",
+      "convalidated": true,
+      "def": "CHECK ((provenance = ANY (ARRAY['snapshot'::text, 'mosaic_url'::text, 'enriched'::text, 'selection'::text])))"
+    },
+    {
+      "conname": "ck_scenes_source",
+      "contype": "c",
+      "convalidated": true,
+      "def": "CHECK ((source = ANY (ARRAY['naip'::text, 'landsat'::text, 'sentinel2'::text, 'usgs_topo'::text])))"
+    },
+    {
+      "conname": "scenes_pkey",
+      "contype": "p",
+      "convalidated": true,
+      "def": "PRIMARY KEY (id)"
+    },
+    {
+      "conname": "uq_scenes_collection_item",
+      "contype": "u",
+      "convalidated": true,
+      "def": "UNIQUE (collection, item_id)"
+    }
+  ],
+  "counts": {
+    "parcels": 192,
+    "scenes": 6743,
+    "parcel_scenes": 13082
+  },
+  "stats_reset": "None",
+  "now": "2026-09-07 03:33:10.902310+00:00"
+}
