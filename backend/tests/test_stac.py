@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -2163,6 +2163,17 @@ class _FakeRedis:
         self.store[key] = value
 
 
+def _live_token() -> str:
+    """A container token whose ``se`` is far enough ahead to still be cacheable.
+
+    A fixed literal expiry is a time bomb: once it passes,
+    ``_container_token_ttl`` returns a non-positive TTL, the mint stops writing
+    to Redis, and these tests fail on a date rather than on a change.
+    """
+    se = (datetime.now(UTC) + timedelta(minutes=45)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return f"se={se}&sr=c&sig=abc"
+
+
 @pytest.mark.asyncio
 async def test_startup_mint_populates_cache_for_every_derived_container() -> None:
     """Startup mints exactly the derived container set into the shared cache."""
@@ -2172,10 +2183,9 @@ async def test_startup_mint_populates_cache_for_every_derived_container() -> Non
         schedule_startup_mint,
     )
 
+    token = _live_token()
     mock_client = AsyncMock()
-    mock_client.get = AsyncMock(
-        return_value=_token_response(200, "se=2026-08-30T00:00:00Z&sr=c&sig=abc")
-    )
+    mock_client.get = AsyncMock(return_value=_token_response(200, token))
     redis = _FakeRedis()
 
     with (
@@ -2187,10 +2197,7 @@ async def test_startup_mint_populates_cache_for_every_derived_container() -> Non
 
     assert mock_client.get.await_count == len(STARTUP_MINT_CONTAINERS)
     for account, container in STARTUP_MINT_CONTAINERS:
-        assert (
-            redis.store[f"sas-token:{account}/{container}"]
-            == b"se=2026-08-30T00:00:00Z&sr=c&sig=abc"
-        )
+        assert redis.store[f"sas-token:{account}/{container}"] == token.encode()
 
 
 @pytest.mark.asyncio
@@ -2227,11 +2234,12 @@ async def test_startup_mint_retries_a_recoverable_429_and_still_populates_cache(
     """A 429 that clears within the batch budget still ends in a cached token."""
     from app.services.stac import LANDSAT_BLOB_CONTAINER, _mint_at_startup
 
+    token = _live_token()
     mock_client = AsyncMock()
     mock_client.get = AsyncMock(
         side_effect=[
             _token_response(429, retry_after="1"),
-            _token_response(200, "se=2026-08-30T00:00:00Z&sr=c&sig=abc"),
+            _token_response(200, token),
         ]
     )
     redis = _FakeRedis()
@@ -2244,9 +2252,7 @@ async def test_startup_mint_retries_a_recoverable_429_and_still_populates_cache(
         await _mint_at_startup(*LANDSAT_BLOB_CONTAINER)
 
     account, container = LANDSAT_BLOB_CONTAINER
-    assert (
-        redis.store[f"sas-token:{account}/{container}"] == b"se=2026-08-30T00:00:00Z&sr=c&sig=abc"
-    )
+    assert redis.store[f"sas-token:{account}/{container}"] == token.encode()
     assert mock_client.get.await_count == 2
 
 
@@ -2268,10 +2274,9 @@ async def test_request_path_finds_a_pre_minted_token_without_re_minting() -> Non
         schedule_startup_mint,
     )
 
+    minted = _live_token()
     mock_client = AsyncMock()
-    mock_client.get = AsyncMock(
-        return_value=_token_response(200, "se=2026-08-30T00:00:00Z&sr=c&sig=abc")
-    )
+    mock_client.get = AsyncMock(return_value=_token_response(200, minted))
     redis = _FakeRedis()
 
     with (
@@ -2285,5 +2290,5 @@ async def test_request_path_finds_a_pre_minted_token_without_re_minting() -> Non
         account, container = STARTUP_MINT_CONTAINERS[0]
         token = await _container_token(account, container, wait_budget=SIGN_WAIT_REQUEST)
 
-    assert token == "se=2026-08-30T00:00:00Z&sr=c&sig=abc"
+    assert token == minted
     assert mock_client.get.await_count == mints_at_boot, "first request must not re-mint"
