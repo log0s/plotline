@@ -2174,3 +2174,9 @@ post, Summary-table re-tally.
   `../2026-08-z6-vintage-lookup/REPORT.md` §1 has it right. Source:
   `docs/posts/2026-08-instrument-the-silences.VERIFY-NOTES.md` §2 (N5) and §6
   item 3.
+- **Erratum, `../2026-08-z6-vintage-lookup/REPORT.md` §1 (frozen; corrected
+  here, 2026-09-10).** It cites "Denver 41.11 (`4ce1822`)" as the standing
+  counterexample. The Denver 41.11 → 41.07 ancestor change is `b5a306a`'s;
+  `4ce1822` only updated its test (`../2026-08-racebrook/REPORT.md` §6). A
+  citation error, not a wrong fact. Source:
+  `docs/posts/2026-08-instrument-the-silences.VERIFY-NOTES.md` §6 item 6.
