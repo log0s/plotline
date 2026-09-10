@@ -8,7 +8,7 @@ candidate_titles:
   - "Absent, wearing a timeout's clothes"
 pull_quote: "A system that can only report success will report success."
 facts_to_verify:
-  - "The four occurrences and the four heal scripts are two separate counts and the post states them as two. The draft also called the four occurrences independent upstreams; that clause is removed, because STATUS.md's M4 row puts occurrences (1) and (2) on the Planetary Computer SAS signing path and (3) and (4) on api.census.gov — two distinct upstreams, not four (the row's own summary sentence says three, counting only (1)-(3)). No upstream count is stated in the post. STATUS.md's M4 row records four production occurrences; the scheduling note that names revalidate_landsat.py, requeue_empty_property.py, heal_tract_vintage_gaps.py and requeue_parcels.py as the recurring chore was written when the count stood at three, and requeue_empty_property.py is a property-path script. Nothing pairs a script to an occurrence, and the post does not."
+  - "The four occurrences and the four heal scripts are two separate counts and the post states them as two. The draft also called the four occurrences independent upstreams; that clause is removed. STATUS.md's M4 row attributes occurrence (1) to Planetary Computer SAS signing 429s and records (3) and (4) against api.census.gov; occurrence (2) was a Landsat loss whose cause ops-audit/FINDINGS.md leaves unestablished (it records that it happened, not why). No upstream count is stated in the post. STATUS.md's M4 row records four production occurrences; the scheduling note that names revalidate_landsat.py, requeue_empty_property.py, heal_tract_vintage_gaps.py and requeue_parcels.py as the recurring chore was written when the count stood at three, and requeue_empty_property.py is a property-path script. Nothing pairs a script to an occurrence, and the post does not."
   - "Racebrook's five missing years read `absent`/`api_no_data` in the ledger, not a distinct outcome. What made them diagnostic is the tract carried in `detail` — 09170157100 on every failing year, 09009157100 on every succeeding year but one. The post says the detail is what answered the question, and the outcome vocabulary alone would not have."
   - "ACS5 2023 is the one succeeding year not asked under 09009157100: it carries 09170157100, the post-2022 planning-region key. `docs/audits/2026-08-racebrook/REPORT.md` §3 (Blast radius — 'Its five surviving census snapshots') and §10 (the requeue addendum's P3 ledger table) both record it, as does §2.3's live geocoder matrix (`ACS2023_Current` → `09170157100`). That makes the exception the confirming case for the diagnosis rather than an anomaly — the one vintage in the set actually published under the new geography is the one the new-geography key succeeds against. The post names the key and says so."
   - "The two prompt shapes near the end are paraphrase, not quotation. Grep over docs/, prompts/, scripts/ and backend/ finds neither string in any recorded prompt or brief, so the post states them without quotation marks as the shape of a request rather than its text."
@@ -88,16 +88,15 @@ is the record, not the enforcement. And it starts at deploy carrying no
 history, because no backfill is possible for outcomes never written down — a
 parcel's absence from the gap report means "not yet swept," not "healthy."
 
-The first sweep did not run: a gate line written to catch a ledger that
-already held rows caught the opposite failure instead, because a table that
-does not exist also fails a check that it is empty — which is the first post's
-subject. Once the migration runner was fixed, one `revalidate_landsat.py`
-invocation reached 184 of 184 parcels, exit 0, and wrote 16,244 ledger rows
-against a prediction of 16,100 ± 300 written before deploy and never edited.
-Every falsifiable clause held, with zero `failed` rows fleet-wide. The one
-deviation — a topo split of 1,154 decade rows over 183 parcels instead of
-roughly 989 over 157 — was flagged as unverifiable in the prediction's own
-text, for the reason it deviated.
+The first sweep did not run: the pre-sweep gate checked `alembic_version` and
+the ledger table's existence, and found `0010` and no table — which is the
+first post's subject. Once the migration runner was fixed, one
+`revalidate_landsat.py` invocation reached 184 of 184 parcels, exit 0, and
+wrote 16,244 ledger rows against a prediction of 16,100 ± 300 written before
+deploy and never edited. Every falsifiable clause held, with zero `failed`
+rows fleet-wide. The one deviation — a topo split of 1,154 decade rows over
+183 parcels instead of roughly 989 over 157 — was flagged as unverifiable in
+the prediction's own text, for the reason it deviated.
 
 ## What the ledger said
 
@@ -141,9 +140,10 @@ whose tract does read `absent`. Both are fixed in `e6afa9b`, with the
 mechanism underneath: `_request` mapped 404 to `None` to `{}` to `absent`,
 which is how a dead endpoint spent months as "the tract has no
 data." A 4xx or 5xx now raises and lands as `failed`/`http_<status>`. Grepping
-for that shape across every other outbound client found one more instance —
-Socrata's 404 returning an empty list on the property path — fixed two batches
-later in `2c3f468`.
+for that shape across every other outbound client found two more instances:
+Socrata's 404 returning an empty list on the property path, fixed in a later
+batch in `2c3f468`, and Photon's errors returning an empty address-suggestion
+list, which is still open.
 
 Then the half that acts on it. `maybe_refetch_for_backfill` gained a path that
 selects retryable groups from the ledger, folds them onto the sources that
@@ -212,12 +212,17 @@ when it knows something. On the scoring run the Adams parcel came back
 All of this was agent-built from my prompts — the census skip, the property
 rollup and the vintage fallback, and equally the ledger, the retry policy, the
 coverage gate and every prediction they were scored against. The same tooling
-that wrote the silences wrote the instruments; the model version is not what
-changed between them. What changed was what I asked for. A prompt asking for a
-census fetch that is resilient to a bad year produces a skip. A prompt asking
-that every attempted year carry an outcome the database can distinguish, and
-that the expected result be written down before the run, produces a table, a
-vocabulary, and a scorecard allowed to come back `not exercised`.
+that wrote the silences wrote the instruments, but the model version moved
+between them, and I can't isolate it from everything else that moved. What I
+can point to is narrower. The vintage fallback and the property path's
+all-failed rule were written by the same model that later built the ledger and
+the coverage gate, and that model instrumented the all-failed rule itself;
+only the fallback's fix came from another. In those two, what changed was what
+I asked for. A prompt asking for a census fetch that is resilient to a bad year
+produces a skip. A prompt asking that every attempted year carry an outcome
+the database can distinguish, and that the expected result be written down
+before the run, produces a table, a vocabulary, and a scorecard allowed to
+come back `not exercised`.
 
 The thing I would take from this is that a silence is not a missing log line.
 Every one of these paths was already logging something, and several were
@@ -227,7 +232,8 @@ writing down what you expect it to say before you look. A system that can only
 report success will report success.
 
 Sources, all under `docs/audits/` and in the order this post walks them:
-`2026-08-m4-design/`, `2026-08-m4-ledger/`, `2026-08-racebrook/`,
-`2026-08-census-decennial/`, `2026-08-m3/`, `2026-08-ops-batch/`,
-`2026-08-z6-vintage-lookup/` and `2026-08-property-outcomes/`. Every finding's
-current state is in `2026-08-second-audit/STATUS.md`.
+`2026-08-geometry-audit/`, `2026-08-m4-design/`, `2026-08-m4-ledger/`,
+`2026-08-racebrook/`, `2026-08-census-decennial/`, `2026-08-m3/`,
+`2026-08-ops-batch/`, `2026-08-z6-vintage-lookup/` and
+`2026-08-property-outcomes/`. Every finding's current state is in
+`2026-08-second-audit/STATUS.md`.

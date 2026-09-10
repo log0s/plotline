@@ -289,3 +289,158 @@ Optional: add `2026-08-geometry-audit/` to the Sources paragraph.
 
 Once those are decided, every remaining claim in the post traces to a file
 or a commit, and the draft meets its own premise.
+
+---
+
+## Edit batch 2026-09-10 (post-verification)
+
+Written 2026-09-10 against HEAD `3ca91ed`. The owner decided all four §5
+flags and the §4 note; this batch executes those decisions. Every edit
+traces to a flag or finding above, to `m4-ledger/GATE-STOP.md`, to
+DEVELOPMENT.md, or to a cited commit. The post's `status` is untouched.
+Body word count (everything after the frontmatter, the method that
+reproduces the 2,209 and 2,245 of earlier commits): **2,249 → 2,302**.
+
+The four record-level findings in §6 items 1, 3, 4 and 5, plus the Photon
+note for §6 item 2, are entered in STATUS.md in the commit that follows
+this one. This file cannot carry its own commit hash.
+
+### Item 1 — N9, the model-version claim (narrowed, one paragraph)
+
+**Before:** "The same tooling that wrote the silences wrote the
+instruments; the model version is not what changed between them. What
+changed was what I asked for."
+
+**After, the paragraph in full:**
+
+> All of this was agent-built from my prompts — the census skip, the property
+> rollup and the vintage fallback, and equally the ledger, the retry policy, the
+> coverage gate and every prediction they were scored against. The same tooling
+> that wrote the silences wrote the instruments, but the model version moved
+> between them, and I can't isolate it from everything else that moved. What I
+> can point to is narrower. The vintage fallback and the property path's
+> all-failed rule were written by the same model that later built the ledger and
+> the coverage gate, and that model instrumented the all-failed rule itself;
+> only the fallback's fix came from another. In those two, what changed was what
+> I asked for. A prompt asking for a census fetch that is resilient to a bad year
+> produces a skip. A prompt asking that every attempted year carry an outcome
+> the database can distinguish, and that the expected result be written down
+> before the run, produces a table, a vocabulary, and a scorecard allowed to
+> come back `not exercised`.
+
+**Trailers relied on** (`git log -1 --format='%(trailers:key=Co-Authored-By)'`):
+
+| Role | Commit | Trailer |
+|---|---|---|
+| Census skip | `7e5df04` | Claude Opus 4.6 (1M context) |
+| Original property path | `4544f10` | Claude Opus 4.6 (1M context) |
+| Vintage fallback | `b5a306a` | Claude Opus 5 |
+| H4 all-failed rule | `256ed32` | Claude Opus 5 |
+| Ledger | `0814d7e`, `ef2d0a2` | Claude Opus 5 |
+| Coverage gate | `eee8a9e` | Claude Opus 5 |
+| All-failed rule instrumented (`partial`, counts) | `48b7fd8`, `1f7e398` | Claude Opus 5 |
+| Vintage fallback fixed (Z6) | `4275908` | Claude Sonnet 5 |
+
+`b5a306a`'s message is where the fallback enters: "a missing tract or a
+geocoder outage falls back to the stored tract". DEVELOPMENT.md's
+attribution note records that about a third of commits carried no trailer
+as of the audit and that stamping was consistent only from about mid-August.
+All ten commits above carry one.
+
+**Deviation from the instruction.** The instruction named both the vintage
+fallback and the all-failed rule as "written and later instrumented by the
+same model". That holds for the all-failed rule (`256ed32` → `48b7fd8`,
+`1f7e398`, all Opus 5). It does not hold for the fallback: its fix,
+`4275908`, is Sonnet 5, and the ledger did not instrument it — Z6 REPORT §1
+records that the row and the ledger "carry no trace that the tract came from
+a fallback". The paragraph therefore says both were written by the model
+that later built the ledger and the coverage gate (true for both), says that
+model instrumented the all-failed rule (true), and says the fallback's fix
+came from another model.
+
+**Observation, not edited.** The next sentence's example, "a census fetch
+that is resilient to a bad year produces a skip", illustrates with the
+census skip, which is one of the two cases where the model did change
+(`7e5df04`, Opus 4.6). The sentence is about prompt shape, not model, so it
+is not false. A skeptical reader may still notice it sits next to the
+narrowed claim.
+
+### Item 2 — B38, line 144 (Photon enters)
+
+**Before:** "Grepping for that shape across every other outbound client
+found one more instance — Socrata's 404 returning an empty list on the
+property path — fixed two batches later in `2c3f468`."
+
+**After:** "Grepping for that shape across every other outbound client
+found two more instances: Socrata's 404 returning an empty list on the
+property path, fixed in a later batch in `2c3f468`, and Photon's errors
+returning an empty address-suggestion list, which is still open."
+
+Basis: STATUS.md N4 (`api/geocode.py:77-82`, `RequestError` and
+`HTTPStatusError` → `return []`, "LOW — Open"); `ops-batch/REPORT.md` §4's
+grep found it again.
+
+### Item 3 — N1, line 91, the gate clause
+
+**Case applied: the framing is dropped.** `GATE-STOP.md` does not state
+that gate line 2's purpose was guarding against a ledger that already held
+rows. The line that decided it is §1's table row, `GATE-STOP.md:30`:
+
+```
+| 2 | `alembic_version` = `0011`; `timeline_task_years` exists, empty | **FAIL** — version is `0010`; the table does not exist |
+```
+
+The rest of GATE-STOP.md (§1.2's evidence, §7) states no purpose for the
+line either. The purpose sentence exists only in the brief,
+`SWEEP-PROMPT-1.md:25`: "Otherwise stop — a non-empty ledger before the
+sweep means something already ran." The instruction's test was GATE-STOP.md,
+so the framing went.
+
+**Before:** "The first sweep did not run: a gate line written to catch a
+ledger that already held rows caught the opposite failure instead, because a
+table that does not exist also fails a check that it is empty — which is the
+first post's subject."
+
+**After:** "The first sweep did not run: the pre-sweep gate checked
+`alembic_version` and the ledger table's existence, and found `0010` and no
+table — which is the first post's subject."
+
+The cross-reference "— which is the first post's subject." is unchanged.
+The rest of the paragraph was re-wrapped to 78 columns; no other words
+changed.
+
+### Item 4 — B39, line 145
+
+**Before:** "fixed two batches later in `2c3f468`"
+**After:** "fixed in a later batch in `2c3f468`"
+
+Carried inside item 2's sentence.
+
+### Item 5 — Sources paragraph (§4 note)
+
+**Before:** "`2026-08-m4-design/`, `2026-08-m4-ledger/`, …"
+**After:** "`2026-08-geometry-audit/`, `2026-08-m4-design/`,
+`2026-08-m4-ledger/`, …"
+
+Placed first. The opening paragraph's 63 no-data responses come from
+`geometry-audit/HEAL-SCORECARD.md` §7, and the opening is the first thing
+the post walks, so "in the order this post walks them" stays true.
+
+### Item 6 — frontmatter `facts_to_verify`, entry 1
+
+**Before (the changed span):** "that clause is removed, because STATUS.md's
+M4 row puts occurrences (1) and (2) on the Planetary Computer SAS signing
+path and (3) and (4) on api.census.gov — two distinct upstreams, not four
+(the row's own summary sentence says three, counting only (1)-(3))."
+
+**After:** "that clause is removed. STATUS.md's M4 row attributes occurrence
+(1) to Planetary Computer SAS signing 429s and records (3) and (4) against
+api.census.gov; occurrence (2) was a Landsat loss whose cause
+ops-audit/FINDINGS.md leaves unestablished (it records that it happened,
+not why)."
+
+The "summary sentence says three" parenthetical also went: the next commit
+rewrites that STATUS.md sentence, and the entry would otherwise cite text
+that no longer exists. The rest of the entry is unchanged. §5's "Not edited,
+by choice" paragraph above stands as a record of what the verification
+session decided. This entry is now the owner's decision, executed.
