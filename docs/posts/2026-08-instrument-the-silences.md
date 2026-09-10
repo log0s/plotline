@@ -81,12 +81,12 @@ about Postgres, which is the correct place to put it.
 
 So: `timeline_task_years`, one row per attempted group, shipped in `0814d7e`
 and `ef2d0a2`. Five outcomes — `ok`, `failed`, `absent`, `suppressed`,
-`indeterminate` — each with a machine reason, wired at all seven per-year
-sites. Two things it deliberately does not do. Task status semantics are
-unchanged: a task with failed years still ends `complete`, and the ledger is
-the record, not the enforcement. And it starts at deploy carrying no history,
-because no backfill is possible for outcomes never written down — a parcel's
-absence from the gap report means "not yet swept," not "healthy."
+`indeterminate` — every one but `ok` with a machine reason, wired at all seven
+per-year sites. Two things it deliberately does not do. Task status semantics
+are unchanged: a task with failed years still ends `complete`, and the ledger
+is the record, not the enforcement. And it starts at deploy carrying no
+history, because no backfill is possible for outcomes never written down — a
+parcel's absence from the gap report means "not yet swept," not "healthy."
 
 The first sweep did not run: a gate line written to catch a ledger that
 already held rows caught the opposite failure instead, because a table that
@@ -118,14 +118,14 @@ settled it was the key in the detail column. Not a re-failure: we had been
 asking with the post-2022 planning-region geography for vintages published
 under the pre-2022 county one.
 
-The fix, `4ce1822`, gives every `(dataset, year)` pair its own geography
-vintage. No crosswalk table and no Connecticut special case was needed — the
-Census geocoder already draws the boundary where the data API draws it. The
-requeue was predicted first and scored after: one invocation gated on the
-deployed SHA, exit 0, complete in 38 seconds, `census_snapshots` 5 → 8 with
-ACS5 2009, ACS5 2021 and decennial 2020 arriving at exactly the predicted
-figures, the five pre-existing rows unchanged, and all 68 imagery rows
-byte-identical by id. Three of the five came back. Two did not, and the
+The fix, `4ce1822`, gives every `(dataset, year)` pair the geocoder can serve
+its own geography vintage. No crosswalk table and no Connecticut special case
+was needed — the Census geocoder already draws the boundary where the data
+API draws it. The requeue was predicted first and scored after: one invocation
+gated on the deployed SHA, exit 0, complete in 38 seconds, `census_snapshots`
+5 → 8 with ACS5 2009, ACS5 2021 and decennial 2020 arriving at exactly the
+predicted figures, the five pre-existing rows unchanged, and all 68 imagery
+rows byte-identical by id. Three of the five came back. Two did not, and the
 prediction said which two before the run.
 
 Those two became fleet-wide findings rather than a footnote. Decennial 1990
@@ -139,7 +139,7 @@ form 204s on every no-suffix tract. The split in the ledger is perfect — all
 47 parcels reading `ok` have a tract that does not end in `00`, and all 80
 whose tract does read `absent`. Both are fixed in `e6afa9b`, with the
 mechanism underneath: `_request` mapped 404 to `None` to `{}` to `absent`,
-which is how a dead endpoint spent months in the ledger as "the tract has no
+which is how a dead endpoint spent months as "the tract has no
 data." A 4xx or 5xx now raises and lands as `failed`/`http_<status>`. Grepping
 for that shape across every other outbound client found one more instance —
 Socrata's 404 returning an empty list on the property path — fixed two batches
@@ -170,7 +170,7 @@ measured for the first time and held at a depth of 25 on all 236 admission
 lines — and is still unobserved doing the thing it exists for, no user request
 having arrived in that window or the larger sweep after it.
 
-That larger sweep is worth one honest sentence. Five commits widened the retry
+That larger sweep is worth one honest sentence. Three commits widened the retry
 policies on SAS signing, the Census API and ArcGIS; the sweep scoring them
 enqueued 189 requests and met not one attempt at a status any of them retries.
 The verdict is `not exercised`, written into the prediction before the run and
