@@ -444,3 +444,69 @@ rewrites that STATUS.md sentence, and the entry would otherwise cite text
 that no longer exists. The rest of the entry is unchanged. §5's "Not edited,
 by choice" paragraph above stands as a record of what the verification
 session decided. This entry is now the owner's decision, executed.
+
+### Follow-up, 2026-09-10 (after `633bb88` and `5a93e10`)
+
+The owner accepted item 1's departure (the vintage fallback is not a
+same-model case) and noted that the paragraph still counted it. The owner
+also accepted `SWEEP-PROMPT-1.md:25` as the record of the gate's purpose:
+it is the brief that commissioned the gate, and it lives under
+`docs/audits/`. Body word count: **2,302 → 2,328**.
+
+#### Item 1, revised — the fallback leaves the same-model claim
+
+**Before (as of `633bb88`):** "What I can point to is narrower. The vintage
+fallback and the property path's all-failed rule were written by the same
+model that later built the ledger and the coverage gate, and that model
+instrumented the all-failed rule itself; only the fallback's fix came from
+another. In those two, what changed was what I asked for. A prompt asking
+for a census fetch …"
+
+**After, the paragraph in full:**
+
+> All of this was agent-built from my prompts — the census skip, the property
+> rollup and the vintage fallback, and equally the ledger, the retry policy, the
+> coverage gate and every prediction they were scored against. The same tooling
+> that wrote the silences wrote the instruments, but the model version moved
+> between them, and I can't isolate it from everything else that moved. What I
+> can point to is narrower: the property path's all-failed rule was written by
+> the same model that later built the ledger and the coverage gate, and that
+> model instrumented the rule itself. There, what changed was what I asked for.
+> The shape of the ask shows even where the model also changed. A prompt asking
+> for a census fetch that is resilient to a bad year produces a skip. A prompt
+> asking that every attempted year carry an outcome the database can
+> distinguish, and that the expected result be written down before the run,
+> produces a table, a vocabulary, and a scorecard allowed to come back
+> `not exercised`.
+
+The owner's suggested text was used verbatim. Checked against the item 1
+trailer table: `256ed32` (the all-failed rule, 2026-08-03) is Opus 5. The
+ledger (`0814d7e`, `ef2d0a2`, 2026-08-25) and the coverage gate (`eee8a9e`,
+2026-08-27) are Opus 5 and come later. The rule was instrumented by
+`48b7fd8` and `1f7e398`, both Opus 5. The added clause, "even where the
+model also changed", is what now sits before the census example: the
+census skip `7e5df04` is Opus 4.6 and the ledger is Opus 5. That closes
+item 1's "Observation, not edited" above.
+
+#### Item 3, revised — the framing returns, with the recorded mechanism
+
+**Sources:** the gate's purpose comes from `SWEEP-PROMPT-1.md:25` ("holds
+zero rows. Otherwise stop — a non-empty ledger before the sweep means
+something already ran."). The mechanism comes from `GATE-STOP.md:30`
+("FAIL — version is `0010`; the table does not exist").
+
+**Before (as of `633bb88`):** "The first sweep did not run: the pre-sweep
+gate checked `alembic_version` and the ledger table's existence, and found
+`0010` and no table — which is the first post's subject."
+
+**After:** "The first sweep did not run, and the gate line that stopped it
+was written for the opposite failure: a ledger that already held rows, since
+rows before the sweep mean something already ran. It checked the migration
+version and the table's existence first, and found `0010` and no table —
+which is the first post's subject."
+
+"First" follows the line's own order in `SWEEP-PROMPT-1.md:25` (version,
+then existence, then zero rows) and GATE-STOP.md §1.2's evidence. That
+evidence reads `alembic_version` and then hits `UndefinedTable` before
+emptiness is ever reached. The cross-reference "— which is the first post's
+subject." is unchanged. The paragraph was re-wrapped to 78 columns.

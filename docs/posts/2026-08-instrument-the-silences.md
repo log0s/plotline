@@ -88,9 +88,11 @@ is the record, not the enforcement. And it starts at deploy carrying no
 history, because no backfill is possible for outcomes never written down — a
 parcel's absence from the gap report means "not yet swept," not "healthy."
 
-The first sweep did not run: the pre-sweep gate checked `alembic_version` and
-the ledger table's existence, and found `0010` and no table — which is the
-first post's subject. Once the migration runner was fixed, one
+The first sweep did not run, and the gate line that stopped it was written for
+the opposite failure: a ledger that already held rows, since rows before the
+sweep mean something already ran. It checked the migration version and the
+table's existence first, and found `0010` and no table — which is the first
+post's subject. Once the migration runner was fixed, one
 `revalidate_landsat.py` invocation reached 184 of 184 parcels, exit 0, and
 wrote 16,244 ledger rows against a prediction of 16,100 ± 300 written before
 deploy and never edited. Every falsifiable clause held, with zero `failed`
@@ -214,15 +216,15 @@ rollup and the vintage fallback, and equally the ledger, the retry policy, the
 coverage gate and every prediction they were scored against. The same tooling
 that wrote the silences wrote the instruments, but the model version moved
 between them, and I can't isolate it from everything else that moved. What I
-can point to is narrower. The vintage fallback and the property path's
-all-failed rule were written by the same model that later built the ledger and
-the coverage gate, and that model instrumented the all-failed rule itself;
-only the fallback's fix came from another. In those two, what changed was what
-I asked for. A prompt asking for a census fetch that is resilient to a bad year
-produces a skip. A prompt asking that every attempted year carry an outcome
-the database can distinguish, and that the expected result be written down
-before the run, produces a table, a vocabulary, and a scorecard allowed to
-come back `not exercised`.
+can point to is narrower: the property path's all-failed rule was written by
+the same model that later built the ledger and the coverage gate, and that
+model instrumented the rule itself. There, what changed was what I asked for.
+The shape of the ask shows even where the model also changed. A prompt asking
+for a census fetch that is resilient to a bad year produces a skip. A prompt
+asking that every attempted year carry an outcome the database can
+distinguish, and that the expected result be written down before the run,
+produces a table, a vocabulary, and a scorecard allowed to come back
+`not exercised`.
 
 The thing I would take from this is that a silence is not a missing log line.
 Every one of these paths was already logging something, and several were
