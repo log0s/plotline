@@ -1,20 +1,24 @@
 ---
 status: draft
 candidate_titles:
-  - "Every silence looked like the same silence"
   - "Complete, with permanent gaps"
-  - "Four ways a system says nothing"
-pull_quote: "Eleven of the thirty-three were genuine absence wearing a timeout's clothes, and the ledger is what told them apart."
+  - "Instrument the silences"
+  - "What `complete` was hiding"
+  - "Every silence looked like the same silence"
+  - "Absent, wearing a timeout's clothes"
+pull_quote: "A system that can only report success will report success."
 facts_to_verify:
-  - "The four occurrences and the four heal scripts are two separate counts and the post states them as two. STATUS.md's M4 row records four production occurrences; the scheduling note that names revalidate_landsat.py, requeue_empty_property.py, heal_tract_vintage_gaps.py and requeue_parcels.py as the recurring chore was written when the count stood at three, and requeue_empty_property.py is a property-path script. Nothing pairs a script to an occurrence, and the post does not."
+  - "The four occurrences and the four heal scripts are two separate counts and the post states them as two. The draft also called the four occurrences independent upstreams; that clause is removed, because STATUS.md's M4 row puts occurrences (1) and (2) on the Planetary Computer SAS signing path and (3) and (4) on api.census.gov — two distinct upstreams, not four (the row's own summary sentence says three, counting only (1)-(3)). No upstream count is stated in the post. STATUS.md's M4 row records four production occurrences; the scheduling note that names revalidate_landsat.py, requeue_empty_property.py, heal_tract_vintage_gaps.py and requeue_parcels.py as the recurring chore was written when the count stood at three, and requeue_empty_property.py is a property-path script. Nothing pairs a script to an occurrence, and the post does not."
   - "Racebrook's five missing years read `absent`/`api_no_data` in the ledger, not a distinct outcome. What made them diagnostic is the tract carried in `detail` — 09170157100 on every failing year, 09009157100 on every succeeding year but one. The post says the detail is what answered the question, and the outcome vocabulary alone would not have."
+  - "ACS5 2023 is the one succeeding year not asked under 09009157100: it carries 09170157100, the post-2022 planning-region key. `docs/audits/2026-08-racebrook/REPORT.md` §3 (Blast radius — 'Its five surviving census snapshots') and §10 (the requeue addendum's P3 ledger table) both record it, as does §2.3's live geocoder matrix (`ACS2023_Current` → `09170157100`). That makes the exception the confirming case for the diagnosis rather than an anomaly — the one vintage in the set actually published under the new geography is the one the new-geography key succeeds against. The post names the key and says so."
+  - "The two prompt shapes near the end are paraphrase, not quotation. Grep over docs/, prompts/, scripts/ and backend/ finds neither string in any recorded prompt or brief, so the post states them without quotation marks as the shape of a request rather than its text."
   - "The 63 `Census API: no data for tract` responses are a fleet-wide count from the 2026-08-12 geometry sweep (HEAL-SCORECARD.md §7), not Racebrook's own. The post attributes them to the sweep."
   - "Crawford's split — 22 recovered, 11 real absence — is the sum of two lines in HEAL-2-crawford.md §3a (16 Landsat `ok` plus 6 NAIP `ok`, against 11 NAIP `absent`/`no_scenes`). The arithmetic is the post's; the three counts are the record's."
   - "The admission reserve's `depth=25` on 236 of 236 lines rests on HEAL-3 §5.2 alone. So does the statement that no `origin='user'` request arrived; STATUS.md's M3 row adds a second heal with the same result, which is why the post says the reserve has never been observed doing the thing it exists for."
   - "The Adams house-number sample (4,013 numbers, 741–16610, zero in 9000–13600) rests on a single reading taken 2026-08-27 for that batch (property-outcomes REPORT.md §5). It is a sample of four streets, not the whole layer."
   - "Z6's one production instance is the only one in the capture, and the capture dropped roughly 3% of the worker stream that sweep. `not exercised` and `exercised once` are both consistent with the evidence for the retry sites; `fired once` is not a floor the record establishes for Z6 either, only what was seen."
 ---
-# Every silence looked like the same silence
+# Complete, with permanent gaps
 
 In August a sweep ran across Plotline's parcel fleet and one address came back
 wrong in a way nothing in the system could name. Parcel `2f1b332e` — Racebrook
@@ -45,11 +49,12 @@ could not distinguish "this parcel has no history" from "this integration has
 been broken for a month." My development notes have a name for the fix:
 instrument the silences.
 
-The status ledger records four production occurrences of that shape, from four
-independent upstreams. Separately, it records the argument for doing
-something: `revalidate_landsat.py`, `requeue_empty_property.py`,
-`heal_tract_vintage_gaps.py` and `requeue_parcels.py` all exist because a task
-cannot say which years it failed to fetch. Two counts, not one — no script is
+The status ledger records four production occurrences of the first of those
+silences — years dropped under a `complete` task. Separately, it records the
+argument for doing something: `revalidate_landsat.py`,
+`requeue_empty_property.py`, `heal_tract_vintage_gaps.py` and
+`requeue_parcels.py` all exist because a task cannot say which years it failed
+to fetch. Two counts, not one — no script is
 paired to an occurrence, and one is on the property path entirely. The
 recurring chore was the argument.
 
@@ -104,12 +109,14 @@ months.
 The second thing it said was about Racebrook. All ten of its census groups
 recorded an outcome, and each carried in `detail` the tract it had actually
 asked about. Every failing year was asked under `09170157100`; every
-succeeding year but one was asked under `09009157100`. The vocabulary alone
-would not have settled anything — five of the ten read `absent`/`api_no_data`,
-effectively what they had been saying all along. What settled it was the key
-in the detail column. Not a re-failure: we had been asking with the post-2022
-planning-region geography for vintages published under the pre-2022 county
-one.
+succeeding year but one was asked under `09009157100` — the exception, ACS5
+2023, is the only vintage in the set published under the post-2022
+planning-region geography, and it succeeded under `09170157100`. The
+vocabulary alone would not have settled anything — five of the ten read
+`absent`/`api_no_data`, effectively what they had been saying all along. What
+settled it was the key in the detail column. Not a re-failure: we had been
+asking with the post-2022 planning-region geography for vintages published
+under the pre-2022 county one.
 
 The fix, `4ce1822`, gives every `(dataset, year)` pair its own geography
 vintage. No crosswalk table and no Connecticut special case was needed — the
@@ -206,11 +213,11 @@ All of this was agent-built from my prompts — the census skip, the property
 rollup and the vintage fallback, and equally the ledger, the retry policy, the
 coverage gate and every prediction they were scored against. The same tooling
 that wrote the silences wrote the instruments; the model version is not what
-changed between them. What changed was what I asked for. "Make the census
-fetch resilient to a bad year" produces a skip. "Give every attempted year an
-outcome the database can distinguish, and write down what you expect before
-you run it" produces a table, a vocabulary, and a scorecard allowed to come
-back `not exercised`.
+changed between them. What changed was what I asked for. A prompt asking for a
+census fetch that is resilient to a bad year produces a skip. A prompt asking
+that every attempted year carry an outcome the database can distinguish, and
+that the expected result be written down before the run, produces a table, a
+vocabulary, and a scorecard allowed to come back `not exercised`.
 
 The thing I would take from this is that a silence is not a missing log line.
 Every one of these paths was already logging something, and several were

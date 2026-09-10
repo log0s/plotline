@@ -116,3 +116,102 @@ occurrence/script counts; Racebrook's `absent` outcome versus its diagnostic
 responses, Crawford's 22/11 arithmetic, the admission reserve's `depth=25` and
 never-observed reserve, the Adams house-number sample, and the bound on Z6's
 one observed firing given the sweep's ~3% log-capture loss.
+
+---
+
+## Edit batch 2026-09-10
+
+Owner read-through of `fab4047`. Verify-then-execute: item 1 was a record check
+gating item 3. Only the post and this file changed; nothing under
+`docs/audits/` was touched.
+
+### Item 1 — VERIFY the ACS5 2023 tract key (confirmed)
+
+The key is **`09170157100`**, the post-2022 planning-region key. Owner's
+expectation held.
+
+Citations, all in `../audits/2026-08-racebrook/REPORT.md`:
+
+- §3 *Blast radius*, table "Its five surviving census snapshots" — `acs5 |
+  2023 | 09170157100`, against `09009157100` for acs5 2012/2015/2018 and
+  decennial 2010.
+- §10 *Requeue and score, 2026-08-26 (addendum)*, the P3 ledger table —
+  `census_acs5 | 2023 | ok | tract 09170157100`, the only `ok` row of the ten
+  not carrying `09009157100`.
+- §2.3, the live geocoder matrix — `ACS2023_Current` → `09170157100`,
+  `ACS2021_Current` → `09009157100`; the boundary the data API draws.
+
+Corroborated outside the racebrook directory by
+`../audits/2026-08-m4-ledger/HEAL-SCORECARD.md` §11.1 ("ACS5 2023 succeeds
+under `09170`") and by the row-level ledger export
+`../audits/2026-08-y7-y8/logs/after-census_snapshots.csv:564`.
+
+This makes the exception the confirming case rather than an anomaly: ACS5 2023
+is the one vintage in the set actually published under the new geography, so
+the new-geography key is the *right* key for it. **Item 3 was written.**
+
+### Item 2 — DROP the upstream count (done)
+
+`from four independent upstreams` removed; no upstream count returns to the
+post in any form.
+
+**Distinct upstreams across the four occurrences: two.** STATUS.md's M4 row
+puts (1) — the 2026-08-11 burst of 21 SAS signing 429s, 20 Landsat years lost
+— and (2) — 2026-08-12 00:45Z, Ocean County NJ, 8 Landsat years on
+pre-throttle production — on the Planetary Computer signing path, and (3) —
+four `httpx.ReadTimeout`s, Maricopa's acs5 2021 and decennial 2020 — and (4) —
+Racebrook, empty responses for tract `09170157100` — on `api.census.gov`.
+
+Note the row's own summary sentence reads "Observed in production three times,
+from three independent upstreams", written when the count stood at three and
+counting (1)-(3). Either reading falsifies four; the draft's number had no
+support at any point in the row's history. The audit file is not edited — this
+is recorded here and in `facts_to_verify`.
+
+### Item 5 — the quoted prompts (paraphrase case)
+
+Neither string is verbatim in the record. `grep -rn` over `docs/`, `prompts/`,
+`scripts/` and `backend/` for "resilient to a bad year", "attempted year an
+outcome", "outcome the database" and "write down what you expect" returns only
+the post's own lines 210-211. `prompts/` (ORIGINAL, PHASE_2-5) and every
+`PROMPT.md`/`SWEEP-PROMPT-*.md` under `docs/audits/` were searched directly;
+the nearest hit is `prompts/PHASE_3_PROMPT.md:140` "## Census Fetch Service",
+which is a section heading, not the request.
+
+Both are therefore rephrased as paraphrase with the quotation marks removed —
+"A prompt asking for a census fetch that is resilient to a bad year produces a
+skip. A prompt asking that every attempted year carry an outcome the database
+can distinguish, and that the expected result be written down before the run,
+produces …". The contrast the passage rests on is unchanged; what is gone is
+the claim that these are recorded prompt text.
+
+### Diff summary
+
+| item | change |
+|---|---|
+| 1 | verification only — no edit |
+| 2 | line 48: `, from four independent upstreams` dropped |
+| 3 | line 107: exception clause added, naming ACS5 2023 and `09170157100` as the only vintage published under the new geography |
+| 4 | line 48: "four production occurrences of that shape" → "of the first of those silences — years dropped under a `complete` task" |
+| 5 | lines 209-213: both prompts de-quoted and rephrased as request shapes |
+| 6 | H1 → `Complete, with permanent gaps`; `candidate_titles` replaced with the five given, in order |
+| 7 | `pull_quote` → "A system that can only report success will report success." |
+| 8 | `facts_to_verify`: first entry amended with the two-upstream finding and the removal; new entries for the ACS5 2023 key and for the paraphrased prompts (7 → 9) |
+| 9 | this section |
+
+Body word count 2,209 → **2,245** (+36). Ceiling is soft and the item 3 clause
+was authorised to cost words; no compensating trim was made. Reflowed
+paragraphs at lines 48-56 and 109-119 to the file's ~76-column wrap — no words
+changed by the reflow.
+
+Final H1: **Complete, with permanent gaps**. Final pull quote: **A system that
+can only report success will report success.**
+
+### Deviation
+
+Item 4's suggested wording was "the first of those silences" alone. The
+occurrences include Landsat year loss (occurrences 1 and 2) while the first
+silence as the preceding paragraph states it is the census `{}` skip
+specifically, so the appositive "— years dropped under a `complete` task" was
+added to name the shape the four actually share. One edit, both fours
+disambiguated, no restructuring.
