@@ -1,0 +1,308 @@
+TNM query hit its row cap — results are truncated
+
+## rino-art-district (incumbent) 39.762786,-104.983456
+  reverse geocode: tract=08031001601 county='Denver'
+  NAIP raw pool 28 of cap 50; states ['co']
+  NAIP years with a containing tile: [2011, 2013, 2015, 2017, 2019, 2021, 2023]
+  NAIP years present in the pool but with NO containing tile: []
+    2011: co_m_3910524_ne_13_1_20110723_20110901, co_m_3910516_se_13_1_20110723_20110901, co_m_3910417_nw_13_1_20110723_20110901, co_m_3910409_sw_13_1_20110723_20110901*
+    2013: co_m_3910524_ne_13_1_20130716_20130917, co_m_3910516_se_13_1_20130716_20130917, co_m_3910417_nw_13_1_20130716_20130917, co_m_3910409_sw_13_1_20130716_20130917*
+    2015: co_m_3910524_ne_13_1_20150912_20151102, co_m_3910516_se_13_1_20150912_20151102, co_m_3910417_nw_13_1_20150910_20151102, co_m_3910409_sw_13_1_20150910_20151102*
+    2017: co_m_3910524_ne_13_1_20170902_20171017, co_m_3910516_se_13_1_20170902_20171017, co_m_3910417_nw_13_1_20170902_20171017, co_m_3910409_sw_13_1_20170902_20171017*
+    2019: co_m_3910524_ne_13_060_20190803_20191121, co_m_3910516_se_13_060_20190803_20191121, co_m_3910417_nw_13_060_20190803_20191125, co_m_3910409_sw_13_060_20190803_20191121*
+    2021: co_m_3910524_ne_13_060_20210813, co_m_3910516_se_13_060_20210728, co_m_3910417_nw_13_060_20210728, co_m_3910409_sw_13_060_20210728*
+    2023: co_m_3910524_ne_13_030_20230925_20240104, co_m_3910516_se_13_030_20230925_20240104, co_m_3910417_nw_13_030_20230925_20240104, co_m_3910409_sw_13_030_20230925_20240104*
+  topo: 66 GeoTIFF products (truncated=False), 7 decade picks, 7 servable
+  topo decades predicted: ['1890s', '1930s', '1940s', '1950s', '1960s', '1980s', '1990s']
+  census decennial 2000 tract 08031001601: empty (204/no data)
+  census decennial 2010 tract 08031001600: DATA
+  census decennial 2020 tract 08031001601: DATA
+  census acs5 2009 tract 08031001600: DATA
+  census acs5 2012 tract 08031001600: DATA
+  census acs5 2015 tract 08031001600: DATA
+  census acs5 2018 tract 08031001600: DATA
+  census acs5 2021 tract 08031001601: DATA
+  census acs5 2023 tract 08031001601: DATA
+  census vintage tracts: {'Census2010_Current': '08031001600', 'Census2020_Current': '08031001601', 'ACS2021_Current': '08031001601', 'ACS2023_Current': '08031001601'}
+
+## hudson-yards (incumbent) 40.753896,-73.999735
+  reverse geocode: tract=36061009903 county='New York'
+  NAIP raw pool 49 of cap 50; states ['nj', 'ny']
+  NAIP years with a containing tile: [2010, 2011, 2013, 2015, 2017, 2019, 2021, 2022, 2023]
+  NAIP years present in the pool but with NO containing tile: []
+    2010: nj_m_4007424_ne_18_1_20100731, nj_m_4007416_se_18_1_20100731*, nj_m_4007309_sw_18_1_20100731*
+    2011: ny_m_4007424_ne_18_1_20110705_20111114, ny_m_4007416_se_18_1_20110705_20111114*, ny_m_4007317_nw_18_1_20110705_20111114, ny_m_4007309_sw_18_1_20110705_20111114*
+    2013: nj_m_4007424_ne_18_1_20130802_20130826, nj_m_4007416_se_18_1_20130802_20130826*, nj_m_4007309_sw_18_1_20130802_20130826*, ny_m_4007424_ne_18_1_20130622_20130729, ny_m_4007416_se_18_1_20130622_20130729*, ny_m_4007317_nw_18_1_20130622_20130729, ny_m_4007309_sw_18_1_20130622_20130729*
+    2015: nj_m_4007424_ne_18_1_20150729_20150909, nj_m_4007416_se_18_1_20150729_20150909*, nj_m_4007309_sw_18_1_20150729_20150909*, ny_m_4007424_ne_18_.5_20150522_20151109, ny_m_4007416_se_18_.5_20150522_20151109*, ny_m_4007317_nw_18_.5_20150522_20151109, ny_m_4007309_sw_18_.5_20150522_20151109*
+    2017: ny_m_4007309_sw_18_1_20170910_20171207*, ny_m_4007424_ne_18_1_20170826_20171207, ny_m_4007416_se_18_1_20170826_20171207*, ny_m_4007317_nw_18_1_20170809_20171207, nj_m_4007424_ne_18_1_20170719_20171102, nj_m_4007416_se_18_1_20170719_20171102*, nj_m_4007309_sw_18_1_20170719_20171102*
+    2019: ny_m_4007424_ne_18_060_20190917_20191209, ny_m_4007416_se_18_060_20190917_20191209*, nj_m_4007424_ne_18_060_20190917_20191209, nj_m_4007416_se_18_060_20190917_20191209*, ny_m_4007317_nw_18_060_20190830_20191209, ny_m_4007309_sw_18_060_20190830_20191209*, nj_m_4007309_sw_18_060_20190830_20191209*
+    2021: ny_m_4007424_ne_18_060_20211105, ny_m_4007416_se_18_060_20211105*, ny_m_4007317_nw_18_060_20211105, ny_m_4007309_sw_18_060_20211105*
+    2022: ny_m_4007424_ne_18_060_20220719, ny_m_4007416_se_18_060_20220719*, ny_m_4007317_nw_18_060_20220719, ny_m_4007309_sw_18_060_20220719*, nj_m_4007424_ne_18_060_20220710, nj_m_4007416_se_18_060_20220710*, nj_m_4007309_sw_18_060_20220710*
+    2023: nj_m_4007424_ne_18_030_20230820_20231019, nj_m_4007416_se_18_030_20230820_20231019*, nj_m_4007309_sw_18_030_20230820_20231019*
+  topo: 100 GeoTIFF products (truncated=True), 9 decade picks, 9 servable
+  topo decades predicted: ['1880s', '1890s', '1900s', '1930s', '1940s', '1950s', '1960s', '1980s', '1990s']
+  census decennial 2000 tract 36061009903: empty (204/no data)
+  census decennial 2010 tract 36061009900: DATA
+  census decennial 2020 tract 36061009903: DATA
+  census acs5 2009 tract 36061009900: DATA
+  census acs5 2012 tract 36061009900: DATA
+  census acs5 2015 tract 36061009900: DATA
+  census acs5 2018 tract 36061009900: DATA
+  census acs5 2021 tract 36061009903: DATA
+  census acs5 2023 tract 36061009903: DATA
+  census vintage tracts: {'Census2010_Current': '36061009900', 'Census2020_Current': '36061009903', 'ACS2021_Current': '36061009903', 'ACS2023_Current': '36061009903'}
+
+## green-valley-ranch (incumbent) 39.783839,-104.781622
+  reverse geocode: tract=08031008388 county='Denver'
+  NAIP raw pool 7 of cap 50; states ['co']
+  NAIP years with a containing tile: [2011, 2013, 2015, 2017, 2019, 2021, 2023]
+  NAIP years present in the pool but with NO containing tile: []
+    2011: co_m_3910410_se_13_1_20110723_20110901*
+    2013: co_m_3910410_se_13_1_20130716_20130917*
+    2015: co_m_3910410_se_13_1_20150910_20151102*
+    2017: co_m_3910410_se_13_1_20170828_20171017*
+    2019: co_m_3910410_se_13_060_20190912_20191121*
+    2021: co_m_3910410_se_13_060_20210728*
+    2023: co_m_3910410_se_13_030_20230925_20240104*
+  topo: 25 GeoTIFF products (truncated=False), 7 decade picks, 7 servable
+  topo decades predicted: ['1890s', '1930s', '1940s', '1950s', '1960s', '1970s', '1980s']
+  census decennial 2000 tract 08031008388: empty (204/no data)
+  census decennial 2010 tract 08031008388: DATA
+  census decennial 2020 tract 08031008388: DATA
+  census acs5 2009 tract 08031008388: empty (204/no data)
+  census acs5 2012 tract 08031008388: DATA
+  census acs5 2015 tract 08031008388: DATA
+  census acs5 2018 tract 08031008388: DATA
+  census acs5 2021 tract 08031008388: DATA
+  census acs5 2023 tract 08031008388: DATA
+  census vintage tracts: {'Census2010_Current': '08031008388', 'Census2020_Current': '08031008388', 'ACS2021_Current': '08031008388', 'ACS2023_Current': '08031008388'}
+
+## navy-yard (incumbent) 38.874833,-77.000503
+  reverse geocode: tract=11001007201 county='District of Columbia'
+  NAIP raw pool 42 of cap 50; states ['md', 'va']
+  NAIP years with a containing tile: [2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2021, 2023]
+  NAIP years present in the pool but with NO containing tile: []
+    2011: md_m_3807716_ne_18_1_20110629_20111116*, md_m_3807708_se_18_1_20110629_20111116*, md_m_3807609_nw_18_1_20110629_20111116*, md_m_3807601_sw_18_1_20110629_20111116*, va_m_3807716_ne_18_1_20110530*, va_m_3807708_se_18_1_20110530*
+    2012: va_m_3807716_ne_18_1_20120511_20120709*, va_m_3807708_se_18_1_20120511_20120709*
+    2013: md_m_3807716_ne_18_1_20130924_20131112*, md_m_3807708_se_18_1_20130924_20131112*, md_m_3807609_nw_18_1_20130924_20131112*, md_m_3807601_sw_18_1_20130924_20131112*
+    2014: va_m_3807716_ne_18_1_20140927_20141126*, va_m_3807708_se_18_1_20140927_20141126*
+    2015: md_m_3807716_ne_18_1_20150722_20150914*, md_m_3807708_se_18_1_20150722_20150914*, md_m_3807609_nw_18_1_20150722_20150914*, md_m_3807601_sw_18_1_20150722_20150914*
+    2016: va_m_3807716_ne_18_1_20160718_20160928*, va_m_3807708_se_18_1_20160718_20160928*
+    2017: md_m_3807708_se_18_1_20170725_20170907*, md_m_3807716_ne_18_1_20170716_20170907*, md_m_3807609_nw_18_1_20170716_20170907*, md_m_3807601_sw_18_1_20170716_20170907*
+    2018: va_m_3807716_ne_18_060_20181019_20190211*, va_m_3807708_se_18_060_20181019_20190212*, md_m_3807716_ne_18_060_20181019_20190211*, md_m_3807708_se_18_060_20181019_20190212*, md_m_3807609_nw_18_060_20181019_20190211*, md_m_3807601_sw_18_060_20181019_20190211*
+    2021: va_m_3807716_ne_18_060_20210910*, va_m_3807708_se_18_060_20210910*, md_m_3807716_ne_18_060_20210617*, md_m_3807708_se_18_060_20210617*, md_m_3807609_nw_18_060_20210617*, md_m_3807601_sw_18_060_20210617*
+    2023: va_m_3807708_se_18_060_20231113_20240103*, va_m_3807716_ne_18_060_20231104_20240103*, md_m_3807716_ne_18_030_20230901_20231018*, md_m_3807708_se_18_030_20230901_20231018*, md_m_3807609_nw_18_030_20230901_20231018*, md_m_3807601_sw_18_030_20230901_20231018
+  topo: 77 GeoTIFF products (truncated=False), 7 decade picks, 7 servable
+  topo decades predicted: ['1890s', '1900s', '1930s', '1940s', '1950s', '1960s', '1980s']
+  census decennial 2000 tract 11001007201: empty (204/no data)
+  census decennial 2010 tract 11001007200: DATA
+  census decennial 2020 tract 11001007201: DATA
+  census acs5 2009 tract 11001007200: DATA
+  census acs5 2012 tract 11001007200: DATA
+  census acs5 2015 tract 11001007200: DATA
+  census acs5 2018 tract 11001007200: DATA
+  census acs5 2021 tract 11001007201: DATA
+  census acs5 2023 tract 11001007201: DATA
+  census vintage tracts: {'Census2010_Current': '11001007200', 'Census2020_Current': '11001007201', 'ACS2021_Current': '11001007201', 'ACS2023_Current': '11001007201'}
+
+## rodanthe (incumbent) 35.584688,-75.464804
+  reverse geocode: tract=37055970502 county='Dare'
+  NAIP raw pool 6 of cap 50; states ['nc']
+  NAIP years with a containing tile: [2012, 2014, 2016, 2018, 2020, 2022]
+  NAIP years present in the pool but with NO containing tile: []
+    2012: nc_m_3507529_nw_18_1_20120628_20120813*
+    2014: nc_m_3507529_nw_18_1_20141017_20141118*
+    2016: nc_m_3507529_nw_18_1_20160911*
+    2018: nc_m_3507529_nw_18_060_20181029_20190211*
+    2020: nc_m_3507529_nw_18_060_20200516*
+    2022: nc_m_3507529_nw_18_060_20221007*
+  topo: 7 GeoTIFF products (truncated=False), 3 decade picks, 3 servable
+  topo decades predicted: ['1950s', '1960s', '1980s']
+  census decennial 2000 tract 37055970502: empty (204/no data)
+  census decennial 2010 tract 37055970502: DATA
+  census decennial 2020 tract 37055970502: DATA
+  census acs5 2009 tract 37055970502: empty (204/no data)
+  census acs5 2012 tract 37055970502: DATA
+  census acs5 2015 tract 37055970502: DATA
+  census acs5 2018 tract 37055970502: DATA
+  census acs5 2021 tract 37055970502: DATA
+  census acs5 2023 tract 37055970502: DATA
+  census vintage tracts: {'Census2010_Current': '37055970502', 'Census2020_Current': '37055970502', 'ACS2021_Current': '37055970502', 'ACS2023_Current': '37055970502'}
+
+## stapleton (incumbent) 39.785185,-104.891392
+  reverse geocode: tract=08031004111 county='Denver'
+  NAIP raw pool 14 of cap 50; states ['co']
+  NAIP years with a containing tile: [2011, 2013, 2015, 2017, 2019, 2021, 2023]
+  NAIP years present in the pool but with NO containing tile: []
+    2011: co_m_3910410_sw_13_1_20110723_20110901, co_m_3910409_se_13_1_20110723_20110901*
+    2013: co_m_3910410_sw_13_1_20130716_20130917, co_m_3910409_se_13_1_20130716_20130917*
+    2015: co_m_3910410_sw_13_1_20150910_20151102, co_m_3910409_se_13_1_20150910_20151102*
+    2017: co_m_3910409_se_13_1_20170902_20171017*, co_m_3910410_sw_13_1_20170828_20171017
+    2019: co_m_3910410_sw_13_060_20190803_20191121, co_m_3910409_se_13_060_20190803_20191121*
+    2021: co_m_3910410_sw_13_060_20210728, co_m_3910409_se_13_060_20210728*
+    2023: co_m_3910410_sw_13_030_20230925_20240104, co_m_3910409_se_13_030_20230925_20240104*
+  topo: 41 GeoTIFF products (truncated=False), 7 decade picks, 7 servable
+  topo decades predicted: ['1890s', '1930s', '1940s', '1950s', '1960s', '1970s', '1980s']
+  census decennial 2000 tract 08031004111: empty (204/no data)
+  census decennial 2010 tract 08031004107: DATA
+  census decennial 2020 tract 08031004111: DATA
+  census acs5 2009 tract 08031004107: empty (204/no data)
+  census acs5 2012 tract 08031004107: DATA
+  census acs5 2015 tract 08031004107: DATA
+  census acs5 2018 tract 08031004107: DATA
+  census acs5 2021 tract 08031004111: DATA
+  census acs5 2023 tract 08031004111: DATA
+  census vintage tracts: {'Census2010_Current': '08031004107', 'Census2020_Current': '08031004111', 'ACS2021_Current': '08031004111', 'ACS2023_Current': '08031004111'}
+
+## marshall-sagamore (333 Fox Ln) 39.956238,-105.176513
+  reverse geocode: tract=08013060602 county='Boulder'
+  NAIP raw pool 14 of cap 50; states ['co']
+  NAIP years with a containing tile: [2011, 2013, 2015, 2017, 2019, 2021, 2023]
+  NAIP years present in the pool but with NO containing tile: []
+    2011: co_m_3910507_ne_13_1_20110723_20110901*, co_m_3910507_nw_13_1_20110704_20111004
+    2013: co_m_3910507_nw_13_1_20130716_20131119, co_m_3910507_ne_13_1_20130716_20131119*
+    2015: co_m_3910507_nw_13_1_20150912_20151102, co_m_3910507_ne_13_1_20150912_20151102*
+    2017: co_m_3910507_nw_13_1_20170902_20171017, co_m_3910507_ne_13_1_20170902_20171017*
+    2019: co_m_3910507_nw_13_060_20190919_20191121, co_m_3910507_ne_13_060_20190919_20191121*
+    2021: co_m_3910507_ne_13_060_20210813*, co_m_3910507_nw_13_060_20210727
+    2023: co_m_3910507_nw_13_030_20230925_20240104, co_m_3910507_ne_13_030_20230925_20240104*
+  topo: 25 GeoTIFF products (truncated=False), 5 decade picks, 5 servable
+  topo decades predicted: ['1890s', '1940s', '1950s', '1960s', '1980s']
+  census decennial 2000 tract 08013060602: empty (204/no data)
+  census decennial 2010 tract 08013060600: DATA
+  census decennial 2020 tract 08013060602: DATA
+  census acs5 2009 tract 08013060600: empty (204/no data)
+  census acs5 2012 tract 08013060600: DATA
+  census acs5 2015 tract 08013060600: DATA
+  census acs5 2018 tract 08013060600: DATA
+  census acs5 2021 tract 08013060602: DATA
+  census acs5 2023 tract 08013060602: DATA
+  census vintage tracts: {'Census2010_Current': '08013060600', 'Census2020_Current': '08013060602', 'ACS2021_Current': '08013060602', 'ACS2023_Current': '08013060602'}
+
+## marshall-louisville (929 Eldorado Ln) 39.974884,-105.164606
+  reverse geocode: tract=08013013004 county='Boulder'
+  NAIP raw pool 7 of cap 50; states ['co']
+  NAIP years with a containing tile: [2011, 2013, 2015, 2017, 2019, 2021, 2023]
+  NAIP years present in the pool but with NO containing tile: []
+    2011: co_m_3910507_ne_13_1_20110723_20110901*
+    2013: co_m_3910507_ne_13_1_20130716_20131119*
+    2015: co_m_3910507_ne_13_1_20150912_20151102*
+    2017: co_m_3910507_ne_13_1_20170902_20171017*
+    2019: co_m_3910507_ne_13_060_20190919_20191121*
+    2021: co_m_3910507_ne_13_060_20210813*
+    2023: co_m_3910507_ne_13_030_20230925_20240104*
+  topo: 25 GeoTIFF products (truncated=False), 5 decade picks, 5 servable
+  topo decades predicted: ['1890s', '1940s', '1950s', '1960s', '1980s']
+  census decennial 2000 tract 08013013004: DATA
+  census decennial 2010 tract 08013013004: DATA
+  census decennial 2020 tract 08013013004: DATA
+  census acs5 2009 tract 08013013004: DATA
+  census acs5 2012 tract 08013013004: DATA
+  census acs5 2015 tract 08013013004: DATA
+  census acs5 2018 tract 08013013004: DATA
+  census acs5 2021 tract 08013013004: DATA
+  census acs5 2023 tract 08013013004: DATA
+  census vintage tracts: {'Census2010_Current': '08013013004', 'Census2020_Current': '08013013004', 'ACS2021_Current': '08013013004', 'ACS2023_Current': '08013013004'}
+
+## apple-park (Photon Apple Park Way) 37.334894,-122.013365
+  reverse geocode: tract=06085508102 county='Santa Clara'
+  NAIP raw pool 12 of cap 50; states ['ca']
+  NAIP years with a containing tile: [2012, 2014, 2016, 2018, 2020, 2022]
+  NAIP years present in the pool but with NO containing tile: []
+    2012: ca_m_3712248_ne_10_1_20120520_20120730*, ca_m_3712141_nw_10_1_20120520_20120730
+    2014: ca_m_3712248_ne_10_1_20140606_20141030*, ca_m_3712141_nw_10_1_20140606_20141030
+    2016: ca_m_3712248_ne_10_.6_20160529_20161004*, ca_m_3712141_nw_10_.6_20160529_20161004
+    2018: ca_m_3712248_ne_10_060_20180815_20190209*, ca_m_3712141_nw_10_060_20180725_20190210
+    2020: ca_m_3712248_ne_10_060_20200525*, ca_m_3712141_nw_10_060_20200525
+    2022: ca_m_3712248_ne_10_060_20220519*, ca_m_3712141_nw_10_060_20220519
+  topo: 80 GeoTIFF products (truncated=False), 9 decade picks, 9 servable
+  topo decades predicted: ['1880s', '1890s', '1900s', '1940s', '1950s', '1960s', '1970s', '1980s', '1990s']
+  census decennial 2000 tract 06085508102: DATA
+  census decennial 2010 tract 06085508102: DATA
+  census decennial 2020 tract 06085508102: DATA
+  census acs5 2009 tract 06085508102: DATA
+  census acs5 2012 tract 06085508102: DATA
+  census acs5 2015 tract 06085508102: DATA
+  census acs5 2018 tract 06085508102: DATA
+  census acs5 2021 tract 06085508102: DATA
+  census acs5 2023 tract 06085508102: DATA
+  census vintage tracts: {'Census2010_Current': '06085508102', 'Census2020_Current': '06085508102', 'ACS2021_Current': '06085508102', 'ACS2023_Current': '06085508102'}
+
+## wharf (760 Maine Ave SW) 38.879238,-77.023572
+  reverse geocode: tract=11001010202 county='District of Columbia'
+  NAIP raw pool 28 of cap 50; states ['md', 'va']
+  NAIP years with a containing tile: [2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2021, 2023]
+  NAIP years present in the pool but with NO containing tile: []
+    2011: md_m_3807716_ne_18_1_20110629_20111116, md_m_3807708_se_18_1_20110629_20111116*, va_m_3807716_ne_18_1_20110530, va_m_3807708_se_18_1_20110530*
+    2012: va_m_3807716_ne_18_1_20120511_20120709, va_m_3807708_se_18_1_20120511_20120709*
+    2013: md_m_3807716_ne_18_1_20130924_20131112, md_m_3807708_se_18_1_20130924_20131112*
+    2014: va_m_3807716_ne_18_1_20140927_20141126, va_m_3807708_se_18_1_20140927_20141126*
+    2015: md_m_3807716_ne_18_1_20150722_20150914, md_m_3807708_se_18_1_20150722_20150914*
+    2016: va_m_3807716_ne_18_1_20160718_20160928, va_m_3807708_se_18_1_20160718_20160928*
+    2017: md_m_3807708_se_18_1_20170725_20170907*, md_m_3807716_ne_18_1_20170716_20170907
+    2018: va_m_3807716_ne_18_060_20181019_20190211, va_m_3807708_se_18_060_20181019_20190212*, md_m_3807716_ne_18_060_20181019_20190211, md_m_3807708_se_18_060_20181019_20190212*
+    2021: va_m_3807716_ne_18_060_20210910, va_m_3807708_se_18_060_20210910*, md_m_3807716_ne_18_060_20210617, md_m_3807708_se_18_060_20210617*
+    2023: va_m_3807708_se_18_060_20231113_20240103*, va_m_3807716_ne_18_060_20231104_20240103, md_m_3807716_ne_18_030_20230901_20231018, md_m_3807708_se_18_030_20230901_20231018*
+  topo: 41 GeoTIFF products (truncated=False), 6 decade picks, 6 servable
+  topo decades predicted: ['1890s', '1900s', '1940s', '1950s', '1960s', '1980s']
+  census decennial 2000 tract 11001010202: empty (204/no data)
+  census decennial 2010 tract 11001010200: DATA
+  census decennial 2020 tract 11001010202: DATA
+  census acs5 2009 tract 11001010200: empty (204/no data)
+  census acs5 2012 tract 11001010200: DATA
+  census acs5 2015 tract 11001010200: DATA
+  census acs5 2018 tract 11001010200: DATA
+  census acs5 2021 tract 11001010202: DATA
+  census acs5 2023 tract 11001010202: DATA
+  census vintage tracts: {'Census2010_Current': '11001010200', 'Census2020_Current': '11001010202', 'ACS2021_Current': '11001010202', 'ACS2023_Current': '11001010202'}
+
+## cornell-tech (Photon 2 West Loop Road) 40.755327,-73.956336
+  reverse geocode: tract=36061023804 county='New York'
+  NAIP raw pool 35 of cap 50; states ['nj', 'ny']
+  NAIP years with a containing tile: [2010, 2011, 2013, 2015, 2017, 2019, 2021, 2022, 2023]
+  NAIP years present in the pool but with NO containing tile: []
+    2010: nj_m_4007309_sw_18_1_20100731*
+    2011: ny_m_4007317_ne_18_1_20110710_20111114, ny_m_4007309_se_18_1_20110710_20111114, ny_m_4007317_nw_18_1_20110705_20111114, ny_m_4007309_sw_18_1_20110705_20111114*
+    2013: nj_m_4007309_sw_18_1_20130802_20130826*, ny_m_4007317_nw_18_1_20130622_20130729, ny_m_4007317_ne_18_1_20130622_20130729, ny_m_4007309_sw_18_1_20130622_20130729*, ny_m_4007309_se_18_1_20130622_20130729
+    2015: nj_m_4007309_sw_18_1_20150729_20150909*, ny_m_4007317_nw_18_.5_20150522_20151109, ny_m_4007317_ne_18_.5_20150522_20151109, ny_m_4007309_sw_18_.5_20150522_20151109*, ny_m_4007309_se_18_.5_20150522_20151109
+    2017: ny_m_4007309_sw_18_1_20170910_20171207*, ny_m_4007317_nw_18_1_20170809_20171207, ny_m_4007317_ne_18_1_20170809_20171207, ny_m_4007309_se_18_1_20170809_20171207, nj_m_4007309_sw_18_1_20170719_20171102*
+    2019: ny_m_4007317_nw_18_060_20190830_20191209, ny_m_4007317_ne_18_060_20190830_20191209, ny_m_4007309_sw_18_060_20190830_20191209*, ny_m_4007309_se_18_060_20190830_20191209, nj_m_4007309_sw_18_060_20190830_20191209*
+    2021: ny_m_4007317_nw_18_060_20211105, ny_m_4007317_ne_18_060_20211105, ny_m_4007309_sw_18_060_20211105*, ny_m_4007309_se_18_060_20211105
+    2022: ny_m_4007317_nw_18_060_20220719, ny_m_4007317_ne_18_060_20220719, ny_m_4007309_sw_18_060_20220719*, ny_m_4007309_se_18_060_20220719, nj_m_4007309_sw_18_060_20220710*
+    2023: nj_m_4007309_sw_18_030_20230820_20231019*
+  topo: 67 GeoTIFF products (truncated=False), 8 decade picks, 8 servable
+  topo decades predicted: ['1880s', '1890s', '1900s', '1940s', '1950s', '1960s', '1980s', '1990s']
+  census decennial 2000 tract 36061023804: empty (204/no data)
+  census decennial 2010 tract 36061023801: DATA
+  census decennial 2020 tract 36061023804: DATA
+  census acs5 2009 tract 36061023801: empty (204/no data)
+  census acs5 2012 tract 36061023801: DATA
+  census acs5 2015 tract 36061023801: DATA
+  census acs5 2018 tract 36061023801: DATA
+  census acs5 2021 tract 36061023804: DATA
+  census acs5 2023 tract 36061023804: DATA
+  census vintage tracts: {'Census2010_Current': '36061023801', 'Census2020_Current': '36061023804', 'ACS2021_Current': '36061023804', 'ACS2023_Current': '36061023804'}
+
+## silver-creek (5460 Country Club Pkwy) 37.274227,-121.772129
+  reverse geocode: tract=06085503338 county='Santa Clara'
+  NAIP raw pool 6 of cap 50; states ['ca']
+  NAIP years with a containing tile: [2012, 2014, 2016, 2018, 2020, 2022]
+  NAIP years present in the pool but with NO containing tile: []
+    2012: ca_m_3712142_se_10_1_20120520_20120730*
+    2014: ca_m_3712142_se_10_1_20140606_20141030*
+    2016: ca_m_3712142_se_10_.6_20160527_20161004*
+    2018: ca_m_3712142_se_10_060_20180725_20190209*
+    2020: ca_m_3712142_se_10_060_20200525*
+    2022: ca_m_3712142_se_10_060_20220519*
+  topo: 27 GeoTIFF products (truncated=False), 6 decade picks, 6 servable
+  topo decades predicted: ['1880s', '1890s', '1940s', '1950s', '1960s', '1970s']
+  census decennial 2000 tract 06085503338: empty (204/no data)
+  census decennial 2010 tract 06085503334: DATA
+  census decennial 2020 tract 06085503338: DATA
+  census acs5 2009 tract 06085503334: empty (204/no data)
+  census acs5 2012 tract 06085503334: DATA
+  census acs5 2015 tract 06085503334: DATA
+  census acs5 2018 tract 06085503334: DATA
+  census acs5 2021 tract 06085503338: DATA
+  census acs5 2023 tract 06085503338: DATA
+  census vintage tracts: {'Census2010_Current': '06085503334', 'Census2020_Current': '06085503338', 'ACS2021_Current': '06085503338', 'ACS2023_Current': '06085503338'}

@@ -1,0 +1,19 @@
+
+## SJ-170 W Tasman Dr (Cisco) 37.410126,-121.953969
+  1985 ±500 m [LCMAP_CU_002009_1985_V13_CCDC]: Developed 83%, Cropland 13%, Wetland 3%, Grass/Shrub 0%
+  1985 ±1000 m [LCMAP_CU_002009_1985_V13_CCDC]: Developed 91%, Cropland 6%, Wetland 2%, Grass/Shrub 0%
+  2001 ±500 m [LCMAP_CU_002009_2001_V13_CCDC]: Developed 97%, Wetland 3%, Cropland 0%
+  2001 ±1000 m [LCMAP_CU_002009_2001_V13_CCDC]: Developed 97%, Wetland 2%, Cropland 1%, Grass/Shrub 0%
+  2021 ±500 m [LCMAP_CU_002009_2021_V13_CCDC]: Developed 97%, Wetland 3%, Cropland 0%
+  2021 ±1000 m [LCMAP_CU_002009_2021_V13_CCDC]: Developed 97%, Wetland 2%, Grass/Shrub 1%, Cropland 0%
+
+## SJ-3625 Cisco Way 37.406915,-121.928185
+  1985 ±500 m [LCMAP_CU_002009_1985_V13_CCDC]: Developed 68%, Cropland 25%, Wetland 5%, Grass/Shrub 2%
+  1985 ±1000 m [LCMAP_CU_002009_1985_V13_CCDC]: Developed 72%, Cropland 24%, Wetland 4%, Grass/Shrub 1%
+  2001 ±500 m [LCMAP_CU_002009_2001_V13_CCDC]: Developed 95%, Wetland 5%, Cropland 0%
+  2001 ±1000 m [LCMAP_CU_002009_2001_V13_CCDC]: Developed 94%, Wetland 4%, Cropland 2%
+Traceback (most recent call last):
+  File "<stdin>", line 86, in <module>
+  File "<stdin>", line 83, in main
+  File "<stdin>", line 46, in shares
+KeyError: 'href'

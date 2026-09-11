@@ -1,0 +1,116 @@
+Pager usage is off.
+== snapshot taken at
+            utc             
+----------------------------
+ 2026-09-11 22:11:24.877921
+(1 row)
+
+== fleet totals
+ parcels | parcel_scenes | scenes | census_snapshots | property_events | timeline_requests | tasks | ledger_rows 
+---------+---------------+--------+------------------+-----------------+-------------------+-------+-------------
+      45 |          3082 |   1342 |              330 |             660 |               357 |  1626 |       17892
+(1 row)
+
+== per-parcel imagery counts (parcels created 2026-09-11 or featured)
+            label             |  source   | n  |  lo   |  hi   
+------------------------------+-----------+----+-------+-------
+ green-valley-ranch           | landsat   | 43 | 1984  | 2026
+ green-valley-ranch           | naip      |  7 | 2011  | 2023
+ green-valley-ranch           | sentinel2 | 12 | 2015  | 2026
+ green-valley-ranch           | usgs_topo |  7 | 1890s | 1980s
+ hudson-yards                 | landsat   | 43 | 1984  | 2026
+ hudson-yards                 | naip      |  9 | 2010  | 2023
+ hudson-yards                 | sentinel2 | 12 | 2015  | 2026
+ hudson-yards                 | usgs_topo |  9 | 1880s | 1990s
+ navy-yard-capitol-riverfront | landsat   | 43 | 1984  | 2026
+ navy-yard-capitol-riverfront | naip      | 10 | 2011  | 2023
+ navy-yard-capitol-riverfront | sentinel2 | 12 | 2015  | 2026
+ navy-yard-capitol-riverfront | usgs_topo |  7 | 1890s | 1980s
+ rino-art-district            | landsat   | 43 | 1984  | 2026
+ rino-art-district            | naip      |  7 | 2011  | 2023
+ rino-art-district            | sentinel2 | 12 | 2015  | 2026
+ rino-art-district            | usgs_topo |  7 | 1890s | 1990s
+ rodanthe-outer-banks         | landsat   | 43 | 1984  | 2026
+ rodanthe-outer-banks         | naip      |  6 | 2012  | 2022
+ rodanthe-outer-banks         | sentinel2 | 12 | 2015  | 2026
+ rodanthe-outer-banks         | usgs_topo |  3 | 1950s | 1980s
+ stapleton-central-park       | landsat   | 43 | 1984  | 2026
+ stapleton-central-park       | naip      |  7 | 2011  | 2023
+ stapleton-central-park       | sentinel2 | 12 | 2015  | 2026
+ stapleton-central-park       | usgs_topo |  7 | 1890s | 1980s
+(24 rows)
+
+== per-parcel census rows
+            label             |  dataset  |          years           |         tracts          
+------------------------------+-----------+--------------------------+-------------------------
+ green-valley-ranch           | acs5      | 2012,2015,2018,2021,2023 | 08031008388
+ green-valley-ranch           | decennial | 2010,2020                | 08031008388
+ hudson-yards                 | acs5      | 2012,2015,2018,2021,2023 | 36061009900,36061009903
+ hudson-yards                 | decennial | 2010,2020                | 36061009900,36061009903
+ navy-yard-capitol-riverfront | acs5      | 2012,2015,2018,2021,2023 | 11001007200,11001007201
+ navy-yard-capitol-riverfront | decennial | 2010,2020                | 11001007200,11001007201
+ rino-art-district            | acs5      | 2012,2015,2018,2021,2023 | 08031001600,08031001601
+ rino-art-district            | decennial | 2010,2020                | 08031001600,08031001601
+ rodanthe-outer-banks         | acs5      | 2012,2015,2018,2021,2023 | 37055970502
+ rodanthe-outer-banks         | decennial | 2010,2020                | 37055970502
+ stapleton-central-park       | acs5      | 2012,2015,2018,2021,2023 | 08031004107,08031004111
+ stapleton-central-park       | decennial | 2010,2020                | 08031004107,08031004111
+(12 rows)
+
+== per-parcel property events
+            label             | events 
+------------------------------+--------
+ green-valley-ranch           |     10
+ hudson-yards                 |     40
+ navy-yard-capitol-riverfront |    128
+ rino-art-district            |     14
+ rodanthe-outer-banks         |      0
+ stapleton-central-park       |     12
+(6 rows)
+
+== latest full-scope request per parcel, with task rows
+            label             |               request                |  status  | origin |          created_at           |  source   | task_status | items_found | queries_run | queries_failed | rows_returned | rows_matched | coverage |                       err                       
+------------------------------+--------------------------------------+----------+--------+-------------------------------+-----------+-------------+-------------+-------------+----------------+---------------+--------------+----------+-------------------------------------------------
+ green-valley-ranch           | 69f05353-ec87-41ed-be42-6cbaa490e45e | complete | user   | 2026-08-03 21:33:04.387513+00 | census    | complete    |           7 |             |                |               |              |          | 
+ green-valley-ranch           | 69f05353-ec87-41ed-be42-6cbaa490e45e | complete | user   | 2026-08-03 21:33:04.387513+00 | landsat   | complete    |          43 |             |                |               |              |          | 
+ green-valley-ranch           | 69f05353-ec87-41ed-be42-6cbaa490e45e | complete | user   | 2026-08-03 21:33:04.387513+00 | naip      | complete    |           7 |             |                |               |              |          | 
+ green-valley-ranch           | 69f05353-ec87-41ed-be42-6cbaa490e45e | complete | user   | 2026-08-03 21:33:04.387513+00 | property  | complete    |          10 |             |                |               |              |          | 
+ green-valley-ranch           | 69f05353-ec87-41ed-be42-6cbaa490e45e | complete | user   | 2026-08-03 21:33:04.387513+00 | sentinel2 | complete    |          17 |             |                |               |              |          | 
+ green-valley-ranch           | 69f05353-ec87-41ed-be42-6cbaa490e45e | complete | user   | 2026-08-03 21:33:04.387513+00 | usgs_topo | complete    |           7 |             |                |               |              |          | 
+ hudson-yards                 | 7a5c17b6-44cd-464a-a93e-bc00a9ebf0d7 | complete | user   | 2026-08-03 21:33:04.415646+00 | census    | complete    |           7 |             |                |               |              |          | 
+ hudson-yards                 | 7a5c17b6-44cd-464a-a93e-bc00a9ebf0d7 | complete | user   | 2026-08-03 21:33:04.415646+00 | landsat   | complete    |          43 |             |                |               |              |          | 
+ hudson-yards                 | 7a5c17b6-44cd-464a-a93e-bc00a9ebf0d7 | complete | user   | 2026-08-03 21:33:04.415646+00 | naip      | complete    |           9 |             |                |               |              |          | 
+ hudson-yards                 | 7a5c17b6-44cd-464a-a93e-bc00a9ebf0d7 | complete | user   | 2026-08-03 21:33:04.415646+00 | property  | complete    |          40 |             |                |               |              |          | 
+ hudson-yards                 | 7a5c17b6-44cd-464a-a93e-bc00a9ebf0d7 | complete | user   | 2026-08-03 21:33:04.415646+00 | sentinel2 | complete    |          22 |             |                |               |              |          | 
+ hudson-yards                 | 7a5c17b6-44cd-464a-a93e-bc00a9ebf0d7 | complete | user   | 2026-08-03 21:33:04.415646+00 | usgs_topo | complete    |           9 |             |                |               |              |          | 
+ navy-yard-capitol-riverfront | f4d6972d-b51c-4553-8a8f-65987f8893da | complete | user   | 2026-08-03 21:33:04.390819+00 | census    | complete    |           7 |             |                |               |              |          | 
+ navy-yard-capitol-riverfront | f4d6972d-b51c-4553-8a8f-65987f8893da | complete | user   | 2026-08-03 21:33:04.390819+00 | landsat   | complete    |          43 |             |                |               |              |          | 
+ navy-yard-capitol-riverfront | f4d6972d-b51c-4553-8a8f-65987f8893da | complete | user   | 2026-08-03 21:33:04.390819+00 | naip      | complete    |          10 |             |                |               |              |          | 
+ navy-yard-capitol-riverfront | f4d6972d-b51c-4553-8a8f-65987f8893da | complete | user   | 2026-08-03 21:33:04.390819+00 | property  | complete    |         128 |             |                |               |              |          | 
+ navy-yard-capitol-riverfront | f4d6972d-b51c-4553-8a8f-65987f8893da | complete | user   | 2026-08-03 21:33:04.390819+00 | sentinel2 | complete    |          22 |             |                |               |              |          | 
+ navy-yard-capitol-riverfront | f4d6972d-b51c-4553-8a8f-65987f8893da | complete | user   | 2026-08-03 21:33:04.390819+00 | usgs_topo | complete    |           7 |             |                |               |              |          | 
+ rino-art-district            | db2022ec-ea9d-4a1a-95a1-de64ce6896ae | complete | user   | 2026-08-03 21:33:04.313458+00 | census    | complete    |           7 |             |                |               |              |          | 
+ rino-art-district            | db2022ec-ea9d-4a1a-95a1-de64ce6896ae | complete | user   | 2026-08-03 21:33:04.313458+00 | landsat   | complete    |          43 |             |                |               |              |          | 
+ rino-art-district            | db2022ec-ea9d-4a1a-95a1-de64ce6896ae | complete | user   | 2026-08-03 21:33:04.313458+00 | naip      | complete    |           7 |             |                |               |              |          | 
+ rino-art-district            | db2022ec-ea9d-4a1a-95a1-de64ce6896ae | complete | user   | 2026-08-03 21:33:04.313458+00 | property  | complete    |          14 |             |                |               |              |          | 
+ rino-art-district            | db2022ec-ea9d-4a1a-95a1-de64ce6896ae | complete | user   | 2026-08-03 21:33:04.313458+00 | sentinel2 | complete    |          13 |             |                |               |              |          | 
+ rino-art-district            | db2022ec-ea9d-4a1a-95a1-de64ce6896ae | complete | user   | 2026-08-03 21:33:04.313458+00 | usgs_topo | complete    |           7 |             |                |               |              |          | 
+ rodanthe-outer-banks         | ba2b13f7-acb9-480d-8643-64cd527ec36d | complete | user   | 2026-08-03 21:33:04.294654+00 | census    | complete    |           7 |             |                |               |              |          | 
+ rodanthe-outer-banks         | ba2b13f7-acb9-480d-8643-64cd527ec36d | complete | user   | 2026-08-03 21:33:04.294654+00 | landsat   | complete    |          43 |             |                |               |              |          | 
+ rodanthe-outer-banks         | ba2b13f7-acb9-480d-8643-64cd527ec36d | complete | user   | 2026-08-03 21:33:04.294654+00 | naip      | complete    |           6 |             |                |               |              |          | 
+ rodanthe-outer-banks         | ba2b13f7-acb9-480d-8643-64cd527ec36d | complete | user   | 2026-08-03 21:33:04.294654+00 | property  | skipped     |           0 |             |                |               |              |          | Property data not yet available for Dare County
+ rodanthe-outer-banks         | ba2b13f7-acb9-480d-8643-64cd527ec36d | complete | user   | 2026-08-03 21:33:04.294654+00 | sentinel2 | complete    |          34 |             |                |               |              |          | 
+ rodanthe-outer-banks         | ba2b13f7-acb9-480d-8643-64cd527ec36d | complete | user   | 2026-08-03 21:33:04.294654+00 | usgs_topo | complete    |           3 |             |                |               |              |          | 
+ stapleton-central-park       | 39ba6213-71c1-4532-92b9-d72ccf2390cc | complete | user   | 2026-08-03 21:45:55.659111+00 | census    | complete    |           7 |             |                |               |              |          | 
+ stapleton-central-park       | 39ba6213-71c1-4532-92b9-d72ccf2390cc | complete | user   | 2026-08-03 21:45:55.659111+00 | landsat   | complete    |          43 |             |                |               |              |          | 
+ stapleton-central-park       | 39ba6213-71c1-4532-92b9-d72ccf2390cc | complete | user   | 2026-08-03 21:45:55.659111+00 | naip      | complete    |           7 |             |                |               |              |          | 
+ stapleton-central-park       | 39ba6213-71c1-4532-92b9-d72ccf2390cc | complete | user   | 2026-08-03 21:45:55.659111+00 | property  | complete    |          12 |             |                |               |              |          | 
+ stapleton-central-park       | 39ba6213-71c1-4532-92b9-d72ccf2390cc | complete | user   | 2026-08-03 21:45:55.659111+00 | sentinel2 | complete    |          13 |             |                |               |              |          | 
+ stapleton-central-park       | 39ba6213-71c1-4532-92b9-d72ccf2390cc | complete | user   | 2026-08-03 21:45:55.659111+00 | usgs_topo | complete    |           7 |             |                |               |              |          | 
+(36 rows)
+
+== ledger outcomes on that latest full-scope request
+ label | source | outcome | reason | n | groups 
+-------+--------+---------+--------+---+--------
+(0 rows)
+

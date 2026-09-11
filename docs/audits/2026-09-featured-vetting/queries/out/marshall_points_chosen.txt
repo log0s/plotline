@@ -1,0 +1,26 @@
+# RDA rows: 1473; WFIGS Marshall perimeter features: 1
+#   {'poly_IncidentName': 'Marshall', 'poly_GISAcres': 6079.90368546172, 'poly_FeatureCategory': 'Wildfire Daily Fire Perimeter', 'attr_UniqueFireIdentifier': '2021-COBLX-000995'}
+
+## marshall-sagamore (Census 333 FOX LN) 39.956238,-105.176513
+inside WFIGS Marshall perimeter: True; distance to perimeter boundary: 658 m
+  within  250 m: {'Destroyed': 153}
+  within  500 m: {'Destroyed': 187}
+  within 1000 m: {'Destroyed': 309, 'Minor': 6, 'Affected': 4, 'Major': 2}
+  inside z15 viewport (+/-2344 m E-W, +/-1465 m N-S, 1280x800 px assumed): {'Destroyed': 469, 'Affected': 10, 'Minor': 18, 'Major': 4}
+  nearest: '345 FOX LANE'                           Destroyed    12.8 m
+  nearest: '341 FOX LANE'                           Destroyed    17.8 m
+  nearest: '344 FOX LANE'                           Destroyed    21.9 m
+  nearest: '349 FOX LANE'                           Destroyed    24.6 m
+  nearest: '340 FOX LANE'                           Destroyed    25.2 m
+
+## marshall-louisville (Census 929 ELDORADO LN) 39.974884,-105.164606
+inside WFIGS Marshall perimeter: True; distance to perimeter boundary: 177 m
+  within  250 m: {'Destroyed': 164, 'Minor': 1}
+  within  500 m: {'Destroyed': 303, 'Minor': 11, 'Affected': 4, 'Major': 2}
+  within 1000 m: {'Destroyed': 392, 'Minor': 19, 'Affected': 16, 'Major': 9}
+  inside z15 viewport (+/-2343 m E-W, +/-1464 m N-S, 1280x800 px assumed): {'Destroyed': 486, 'Minor': 26, 'Affected': 39, 'Major': 14}
+  nearest: '927 ELDORADO LANE'                      Destroyed    16.9 m
+  nearest: '925 ELDORADO LANE'                      Destroyed    20.2 m
+  nearest: '922 ELDORADO LANE'                      Destroyed    25.6 m
+  nearest: '923 ELDORADO LANE'                      Destroyed    31.0 m
+  nearest: '924 ELDORADO LANE'                      Destroyed    32.9 m

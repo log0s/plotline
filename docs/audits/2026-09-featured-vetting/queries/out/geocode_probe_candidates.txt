@@ -1,0 +1,47 @@
+## 312 Cherokee Ave, Superior, CO 80027
+seed path (Census forward): NO MATCH — No geocoding match found for address: '312 Cherokee Ave, Superior, CO 80027'
+Photon path (local autocomplete): HTTP 200
+  39.955805,-105.177524 place_type='residential' 'Cherokee Avenue, Superior, Colorado 80027'
+## 929 Eldorado Ln, Louisville, CO 80027
+seed path (Census forward): 39.974884,-105.164606 matched='929 ELDORADO LN, LOUISVILLE, CO, 80027' tract=08013013004 county='Boulder'
+  property path: adapter=None city_from_address='LOUISVILLE' covers=n/a search_terms=('929', 'ELDORADO')
+  tract @ Census2010_Current: 08013013004
+  tract @ Census2020_Current: 08013013004
+  tract @ ACS2021_Current: 08013013004
+  tract @ ACS2023_Current: 08013013004
+Photon path (local autocomplete): HTTP 200
+  39.974321,-105.161186 place_type='bus_stop' 'Via Appia Way, Louisville, Colorado 80027'
+## 1 Apple Park Way, Cupertino, CA 95014
+seed path (Census forward): NO MATCH — No geocoding match found for address: '1 Apple Park Way, Cupertino, CA 95014'
+Photon path (local autocomplete): HTTP 200
+  37.334894,-122.013365 place_type='unclassified' 'Apple Park Way, Cupertino, California 95014'
+  37.332843,-122.005374 place_type='office' '10600 North Tantau Avenue, Cupertino, California 95014'
+## One Apple Park Way, Cupertino, CA 95014
+seed path (Census forward): NO MATCH — No geocoding match found for address: 'One Apple Park Way, Cupertino, CA 95014'
+Photon path (local autocomplete): HTTP 200
+  37.334894,-122.013365 place_type='unclassified' 'Apple Park Way, Cupertino, California 95014'
+  37.332843,-122.005374 place_type='office' '10600 North Tantau Avenue, Cupertino, California 95014'
+## 760 Maine Ave SW, Washington, DC 20024
+seed path (Census forward): 38.879238,-77.023572 matched='760 MAINE AVE SW, WASHINGTON, DC, 20024' tract=11001010202 county='District of Columbia'
+  property path: adapter=DCAdapter city_from_address='WASHINGTON' covers=True search_terms=('760', 'MAINE')
+  tract @ Census2010_Current: 11001010200
+  tract @ Census2020_Current: 11001010202
+  tract @ ACS2021_Current: 11001010202
+  tract @ ACS2023_Current: 11001010202
+Photon path (local autocomplete): HTTP 200
+  38.880130,-77.024471 place_type='bus_stop' 'Maine Avenue Southwest, Washington, District of Columbia 20024'
+  38.876700,-77.020926 place_type='bicycle_rental' 'The Green, Washington, District of Columbia 20024'
+  38.884151,-77.018165 place_type='commercial' '400 Virginia Avenue Southwest, Washington, District of Columbia 20024'
+  38.869659,-77.010791 place_type='bicycle_rental' 'Half Street Southwest, Washington, District of Columbia 20024'
+## 2 W Loop Rd, New York, NY 10044
+seed path (Census forward): NO MATCH — No geocoding match found for address: '2 W Loop Rd, New York, NY 10044'
+Photon path (local autocomplete): HTTP 200
+  40.758620,-73.952148 place_type='yes' 'North Loop Road, New York, New York 10044'
+  40.755327,-73.956336 place_type='outdoor_seating' '2 West Loop Road, New York, New York 10044'
+  40.743504,-73.994219 place_type='secondary' 'West 23rd Street, New York, New York 10001'
+## 2 W Loop Rd, Roosevelt Island, NY 10044
+seed path (Census forward): NO MATCH — No geocoding match found for address: '2 W Loop Rd, Roosevelt Island, NY 10044'
+Photon path (local autocomplete): HTTP 200
+  40.758620,-73.952148 place_type='yes' 'North Loop Road, New York, New York 10044'
+  40.756841,-73.954746 place_type='sports_centre' '281 West Main Street, New York, New York 10044'
+  40.755327,-73.956336 place_type='outdoor_seating' '2 West Loop Road, New York, New York 10044'

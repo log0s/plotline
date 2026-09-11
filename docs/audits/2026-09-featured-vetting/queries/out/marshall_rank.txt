@@ -1,0 +1,24 @@
+# RDA rows: 1473; WFIGS Marshall perimeter features: 1
+#   {'poly_IncidentName': 'Marshall', 'poly_GISAcres': 6079.90368546172, 'poly_FeatureCategory': 'Wildfire Daily Fire Perimeter', 'attr_UniqueFireIdentifier': '2021-COBLX-000995'}
+
+## SAGAMORE (Superior): 171 structures, status {'Destroyed': 171}
+centroid 39.955717,-105.176707
+  '312 CHEROKEE AVENUE'                    Destroyed  39.955603,-105.176700    12.7 m from centroid
+  '333 FOX LANE'                           Destroyed  39.955872,-105.176662    17.6 m from centroid
+  '316 CHEROKEE AVENUE'                    Destroyed  39.955601,-105.176859    18.4 m from centroid
+  '308 CHEROKEE AVENUE'                    Destroyed  39.955603,-105.176539    19.1 m from centroid
+  '336 SHAWNEE LANE'                       Destroyed  39.955873,-105.176934    26.0 m from centroid
+  '320 CHEROKEE AVENUE'                    Destroyed  39.955602,-105.177018    29.5 m from centroid
+  '304 CHEROKEE AVENUE'                    Destroyed  39.955603,-105.176379    30.7 m from centroid
+  '337 FOX LANE'                           Destroyed  39.956003,-105.176661    32.0 m from centroid
+
+## HARPER LAKE (Louisville): 265 structures, status {'Destroyed': 259, 'Minor': 5, 'Major': 1}
+centroid 39.975090,-105.164757
+  '929 ELDORADO LANE'                      Destroyed  39.975074,-105.164915    13.7 m from centroid
+  '925 ELDORADO LANE'                      Destroyed  39.975065,-105.164588    14.7 m from centroid
+  '927 ELDORADO LANE'                      Destroyed  39.974943,-105.164789    16.6 m from centroid
+  '958 ARAPAHOE CIRCLE'                    Destroyed  39.975354,-105.164760    29.3 m from centroid
+  '923 ELDORADO LANE'                      Destroyed  39.975086,-105.164356    34.2 m from centroid
+  '954 ARAPAHOE CIRCLE'                    Destroyed  39.975346,-105.164531    34.3 m from centroid
+  '931 ELDORADO LANE'                      Destroyed  39.975081,-105.165205    38.3 m from centroid
+  '966 ARAPAHOE CIRCLE'                    Destroyed  39.975384,-105.164994    38.4 m from centroid

@@ -1,0 +1,60 @@
+
+## SJ-Silver Creek Valley CC (5460 Country Club Pkwy) 37.275576,-121.771660
+  1985 ±500 m [LCMAP_CU_002009_1985_V13_CCDC]: Grass/Shrub 66%, Developed 28%, Cropland 6%
+  1985 ±1000 m [LCMAP_CU_002009_1985_V13_CCDC]: Grass/Shrub 74%, Developed 21%, Cropland 5%, Wetland 0%
+  2001 ±500 m [LCMAP_CU_002009_2001_V13_CCDC]: Developed 81%, Grass/Shrub 19%, Cropland 0%
+  2001 ±1000 m [LCMAP_CU_002009_2001_V13_CCDC]: Developed 65%, Grass/Shrub 35%, Wetland 0%, Cropland 0%
+  2021 ±500 m [LCMAP_CU_002009_2021_V13_CCDC]: Developed 79%, Grass/Shrub 20%, Tree 0%, Cropland 0%
+  2021 ±1000 m [LCMAP_CU_002009_2021_V13_CCDC]: Developed 64%, Grass/Shrub 36%, Cropland 0%, Tree 0%, Wetland 0%
+
+## SJ-Communications Hill Town Center 37.286464,-121.859255
+  1985 ±500 m [LCMAP_CU_002009_1985_V13_CCDC]: Developed 70%, Grass/Shrub 26%, Cropland 4%, Barren 1%
+  1985 ±1000 m [LCMAP_CU_002009_1985_V13_CCDC]: Developed 82%, Grass/Shrub 15%, Cropland 2%, Barren 1%
+  2001 ±500 m [LCMAP_CU_002009_2001_V13_CCDC]: Developed 72%, Grass/Shrub 27%, Cropland 0%, Barren 0%, Tree 0%
+  2001 ±1000 m [LCMAP_CU_002009_2001_V13_CCDC]: Developed 86%, Grass/Shrub 14%, Cropland 0%, Barren 0%, Tree 0%
+    sign attempt 1: HTTP 429 '{ "statusCode": 429, "message": "Rate limit is exceeded. Try again in 53 seconds." }'
+  2021 ±500 m [LCMAP_CU_002009_2021_V13_CCDC]: Developed 76%, Grass/Shrub 23%, Cropland 1%, Barren 0%
+  2021 ±1000 m [LCMAP_CU_002009_2021_V13_CCDC]: Developed 86%, Grass/Shrub 13%, Cropland 0%, Barren 0%, Tree 0%
+
+## SJ-Communications Hill Phase 4 37.289413,-121.857067
+  1985 ±500 m [LCMAP_CU_002009_1985_V13_CCDC]: Developed 86%, Grass/Shrub 11%, Barren 2%, Cropland 2%
+  1985 ±1000 m [LCMAP_CU_002009_1985_V13_CCDC]: Developed 82%, Grass/Shrub 15%, Cropland 3%, Barren 1%
+  2001 ±500 m [LCMAP_CU_002009_2001_V13_CCDC]: Developed 81%, Grass/Shrub 18%, Cropland 0%, Barren 0%, Tree 0%
+  2001 ±1000 m [LCMAP_CU_002009_2001_V13_CCDC]: Developed 84%, Grass/Shrub 15%, Cropland 1%, Barren 0%, Tree 0%
+  2021 ±500 m [LCMAP_CU_002009_2021_V13_CCDC]: Developed 80%, Grass/Shrub 19%, Cropland 1%, Barren 0%, Tree 0%
+  2021 ±1000 m [LCMAP_CU_002009_2021_V13_CCDC]: Developed 86%, Grass/Shrub 14%, Cropland 1%, Barren 0%, Tree 0%
+
+## SJ-3625 Cisco Way 37.406915,-121.928185
+  1985 ±500 m [LCMAP_CU_002009_1985_V13_CCDC]: Developed 68%, Cropland 25%, Wetland 5%, Grass/Shrub 2%
+  1985 ±1000 m [LCMAP_CU_002009_1985_V13_CCDC]: Developed 72%, Cropland 24%, Wetland 4%, Grass/Shrub 1%
+    sign attempt 1: HTTP 429 '{ "statusCode": 429, "message": "Rate limit is exceeded. Try again in 53 seconds." }'
+  2001 ±500 m [LCMAP_CU_002009_2001_V13_CCDC]: Developed 95%, Wetland 5%, Cropland 0%
+  2001 ±1000 m [LCMAP_CU_002009_2001_V13_CCDC]: Developed 94%, Wetland 4%, Cropland 2%
+  2021 ±500 m [LCMAP_CU_002009_2021_V13_CCDC]: Developed 94%, Wetland 5%, Grass/Shrub 1%, Cropland 0%
+  2021 ±1000 m [LCMAP_CU_002009_2021_V13_CCDC]: Developed 94%, Wetland 4%, Cropland 1%, Grass/Shrub 1%, Water 0%
+
+## Apple Park Way (Photon) 37.334894,-122.013365
+  1985 ±500 m [LCMAP_CU_002009_1985_V13_CCDC]: Developed 99%, Cropland 0%, Barren 0%, Grass/Shrub 0%
+  1985 ±1000 m [LCMAP_CU_002009_1985_V13_CCDC]: Developed 99%, Cropland 1%, Barren 0%, Grass/Shrub 0%
+  2001 ±500 m [LCMAP_CU_002009_2001_V13_CCDC]: Developed 100%
+  2001 ±1000 m [LCMAP_CU_002009_2001_V13_CCDC]: Developed 100%, Cropland 0%, Grass/Shrub 0%
+  2021 ±500 m [LCMAP_CU_002009_2021_V13_CCDC]: Developed 92%, Cropland 8%, Grass/Shrub 0%, Barren 0%
+  2021 ±1000 m [LCMAP_CU_002009_2021_V13_CCDC]: Developed 97%, Cropland 3%, Barren 1%, Grass/Shrub 0%
+
+## GVR incumbent (calibration) 39.783839,-104.781622
+    sign attempt 1: HTTP 429 '{ "statusCode": 429, "message": "Rate limit is exceeded. Try again in 53 seconds." }'
+  1985 ±500 m [LCMAP_CU_012009_1985_V13_CCDC]: Grass/Shrub 90%, Cropland 9%, Wetland 1%, Developed 0%, Water 0%
+  1985 ±1000 m [LCMAP_CU_012009_1985_V13_CCDC]: Grass/Shrub 90%, Cropland 7%, Developed 3%, Wetland 1%, Water 0%
+  2001 ±500 m [LCMAP_CU_012009_2001_V13_CCDC]: Grass/Shrub 89%, Cropland 6%, Developed 4%, Wetland 1%, Water 0%
+  2001 ±1000 m [LCMAP_CU_012009_2001_V13_CCDC]: Grass/Shrub 72%, Developed 15%, Cropland 12%, Wetland 1%, Water 0%
+  2021 ±500 m [LCMAP_CU_012009_2021_V13_CCDC]: Developed 46%, Cropland 32%, Grass/Shrub 20%, Wetland 1%, Water 0%, Barren 0%
+  2021 ±1000 m [LCMAP_CU_012009_2021_V13_CCDC]: Developed 49%, Cropland 27%, Grass/Shrub 23%, Wetland 1%, Water 0%, Barren 0%
+
+## Stapleton incumbent (calibration) 39.785185,-104.891392
+  1985 ±500 m [LCMAP_CU_012009_1985_V13_CCDC]: Cropland 46%, Developed 35%, Grass/Shrub 18%, Barren 1%, Water 0%
+  1985 ±1000 m [LCMAP_CU_012009_1985_V13_CCDC]: Developed 57%, Cropland 27%, Grass/Shrub 15%, Wetland 1%, Barren 1%, Water 0%
+  2001 ±500 m [LCMAP_CU_012009_2001_V13_CCDC]: Developed 69%, Grass/Shrub 29%, Cropland 2%, Wetland 0%
+  2001 ±1000 m [LCMAP_CU_012009_2001_V13_CCDC]: Developed 75%, Grass/Shrub 23%, Cropland 1%, Wetland 1%, Water 0%
+    sign attempt 1: HTTP 429 '{ "statusCode": 429, "message": "Rate limit is exceeded. Try again in 53 seconds." }'
+  2021 ±500 m [LCMAP_CU_012009_2021_V13_CCDC]: Developed 97%, Grass/Shrub 2%, Cropland 0%
+  2021 ±1000 m [LCMAP_CU_012009_2021_V13_CCDC]: Developed 89%, Grass/Shrub 7%, Cropland 3%, Wetland 1%, Water 0%, Barren 0%
