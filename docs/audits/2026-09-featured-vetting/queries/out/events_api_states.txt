@@ -1,0 +1,8 @@
+== 3003043d-67f9-432e-8bac-9a01a5e09db0
+{'parcel_id': '3003043d-67f9-432e-8bac-9a01a5e09db0', 'county': 'Boulder', 'supported': False} events: 0 supported_counties: ['Denver County, CO', 'Adams County, CO', 'Washington, DC', 'Santa Clara County, CA', 'New York County, NY']
+== e7fabe0d-555e-4483-bef1-4a14ef2e52bf
+{'parcel_id': 'e7fabe0d-555e-4483-bef1-4a14ef2e52bf', 'county': 'Santa Clara', 'supported': True} events: 0 supported_counties: ['Denver County, CO', 'Adams County, CO', 'Washington, DC', 'Santa Clara County, CA', 'New York County, NY']
+== 14518754-4017-46d3-b950-bc764aea37ad
+{'parcel_id': '14518754-4017-46d3-b950-bc764aea37ad', 'county': 'Dare', 'supported': False} events: 0 supported_counties: ['Denver County, CO', 'Adams County, CO', 'Washington, DC', 'Santa Clara County, CA', 'New York County, NY']
+== 80eb0a69-0880-4c0e-8e1b-c26e08b1ad83
+{'parcel_id': '80eb0a69-0880-4c0e-8e1b-c26e08b1ad83', 'county': 'Santa Clara', 'supported': True} events: 0 supported_counties: ['Denver County, CO', 'Adams County, CO', 'Washington, DC', 'Santa Clara County, CA', 'New York County, NY']

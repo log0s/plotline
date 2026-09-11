@@ -1,0 +1,863 @@
+2026-09-11 22:25:41,050 INFO sqlalchemy.engine.Engine select pg_catalog.version()
+2026-09-11 22:25:41,050 INFO sqlalchemy.engine.Engine [raw sql] {}
+2026-09-11 22:25:41,051 INFO sqlalchemy.engine.Engine select current_schema()
+2026-09-11 22:25:41,051 INFO sqlalchemy.engine.Engine [raw sql] {}
+2026-09-11 22:25:41,051 INFO sqlalchemy.engine.Engine show standard_conforming_strings
+2026-09-11 22:25:41,051 INFO sqlalchemy.engine.Engine [raw sql] {}
+2026-09-11 22:25:41,052 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-09-11 22:25:41,052 INFO sqlalchemy.engine.Engine 
+SELECT f.slug, p.id AS parcel_id, p.address, p.latitude, p.longitude,
+       ps.source, ps.group_key, s.collection, s.item_id, s.provenance,
+       ST_AsText(s.footprint) AS footprint_wkt, FALSE AS is_mosaic_tile
+  FROM parcel_scenes ps
+  JOIN scenes s ON s.id = ps.scene_id
+  JOIN parcels p ON p.id = ps.parcel_id
+  LEFT JOIN featured_locations f ON f.parcel_id = p.id
+ WHERE p.id = ANY(CAST(%(ids)s AS uuid[]))
+UNION ALL
+SELECT f.slug, p.id, p.address, p.latitude, p.longitude,
+       ps.source, ps.group_key, s.collection, s.item_id, s.provenance,
+       ST_AsText(s.footprint), TRUE
+  FROM parcel_scenes ps
+  JOIN parcels p ON p.id = ps.parcel_id
+  LEFT JOIN featured_locations f ON f.parcel_id = p.id
+  CROSS JOIN LATERAL unnest(ps.mosaic_scene_ids) AS m(scene_id)
+  JOIN scenes s ON s.id = m.scene_id
+ WHERE p.id = ANY(CAST(%(ids)s AS uuid[]))
+ ORDER BY 1, 6, 7, 12
+
+2026-09-11 22:25:41,052 INFO sqlalchemy.engine.Engine [generated in 0.00008s] {'ids': ['c78a1019-5cb5-4a07-9fcd-9b109bb05530', '5c27245c-5827-430b-ad43-baae66e69335', 'c8ecf010-5096-41c4-86e2-00dccb62248c', '800643ba-a8d2-41c9-92e2-d72d ... (180 characters truncated) ... -555e-4483-bef1-4a14ef2e52bf', '9973fa5d-15e5-4453-b8ec-4599087f2aaf', 'f4c63907-ce8b-4c5e-b791-6c43daeb99d4', '80eb0a69-0880-4c0e-8e1b-c26e08b1ad83']}
+2026-09-11 22:25:41,082 INFO sqlalchemy.engine.Engine ROLLBACK
+# 873 served scene references across 12 parcel(s)
+green-valley-ranch     landsat    1984   LT05_L2SP_033032_19840622_02_T1                          bbox=Y geom=Y edge=  21234.7 m snapshot  
+green-valley-ranch     landsat    1985   LT05_L2SP_033032_19851015_02_T1                          bbox=Y geom=Y edge=  21408.3 m snapshot  
+green-valley-ranch     landsat    1986   LT05_L2SP_033032_19860815_02_T1                          bbox=Y geom=Y edge=  21970.1 m snapshot  
+green-valley-ranch     landsat    1987   LT05_L2SP_033032_19871021_02_T1                          bbox=Y geom=Y edge=  22263.6 m snapshot  
+green-valley-ranch     landsat    1988   LT05_L2SP_033032_19881023_02_T1                          bbox=Y geom=Y edge=  22537.6 m snapshot  
+green-valley-ranch     landsat    1989   LT05_L2SP_033032_19891010_02_T1                          bbox=Y geom=Y edge=  22374.5 m snapshot  
+green-valley-ranch     landsat    1990   LT05_L2SP_033032_19901029_02_T1                          bbox=Y geom=Y edge=  21972.7 m snapshot  
+green-valley-ranch     landsat    1991   LT05_L2SP_033032_19911016_02_T1                          bbox=Y geom=Y edge=  23103.9 m snapshot  
+green-valley-ranch     landsat    1992   LT05_L2SP_033032_19921221_02_T1                          bbox=Y geom=Y edge=  23202.3 m snapshot  
+green-valley-ranch     landsat    1993   LT05_L2SP_033032_19931021_02_T2                          bbox=Y geom=Y edge=  23289.4 m snapshot  
+green-valley-ranch     landsat    1994   LT05_L2SP_033032_19940906_02_T1                          bbox=Y geom=Y edge=  22345.0 m snapshot  
+green-valley-ranch     landsat    1995   LT05_L2SP_033032_19951011_02_T1                          bbox=Y geom=Y edge=  22924.5 m snapshot  
+green-valley-ranch     landsat    1996   LT05_L2SP_034032_19960817_02_T1                          bbox=Y geom=Y edge=   5314.0 m snapshot  
+green-valley-ranch     landsat    1997   LT05_L2SP_033032_19971016_02_T1                          bbox=Y geom=Y edge=  24263.1 m snapshot  
+green-valley-ranch     landsat    1998   LT05_L2SP_033032_19980917_02_T1                          bbox=Y geom=Y edge=  23383.3 m snapshot  
+green-valley-ranch     landsat    1999   LT05_L2SP_033032_19991123_02_T1                          bbox=Y geom=Y edge=  20747.5 m snapshot  
+green-valley-ranch     landsat    2000   LT05_L2SP_033032_20001125_02_T1                          bbox=Y geom=Y edge=  24458.2 m snapshot  
+green-valley-ranch     landsat    2001   LT05_L2SP_033032_20011128_02_T1                          bbox=Y geom=Y edge=  23429.2 m snapshot  
+green-valley-ranch     landsat    2002   LT05_L2SP_033032_20020811_02_T1                          bbox=Y geom=Y edge=  21151.5 m snapshot  
+green-valley-ranch     landsat    2003   LT05_L2SP_033032_20031017_02_T1                          bbox=Y geom=Y edge=  21807.5 m snapshot  
+green-valley-ranch     landsat    2004   LT05_L2SP_033032_20040917_02_T1                          bbox=Y geom=Y edge=  21761.1 m snapshot  
+green-valley-ranch     landsat    2005   LT05_L2SP_033032_20051123_02_T1                          bbox=Y geom=Y edge=  21161.1 m snapshot  
+green-valley-ranch     landsat    2006   LT05_L2SP_033032_20061110_02_T2                          bbox=Y geom=Y edge=  21638.2 m snapshot  
+green-valley-ranch     landsat    2007   LT05_L2SP_033032_20070926_02_T1                          bbox=Y geom=Y edge=  22375.5 m snapshot  
+green-valley-ranch     landsat    2008   LT05_L2SP_033032_20081030_02_T1                          bbox=Y geom=Y edge=  22376.2 m snapshot  
+green-valley-ranch     landsat    2009   LT05_L2SP_033032_20091118_02_T1                          bbox=Y geom=Y edge=  22583.3 m snapshot  
+green-valley-ranch     landsat    2010   LT05_L2SP_033032_20101105_02_T1                          bbox=Y geom=Y edge=  22426.8 m snapshot  
+green-valley-ranch     landsat    2011   LT05_L2SP_033032_20111023_02_T1                          bbox=Y geom=Y edge=  21940.6 m snapshot  
+green-valley-ranch     landsat    2012   LE07_L2SP_033032_20120814_02_T2                          bbox=Y geom=Y edge=  20667.5 m snapshot  
+green-valley-ranch     landsat    2013   LC08_L2SP_033032_20130926_02_T1                          bbox=Y geom=Y edge=  27987.7 m snapshot  
+green-valley-ranch     landsat    2014   LC08_L2SP_033033_20141116_02_T1                          bbox=Y geom=Y edge=   4719.5 m snapshot  
+green-valley-ranch     landsat    2015   LC08_L2SP_033032_20151103_02_T1                          bbox=Y geom=Y edge=  28080.6 m snapshot  
+green-valley-ranch     landsat    2016   LC08_L2SP_033033_20161020_02_T1                          bbox=Y geom=Y edge=   4623.3 m snapshot  
+green-valley-ranch     landsat    2017   LC08_L2SP_033033_20170921_02_T1                          bbox=Y geom=Y edge=   4886.4 m snapshot  
+green-valley-ranch     landsat    2018   LC08_L2SP_033032_20180807_02_T1                          bbox=Y geom=Y edge=  27615.4 m snapshot  
+green-valley-ranch     landsat    2019   LC08_L2SP_033033_20191013_02_T1                          bbox=Y geom=Y edge=   4761.8 m snapshot  
+green-valley-ranch     landsat    2020   LC08_L2SP_033033_20200929_02_T1                          bbox=Y geom=Y edge=   4752.2 m snapshot  
+green-valley-ranch     landsat    2021   LC09_L2SP_033033_20211107_02_T1                          bbox=Y geom=Y edge=  11663.3 m snapshot  
+green-valley-ranch     landsat    2022   LC09_L2SP_033032_20220911_02_T1                          bbox=Y geom=Y edge=  28184.3 m snapshot  
+green-valley-ranch     landsat    2023   LC09_L2SP_033033_20231016_02_T1                          bbox=Y geom=Y edge=   4066.8 m snapshot  
+green-valley-ranch     landsat    2024   LC09_L2SP_033033_20241002_02_T1                          bbox=Y geom=Y edge=   4447.4 m snapshot  
+green-valley-ranch     landsat    2025   LC08_L2SP_033032_20250927_02_T1                          bbox=Y geom=Y edge=  28277.2 m snapshot  
+green-valley-ranch     landsat    2026   LC09_L2SP_033033_20260805_02_T1                          bbox=Y geom=Y edge=   4307.8 m snapshot  
+green-valley-ranch     naip       2011   co_m_3910410_se_13_1_20110723_20110901                   bbox=Y geom=Y edge=   2955.3 m snapshot  
+green-valley-ranch     naip       2013   co_m_3910410_se_13_1_20130716_20130917                   bbox=Y geom=Y edge=   2951.3 m snapshot  
+green-valley-ranch     naip       2015   co_m_3910410_se_13_1_20150910_20151102                   bbox=Y geom=Y edge=   2969.3 m snapshot  
+green-valley-ranch     naip       2017   co_m_3910410_se_13_1_20170828_20171017                   bbox=Y geom=Y edge=   2961.3 m snapshot  
+green-valley-ranch     naip       2019   co_m_3910410_se_13_060_20190912_20191121                 bbox=Y geom=Y edge=   2849.3 m snapshot  
+green-valley-ranch     naip       2021   co_m_3910410_se_13_060_20210728                          bbox=Y geom=Y edge=   2849.3 m snapshot  
+green-valley-ranch     naip       2023   co_m_3910410_se_13_030_20230925_20240104                 bbox=Y geom=Y edge=   2950.4 m snapshot  
+green-valley-ranch     sentinel2  2015   S2A_MSIL2A_20151216T175252_R098_T13TEE_20210526T043020   bbox=Y geom=Y edge=  13588.7 m snapshot  
+green-valley-ranch     sentinel2  2016   S2A_MSIL2A_20161110T175252_R098_T13TEE_20210414T034820   bbox=Y geom=Y edge=  13588.7 m snapshot  
+green-valley-ranch     sentinel2  2017   S2B_MSIL2A_20171130T174659_R098_T13TEE_20201014T231309   bbox=Y geom=Y edge=  13588.7 m snapshot  
+green-valley-ranch     sentinel2  2018   S2B_MSIL2A_20181019T175329_R141_T13TEE_20201009T131907   bbox=Y geom=Y edge=  13654.5 m snapshot  
+green-valley-ranch     sentinel2  2019   S2A_MSIL2A_20191118T175631_R141_T13TEE_20201003T174115   bbox=Y geom=Y edge=  13654.8 m snapshot  
+green-valley-ranch     sentinel2  2020   S2B_MSIL2A_20201104T174519_R098_T13TEE_20201106T093721   bbox=Y geom=Y edge=  13588.7 m snapshot  
+green-valley-ranch     sentinel2  2021   S2A_MSIL2A_20211005T174211_R098_T13TEE_20211006T043830   bbox=Y geom=Y edge=  13588.7 m snapshot  
+green-valley-ranch     sentinel2  2022   S2B_MSIL2A_20221018T175329_R141_T13TEE_20221019T054559   bbox=Y geom=Y edge=  13654.3 m snapshot  
+green-valley-ranch     sentinel2  2023   S2A_MSIL2A_20231117T175621_R141_T13TEE_20241109T033551   bbox=Y geom=Y edge=  13654.9 m snapshot  
+green-valley-ranch     sentinel2  2024   S2B_MSIL2A_20241014T174209_R098_T13TEE_20241014T220709   bbox=Y geom=Y edge=  13588.7 m snapshot  
+green-valley-ranch     sentinel2  2025   S2C_MSIL2A_20251113T174611_R098_T13TEE_20251113T204309   bbox=Y geom=Y edge=  13588.7 m snapshot  
+green-valley-ranch     sentinel2  2026   S2C_MSIL2A_20260820T173901_R098_T13TEE_20260820T223509   bbox=Y geom=Y edge=  13588.7 m snapshot  
+hudson-yards           landsat    1984   LT05_L2SP_014032_19840921_02_T1                          bbox=Y geom=Y edge=  20901.2 m snapshot  
+hudson-yards           landsat    1985   LT05_L2SP_014032_19851026_02_T1                          bbox=Y geom=Y edge=  26714.3 m snapshot  
+hudson-yards           landsat    1986   LT05_L2SP_013032_19861022_02_T1                          bbox=Y geom=Y edge=  36839.4 m snapshot  
+hudson-yards           landsat    1987   LT05_L2SP_013032_19871009_02_T1                          bbox=Y geom=Y edge=  22623.5 m snapshot  
+hudson-yards           landsat    1988   LT05_L2SP_014032_19881221_02_T2                          bbox=Y geom=Y edge=  28250.7 m snapshot  
+hudson-yards           landsat    1989   LT05_L2SP_014032_19891005_02_T1                          bbox=Y geom=Y edge=  20950.7 m snapshot  
+hudson-yards           landsat    1990   LT05_L2SP_013032_19900830_02_T1                          bbox=Y geom=Y edge=  30786.8 m snapshot  
+hudson-yards           landsat    1991   LT05_L2SP_013032_19910817_02_T1                          bbox=Y geom=Y edge=  29195.8 m snapshot  
+hudson-yards           landsat    1992   LT05_L2SP_014032_19921114_02_T1                          bbox=Y geom=Y edge=  22199.2 m snapshot  
+hudson-yards           landsat    1993   LT05_L2SP_013032_19931025_02_T1                          bbox=Y geom=Y edge=  28401.1 m snapshot  
+hudson-yards           landsat    1994   LT05_L2SP_013032_19941028_02_T1                          bbox=Y geom=Y edge=  32066.8 m snapshot  
+hudson-yards           landsat    1995   LT05_L2SP_014032_19950531_02_T1                          bbox=Y geom=Y edge=  25205.4 m snapshot  
+hudson-yards           landsat    1996   LT05_L2SP_013032_19960830_02_T1                          bbox=Y geom=Y edge=  16183.1 m snapshot  
+hudson-yards           landsat    1997   LT05_L2SP_013032_19971020_02_T1                          bbox=Y geom=Y edge=  21458.9 m snapshot  
+hudson-yards           landsat    1998   LT05_L2SP_014032_19981201_02_T1                          bbox=Y geom=Y edge=  30840.3 m snapshot  
+hudson-yards           landsat    1999   LT05_L2SP_014032_19991001_02_T1                          bbox=Y geom=Y edge=  29151.9 m snapshot  
+hudson-yards           landsat    2000   LT05_L2SP_013032_20001012_02_T1                          bbox=Y geom=Y edge=  26493.9 m snapshot  
+hudson-yards           landsat    2001   LT05_L2SP_013032_20010913_02_T1                          bbox=Y geom=Y edge=  31996.1 m snapshot  
+hudson-yards           landsat    2002   LT05_L2SP_013032_20021002_02_T1                          bbox=Y geom=Y edge=  38303.4 m snapshot  
+hudson-yards           landsat    2003   LT05_L2SP_013032_20030701_02_T1                          bbox=Y geom=Y edge=  30346.4 m snapshot  
+hudson-yards           landsat    2004   LT05_L2SP_013032_20041007_02_T1                          bbox=Y geom=Y edge=  28156.1 m snapshot  
+hudson-yards           landsat    2005   LT05_L2SP_014032_20051001_02_T1                          bbox=Y geom=Y edge=  29882.3 m snapshot  
+hudson-yards           landsat    2006   LT05_L2SP_013032_20061216_02_T1                          bbox=Y geom=Y edge=  38695.7 m snapshot  
+hudson-yards           landsat    2007   LT05_L2SP_014032_20070804_02_T1                          bbox=Y geom=Y edge=  28772.6 m snapshot  
+hudson-yards           landsat    2008   LT05_L2SP_013032_20080831_02_T1                          bbox=Y geom=Y edge=  38278.3 m snapshot  
+hudson-yards           landsat    2009   LT05_L2SP_014032_20091129_02_T1                          bbox=Y geom=Y edge=  30291.0 m snapshot  
+hudson-yards           landsat    2010   LT05_L2SP_013032_20101008_02_T1                          bbox=Y geom=Y edge=  36478.2 m snapshot  
+hudson-yards           landsat    2011   LT05_L2SP_014032_20110714_02_T1                          bbox=Y geom=Y edge=  30012.8 m snapshot  
+hudson-yards           landsat    2012   LE07_L2SP_013032_20121021_02_T1                          bbox=Y geom=Y edge=  30288.1 m snapshot  
+hudson-yards           landsat    2013   LC08_L2SP_014032_20130820_02_T1                          bbox=Y geom=Y edge=  30207.2 m snapshot  
+hudson-yards           landsat    2014   LC08_L2SP_014032_20140807_02_T1                          bbox=Y geom=Y edge=  31482.4 m snapshot  
+hudson-yards           landsat    2015   LC08_L2SP_013032_20151006_02_T1                          bbox=Y geom=Y edge=  28085.9 m snapshot  
+hudson-yards           landsat    2016   LC08_L2SP_014032_20161015_02_T1                          bbox=Y geom=Y edge=  31639.4 m snapshot  
+hudson-yards           landsat    2017   LC08_L2SP_013032_20171027_02_T1                          bbox=Y geom=Y edge=  29542.8 m snapshot  
+hudson-yards           landsat    2018   LC08_L2SP_013032_20180710_02_T1                          bbox=Y geom=Y edge=  26112.4 m snapshot  
+hudson-yards           landsat    2019   LC08_L2SP_014032_20191024_02_T1                          bbox=Y geom=Y edge=  31785.2 m snapshot  
+hudson-yards           landsat    2020   LC08_L2SP_013032_20201003_02_T1                          bbox=Y geom=Y edge=  27906.8 m snapshot  
+hudson-yards           landsat    2021   LC09_L2SP_014032_20211109_02_T1                          bbox=Y geom=Y edge=  41974.5 m snapshot  
+hudson-yards           landsat    2022   LC09_L2SP_013032_20221102_02_T1                          bbox=Y geom=Y edge=  27984.4 m snapshot  
+hudson-yards           landsat    2023   LC08_L2SP_013032_20231028_02_T1                          bbox=Y geom=Y edge=  28918.3 m snapshot  
+hudson-yards           landsat    2024   LC09_L2SP_013032_20241022_02_T1                          bbox=Y geom=Y edge=  31486.2 m snapshot  
+hudson-yards           landsat    2025   LC08_L2SP_013032_20251102_02_T1                          bbox=Y geom=Y edge=  29208.9 m snapshot  
+hudson-yards           landsat    2026   LC08_L2SP_014032_20260723_02_T1                          bbox=Y geom=Y edge=  32273.1 m snapshot  
+hudson-yards           naip       2010   nj_m_4007309_sw_18_1_20100731                            bbox=Y geom=Y edge=    401.6 m snapshot    <<< within 1 km of edge
+hudson-yards           naip       2010   nj_m_4007416_se_18_1_20100731                            bbox=Y geom=Y edge=    287.4 m enriched   (mosaic tile)  <<< within 1 km of edge
+hudson-yards           naip       2011   ny_m_4007309_sw_18_1_20110705_20111114                   bbox=Y geom=Y edge=    401.6 m snapshot    <<< within 1 km of edge
+hudson-yards           naip       2011   ny_m_4007416_se_18_1_20110705_20111114                   bbox=Y geom=Y edge=    287.4 m enriched   (mosaic tile)  <<< within 1 km of edge
+hudson-yards           naip       2013   nj_m_4007309_sw_18_1_20130802_20130826                   bbox=Y geom=Y edge=    396.6 m snapshot    <<< within 1 km of edge
+hudson-yards           naip       2013   nj_m_4007416_se_18_1_20130802_20130826                   bbox=Y geom=Y edge=    283.4 m enriched   (mosaic tile)  <<< within 1 km of edge
+hudson-yards           naip       2015   nj_m_4007309_sw_18_1_20150729_20150909                   bbox=Y geom=Y edge=    396.6 m snapshot    <<< within 1 km of edge
+hudson-yards           naip       2015   nj_m_4007416_se_18_1_20150729_20150909                   bbox=Y geom=Y edge=    283.4 m enriched   (mosaic tile)  <<< within 1 km of edge
+hudson-yards           naip       2017   nj_m_4007309_sw_18_1_20170719_20171102                   bbox=Y geom=Y edge=    396.6 m snapshot    <<< within 1 km of edge
+hudson-yards           naip       2017   nj_m_4007416_se_18_1_20170719_20171102                   bbox=Y geom=Y edge=    283.4 m enriched   (mosaic tile)  <<< within 1 km of edge
+hudson-yards           naip       2019   ny_m_4007309_sw_18_060_20190830_20191209                 bbox=Y geom=Y edge=    294.6 m snapshot    <<< within 1 km of edge
+hudson-yards           naip       2019   ny_m_4007416_se_18_060_20190917_20191209                 bbox=Y geom=Y edge=    185.4 m enriched   (mosaic tile)  <<< within 1 km of edge
+hudson-yards           naip       2021   ny_m_4007309_sw_18_060_20211105                          bbox=Y geom=Y edge=    396.6 m snapshot    <<< within 1 km of edge
+hudson-yards           naip       2021   ny_m_4007416_se_18_060_20211105                          bbox=Y geom=Y edge=    283.2 m enriched   (mosaic tile)  <<< within 1 km of edge
+hudson-yards           naip       2022   ny_m_4007309_sw_18_060_20220719                          bbox=Y geom=Y edge=    294.6 m snapshot    <<< within 1 km of edge
+hudson-yards           naip       2022   ny_m_4007416_se_18_060_20220719                          bbox=Y geom=Y edge=    185.4 m enriched   (mosaic tile)  <<< within 1 km of edge
+hudson-yards           naip       2023   nj_m_4007309_sw_18_030_20230820_20231019                 bbox=Y geom=Y edge=    124.2 m snapshot    <<< within 1 km of edge
+hudson-yards           naip       2023   nj_m_4007424_ne_18_030_20230820_20231019                 bbox=N geom=N edge=   -405.2 m enriched   (mosaic tile)
+hudson-yards           naip       2023   nj_m_4007416_se_18_030_20230820_20231019                 bbox=Y geom=Y edge=     10.2 m enriched   (mosaic tile)  <<< within 1 km of edge
+hudson-yards           sentinel2  2015   S2A_MSIL2A_20150924T160136_R054_T18TWL_20210412T122318   bbox=Y geom=Y edge=  21282.8 m snapshot  
+hudson-yards           sentinel2  2016   S2A_MSIL2A_20161018T160122_R054_T18TWL_20210213T115525   bbox=Y geom=Y edge=  21743.5 m snapshot  
+hudson-yards           sentinel2  2017   S2B_MSIL2A_20171018T155239_R054_T18TWL_20201015T004619   bbox=Y geom=Y edge=  21742.6 m snapshot  
+hudson-yards           sentinel2  2018   S2A_MSIL2A_20181107T155441_R054_T18TWL_20201008T163546   bbox=Y geom=Y edge=  21088.0 m snapshot  
+hudson-yards           sentinel2  2019   S2A_MSIL2A_20191102T155421_R054_T18TWL_20201003T121539   bbox=Y geom=Y edge=  20371.1 m snapshot  
+hudson-yards           sentinel2  2020   S2B_MSIL2A_20201108T154449_R011_T18TWL_20201109T203545   bbox=Y geom=Y edge=  21715.9 m snapshot  
+hudson-yards           sentinel2  2021   S2A_MSIL2A_20211019T154251_R011_T18TWL_20211020T213419   bbox=Y geom=Y edge=  21714.8 m snapshot  
+hudson-yards           sentinel2  2022   S2A_MSIL2A_20221126T155611_R054_T18TWL_20221201T134056   bbox=Y geom=Y edge=  21206.2 m snapshot  
+hudson-yards           sentinel2  2023   S2B_MSIL2A_20231116T155529_R054_T18TWL_20241010T180337   bbox=Y geom=Y edge=  20750.8 m snapshot  
+hudson-yards           sentinel2  2024   S2B_MSIL2A_20241018T154159_R011_T18TWL_20241018T194856   bbox=Y geom=Y edge=  21714.3 m snapshot  
+hudson-yards           sentinel2  2025   S2B_MSIL2A_20251006T155029_R054_T18TWL_20251006T194559   bbox=Y geom=Y edge=  21146.8 m snapshot  
+hudson-yards           sentinel2  2026   S2B_MSIL2A_20260812T154809_R054_T18TWL_20260812T194239   bbox=Y geom=Y edge=  21347.2 m snapshot  
+navy-yard-capitol-riverfront landsat    1984   LT05_L2SP_015033_19840324_02_T1                          bbox=Y geom=Y edge=  46745.7 m snapshot  
+navy-yard-capitol-riverfront landsat    1985   LT05_L2SP_015033_19851017_02_T1                          bbox=Y geom=Y edge=  85356.9 m snapshot  
+navy-yard-capitol-riverfront landsat    1986   LT05_L2SP_015033_19861020_02_T1                          bbox=Y geom=Y edge=  85252.9 m snapshot  
+navy-yard-capitol-riverfront landsat    1987   LT04_L2SP_015033_19870625_02_T1                          bbox=Y geom=Y edge=  85952.0 m snapshot  
+navy-yard-capitol-riverfront landsat    1988   LT05_L2SP_015033_19881025_02_T1                          bbox=Y geom=Y edge=  83526.7 m snapshot  
+navy-yard-capitol-riverfront landsat    1989   LT05_L2SP_015033_19890809_02_T1                          bbox=Y geom=Y edge=  86498.5 m snapshot  
+navy-yard-capitol-riverfront landsat    1990   LT05_L2SP_015033_19901015_02_T1                          bbox=Y geom=Y edge=  86840.6 m snapshot  
+navy-yard-capitol-riverfront landsat    1991   LT05_L2SP_015033_19911018_02_T1                          bbox=Y geom=Y edge=  86486.5 m snapshot  
+navy-yard-capitol-riverfront landsat    1992   LT05_L2SP_015033_19920326_02_T2                          bbox=Y geom=Y edge=  85803.5 m snapshot  
+navy-yard-capitol-riverfront landsat    1993   LT05_L2SP_015033_19931023_02_T1                          bbox=Y geom=Y edge=  84102.3 m snapshot  
+navy-yard-capitol-riverfront landsat    1994   LT05_L2SP_015033_19941111_02_T1                          bbox=Y geom=Y edge=  86314.6 m snapshot  
+navy-yard-capitol-riverfront landsat    1995   LT05_L2SP_015033_19951013_02_T1                          bbox=Y geom=Y edge=  87140.3 m snapshot  
+navy-yard-capitol-riverfront landsat    1996   LT05_L2SP_015033_19961116_02_T1                          bbox=Y geom=Y edge=  73045.6 m snapshot  
+navy-yard-capitol-riverfront landsat    1997   LT05_L2SP_015033_19971221_02_T1                          bbox=Y geom=Y edge=  77812.8 m snapshot  
+navy-yard-capitol-riverfront landsat    1998   LT05_L2SP_015033_19981122_02_T1                          bbox=Y geom=Y edge=  82619.4 m snapshot  
+navy-yard-capitol-riverfront landsat    1999   LT05_L2SP_015033_19991211_02_T1                          bbox=Y geom=Y edge=  86293.7 m snapshot  
+navy-yard-capitol-riverfront landsat    2000   LT05_L2SP_015033_20000706_02_T1                          bbox=Y geom=Y edge=  85424.6 m snapshot  
+navy-yard-capitol-riverfront landsat    2001   LT05_L2SP_015033_20011029_02_T1                          bbox=Y geom=Y edge=  84911.8 m snapshot  
+navy-yard-capitol-riverfront landsat    2002   LT05_L2SP_015033_20021203_02_T1                          bbox=Y geom=Y edge=  85777.9 m snapshot  
+navy-yard-capitol-riverfront landsat    2003   LT05_L2SP_015033_20030917_02_T1                          bbox=Y geom=Y edge=  85768.8 m snapshot  
+navy-yard-capitol-riverfront landsat    2004   LT05_L2SP_015033_20040919_02_T1                          bbox=Y geom=Y edge=  83865.4 m snapshot  
+navy-yard-capitol-riverfront landsat    2005   LT05_L2SP_015033_20050415_02_T1                          bbox=Y geom=Y edge=  85200.2 m snapshot  
+navy-yard-capitol-riverfront landsat    2006   LT05_L2SP_015033_20060504_02_T1                          bbox=Y geom=Y edge=  84126.9 m snapshot  
+navy-yard-capitol-riverfront landsat    2007   LT05_L2SP_015033_20070507_02_T1                          bbox=Y geom=Y edge=  85803.2 m snapshot  
+navy-yard-capitol-riverfront landsat    2008   LT05_L2SP_015033_20080525_02_T1                          bbox=Y geom=Y edge=  85384.6 m snapshot  
+navy-yard-capitol-riverfront landsat    2009   LT05_L2SP_015033_20091019_02_T1                          bbox=Y geom=Y edge=  85448.5 m snapshot  
+navy-yard-capitol-riverfront landsat    2010   LT05_L2SP_015033_20100920_02_T1                          bbox=Y geom=Y edge=  85201.8 m snapshot  
+navy-yard-capitol-riverfront landsat    2011   LT05_L2SP_015033_20111025_02_T1                          bbox=Y geom=Y edge=  85281.8 m snapshot  
+navy-yard-capitol-riverfront landsat    2012   LE07_L2SP_015033_20120206_02_T1                          bbox=Y geom=Y edge=  85206.2 m snapshot  
+navy-yard-capitol-riverfront landsat    2013   LC08_L2SP_015033_20130407_02_T1                          bbox=Y geom=Y edge=  32866.7 m snapshot  
+navy-yard-capitol-riverfront landsat    2014   LC08_L2SP_015033_20141017_02_T1                          bbox=Y geom=Y edge=  84779.3 m snapshot  
+navy-yard-capitol-riverfront landsat    2015   LC08_L2SP_015033_20150817_02_T1                          bbox=Y geom=Y edge=  82761.9 m snapshot  
+navy-yard-capitol-riverfront landsat    2016   LC08_L2SP_015033_20161107_02_T1                          bbox=Y geom=Y edge=  84000.5 m snapshot  
+navy-yard-capitol-riverfront landsat    2017   LC08_L2SP_015033_20170822_02_T1                          bbox=Y geom=Y edge=  82927.0 m snapshot  
+navy-yard-capitol-riverfront landsat    2018   LC08_L2SP_015033_20180318_02_T1                          bbox=Y geom=Y edge=  83645.0 m snapshot  
+navy-yard-capitol-riverfront landsat    2019   LC08_L2SP_015033_20190812_02_T1                          bbox=Y geom=Y edge=  81931.1 m snapshot  
+navy-yard-capitol-riverfront landsat    2020   LC08_L2SP_015033_20201017_02_T1                          bbox=Y geom=Y edge=  83507.2 m snapshot  
+navy-yard-capitol-riverfront landsat    2021   LC08_L2SP_015033_20211020_02_T1                          bbox=Y geom=Y edge=  84512.7 m snapshot  
+navy-yard-capitol-riverfront landsat    2022   LC09_L2SP_015033_20221015_02_T1                          bbox=Y geom=Y edge=  84905.1 m snapshot  
+navy-yard-capitol-riverfront landsat    2023   LC09_L2SP_015033_20230916_02_T1                          bbox=Y geom=Y edge=  84964.2 m snapshot  
+navy-yard-capitol-riverfront landsat    2024   LC08_L2SP_015033_20240910_02_T1                          bbox=Y geom=Y edge=  84342.7 m snapshot  
+navy-yard-capitol-riverfront landsat    2025   LC08_L2SP_015033_20250321_02_T1                          bbox=Y geom=Y edge=  84542.6 m snapshot  
+navy-yard-capitol-riverfront landsat    2026   LC09_L2SP_015033_20260604_02_T1                          bbox=Y geom=Y edge=  86466.3 m snapshot  
+navy-yard-capitol-riverfront naip       2011   va_m_3807716_ne_18_1_20110530                            bbox=Y geom=Y edge=    349.4 m snapshot    <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2011   va_m_3807708_se_18_1_20110530                            bbox=Y geom=Y edge=    288.7 m enriched   (mosaic tile)  <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2011   md_m_3807601_sw_18_1_20110629_20111116                   bbox=Y geom=Y edge=    256.6 m snapshot   (mosaic tile)  <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2012   va_m_3807716_ne_18_1_20120511_20120709                   bbox=Y geom=Y edge=    345.4 m snapshot    <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2012   va_m_3807708_se_18_1_20120511_20120709                   bbox=Y geom=Y edge=    283.7 m snapshot   (mosaic tile)  <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2013   md_m_3807716_ne_18_1_20130924_20131112                   bbox=Y geom=Y edge=    344.4 m snapshot    <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2013   md_m_3807708_se_18_1_20130924_20131112                   bbox=Y geom=Y edge=    282.7 m snapshot   (mosaic tile)  <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2013   md_m_3807601_sw_18_1_20130924_20131112                   bbox=Y geom=Y edge=    256.6 m snapshot   (mosaic tile)  <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2014   va_m_3807716_ne_18_1_20140927_20141126                   bbox=Y geom=Y edge=    344.4 m snapshot    <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2014   va_m_3807708_se_18_1_20140927_20141126                   bbox=Y geom=Y edge=    282.7 m snapshot   (mosaic tile)  <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2015   md_m_3807716_ne_18_1_20150722_20150914                   bbox=Y geom=Y edge=    344.4 m snapshot    <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2015   md_m_3807708_se_18_1_20150722_20150914                   bbox=Y geom=Y edge=    282.7 m snapshot   (mosaic tile)  <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2015   md_m_3807601_sw_18_1_20150722_20150914                   bbox=Y geom=Y edge=    256.6 m snapshot   (mosaic tile)  <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2016   va_m_3807716_ne_18_1_20160718_20160928                   bbox=Y geom=Y edge=    344.4 m snapshot    <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2016   va_m_3807708_se_18_1_20160718_20160928                   bbox=Y geom=Y edge=    282.7 m snapshot   (mosaic tile)  <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2017   md_m_3807716_ne_18_1_20170716_20170907                   bbox=Y geom=Y edge=    357.4 m snapshot    <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2017   md_m_3807708_se_18_1_20170725_20170907                   bbox=Y geom=Y edge=    296.7 m snapshot   (mosaic tile)  <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2018   va_m_3807716_ne_18_060_20181019_20190211                 bbox=Y geom=Y edge=    344.4 m snapshot    <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2018   md_m_3807601_sw_18_060_20181019_20190211                 bbox=Y geom=Y edge=    255.6 m snapshot   (mosaic tile)  <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2018   va_m_3807708_se_18_060_20181019_20190212                 bbox=Y geom=Y edge=    282.5 m snapshot   (mosaic tile)  <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2021   va_m_3807716_ne_18_060_20210910                          bbox=Y geom=Y edge=    344.4 m snapshot    <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2021   va_m_3807708_se_18_060_20210910                          bbox=Y geom=Y edge=    282.5 m enriched   (mosaic tile)  <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2021   md_m_3807601_sw_18_060_20210617                          bbox=Y geom=Y edge=    156.6 m snapshot   (mosaic tile)  <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2023   va_m_3807716_ne_18_060_20231104_20240103                 bbox=Y geom=Y edge=    245.4 m snapshot    <<< within 1 km of edge
+navy-yard-capitol-riverfront naip       2023   md_m_3807601_sw_18_030_20230901_20231018                 bbox=Y geom=N edge=    -16.5 m snapshot   (mosaic tile)  <<< bbox=Y geom=N
+navy-yard-capitol-riverfront naip       2023   va_m_3807708_se_18_060_20231113_20240103                 bbox=Y geom=Y edge=    184.6 m enriched   (mosaic tile)  <<< within 1 km of edge
+navy-yard-capitol-riverfront sentinel2  2015   S2A_MSIL2A_20151116T161042_R097_T18SUJ_20210413T002521   bbox=Y geom=Y edge=   6550.2 m snapshot  
+navy-yard-capitol-riverfront sentinel2  2016   S2A_MSIL2A_20161117T160132_R054_T18SUJ_20210414T132401   bbox=Y geom=Y edge=  14548.7 m snapshot  
+navy-yard-capitol-riverfront sentinel2  2017   S2B_MSIL2A_20171018T155239_R054_T18SUJ_20201015T004618   bbox=Y geom=Y edge=  14548.7 m snapshot  
+navy-yard-capitol-riverfront sentinel2  2018   S2B_MSIL2A_20181023T155319_R054_T18SUJ_20201009T144004   bbox=Y geom=Y edge=  14548.7 m snapshot  
+navy-yard-capitol-riverfront sentinel2  2019   S2B_MSIL2A_20191028T155259_R054_T18SUJ_20201004T071108   bbox=Y geom=Y edge=  14548.7 m snapshot  
+navy-yard-capitol-riverfront sentinel2  2020   S2A_MSIL2A_20201129T160621_R097_T18SUJ_20201130T031640   bbox=Y geom=Y edge=   5911.8 m snapshot  
+navy-yard-capitol-riverfront sentinel2  2021   S2B_MSIL2A_20211109T160459_R097_T18SUJ_20211110T013502   bbox=Y geom=Y edge=   5417.2 m snapshot  
+navy-yard-capitol-riverfront sentinel2  2022   S2B_MSIL2A_20221022T155309_R054_T18SUJ_20221023T135352   bbox=Y geom=Y edge=  14548.7 m snapshot  
+navy-yard-capitol-riverfront sentinel2  2023   S2B_MSIL2A_20231116T155529_R054_T18SUJ_20241010T180337   bbox=Y geom=Y edge=  14548.7 m snapshot  
+navy-yard-capitol-riverfront sentinel2  2024   S2B_MSIL2A_20241011T155109_R054_T18SUJ_20241011T200805   bbox=Y geom=Y edge=  14548.7 m snapshot  
+navy-yard-capitol-riverfront sentinel2  2025   S2B_MSIL2A_20251016T155139_R054_T18SUJ_20251016T210325   bbox=Y geom=Y edge=  14548.7 m snapshot  
+navy-yard-capitol-riverfront sentinel2  2026   S2A_MSIL2A_20260531T155711_R054_T18SUJ_20260601T000401   bbox=Y geom=Y edge=  14548.7 m snapshot  
+rino-art-district      landsat    1984   LT05_L2SP_033033_19840622_02_T1                          bbox=Y geom=Y edge=   1178.7 m snapshot  
+rino-art-district      landsat    1985   LT05_L2SP_033032_19851015_02_T1                          bbox=Y geom=Y edge=  15962.3 m snapshot  
+rino-art-district      landsat    1986   LT05_L2SP_033033_19860815_02_T1                          bbox=Y geom=Y edge=   1415.5 m snapshot  
+rino-art-district      landsat    1987   LT05_L2SP_033032_19871021_02_T1                          bbox=Y geom=Y edge=  16810.0 m snapshot  
+rino-art-district      landsat    1988   LT05_L2SP_033032_19881023_02_T1                          bbox=Y geom=Y edge=  17088.5 m snapshot  
+rino-art-district      landsat    1989   LT05_L2SP_033033_19891010_02_T1                          bbox=Y geom=Y edge=   1120.6 m snapshot  
+rino-art-district      landsat    1990   LT05_L2SP_033033_19901029_02_T1                          bbox=Y geom=Y edge=   1555.5 m snapshot  
+rino-art-district      landsat    1991   LT05_L2SP_033033_19911016_02_T1                          bbox=Y geom=Y edge=   1440.2 m snapshot  
+rino-art-district      landsat    1992   LT05_L2SP_033033_19921221_02_T1                          bbox=Y geom=Y edge=   1315.7 m snapshot  
+rino-art-district      landsat    1993   LT05_L2SP_033032_19931021_02_T2                          bbox=Y geom=Y edge=  17840.0 m snapshot  
+rino-art-district      landsat    1994   LT05_L2SP_033032_19940906_02_T1                          bbox=Y geom=Y edge=  16906.5 m snapshot  
+rino-art-district      landsat    1995   LT05_L2SP_034032_19951103_02_T1                          bbox=Y geom=Y edge=   7962.3 m snapshot  
+rino-art-district      landsat    1996   LT05_L2SP_033033_19961013_02_T1                          bbox=Y geom=Y edge=   1449.8 m snapshot  
+rino-art-district      landsat    1997   LT05_L2SP_033033_19971117_02_T1                          bbox=Y geom=Y edge=   1381.7 m snapshot  
+rino-art-district      landsat    1998   LT05_L2SP_033033_19981019_02_T1                          bbox=Y geom=Y edge=   1047.9 m snapshot  
+rino-art-district      landsat    1999   LT05_L2SP_033032_19991123_02_T1                          bbox=Y geom=Y edge=  15315.3 m snapshot  
+rino-art-district      landsat    2000   LT05_L2SP_033032_20001125_02_T1                          bbox=Y geom=Y edge=  18991.7 m snapshot  
+rino-art-district      landsat    2001   LT05_L2SP_033033_20011128_02_T1                          bbox=Y geom=Y edge=   2251.7 m snapshot  
+rino-art-district      landsat    2002   LT05_L2SP_033033_20021014_02_T1                          bbox=Y geom=Y edge=    575.4 m snapshot    <<< within 1 km of edge
+rino-art-district      landsat    2003   LT05_L2SP_033032_20031017_02_T1                          bbox=Y geom=Y edge=  16335.0 m snapshot  
+rino-art-district      landsat    2004   LT05_L2SP_033033_20040917_02_T1                          bbox=Y geom=Y edge=    528.8 m snapshot    <<< within 1 km of edge
+rino-art-district      landsat    2005   LT05_L2SP_033032_20051123_02_T1                          bbox=Y geom=Y edge=  15686.4 m snapshot  
+rino-art-district      landsat    2006   LT05_L2SP_034032_20061203_02_T1                          bbox=Y geom=Y edge=   7278.1 m snapshot  
+rino-art-district      landsat    2007   LT05_L2SP_033032_20070926_02_T1                          bbox=Y geom=Y edge=  16930.4 m snapshot  
+rino-art-district      landsat    2008   LT05_L2SP_033032_20081030_02_T1                          bbox=Y geom=Y edge=  16931.3 m snapshot  
+rino-art-district      landsat    2009   LT05_L2SP_033032_20091118_02_T1                          bbox=Y geom=Y edge=  17130.9 m snapshot  
+rino-art-district      landsat    2010   LT05_L2SP_033032_20101105_02_T1                          bbox=Y geom=Y edge=  16986.7 m snapshot  
+rino-art-district      landsat    2011   LT05_L2SP_033032_20111023_02_T1                          bbox=Y geom=Y edge=  16506.2 m snapshot  
+rino-art-district      landsat    2012   LE07_L2SP_033033_20121220_02_T1                          bbox=Y geom=Y edge=   2272.8 m snapshot  
+rino-art-district      landsat    2013   LC08_L2SP_033032_20130926_02_T1                          bbox=Y geom=Y edge=  21706.3 m snapshot  
+rino-art-district      landsat    2014   LC08_L2SP_033033_20141116_02_T1                          bbox=Y geom=Y edge=  10964.6 m snapshot  
+rino-art-district      landsat    2015   LC08_L2SP_033032_20151103_02_T1                          bbox=Y geom=Y edge=  21788.4 m snapshot  
+rino-art-district      landsat    2016   LC08_L2SP_033033_20161020_02_T1                          bbox=Y geom=Y edge=  10875.5 m snapshot  
+rino-art-district      landsat    2017   LC08_L2SP_033032_20171210_02_T1                          bbox=Y geom=Y edge=  21743.2 m snapshot  
+rino-art-district      landsat    2018   LC08_L2SP_033033_20181026_02_T1                          bbox=Y geom=Y edge=  10865.6 m snapshot  
+rino-art-district      landsat    2019   LC08_L2SP_033033_20191013_02_T1                          bbox=Y geom=Y edge=  11011.5 m snapshot  
+rino-art-district      landsat    2020   LC08_L2SP_033033_20200929_02_T1                          bbox=Y geom=Y edge=  11001.2 m snapshot  
+rino-art-district      landsat    2021   LC09_L2SP_033033_20211107_02_T1                          bbox=Y geom=Y edge=  16055.5 m snapshot  
+rino-art-district      landsat    2022   LC09_L2SP_033032_20221130_02_T1                          bbox=Y geom=Y edge=  21978.6 m snapshot  
+rino-art-district      landsat    2023   LC09_L2SP_033033_20231016_02_T1                          bbox=Y geom=Y edge=  10295.6 m snapshot  
+rino-art-district      landsat    2024   LC09_L2SP_033033_20241002_02_T1                          bbox=Y geom=Y edge=  10674.8 m snapshot  
+rino-art-district      landsat    2025   LC08_L2SP_033032_20250927_02_T1                          bbox=Y geom=Y edge=  21984.4 m snapshot  
+rino-art-district      landsat    2026   LC09_L2SP_033033_20260805_02_T1                          bbox=Y geom=Y edge=  10537.8 m snapshot  
+rino-art-district      naip       2011   co_m_3910409_sw_13_1_20110723_20110901                   bbox=Y geom=Y edge=   1722.1 m snapshot  
+rino-art-district      naip       2013   co_m_3910409_sw_13_1_20130716_20130917                   bbox=Y geom=Y edge=   1717.1 m snapshot  
+rino-art-district      naip       2015   co_m_3910409_sw_13_1_20150910_20151102                   bbox=Y geom=Y edge=   1727.0 m snapshot  
+rino-art-district      naip       2017   co_m_3910409_sw_13_1_20170902_20171017                   bbox=Y geom=Y edge=   1729.1 m snapshot  
+rino-art-district      naip       2019   co_m_3910409_sw_13_060_20190803_20191121                 bbox=Y geom=Y edge=   1617.0 m snapshot  
+rino-art-district      naip       2021   co_m_3910409_sw_13_060_20210728                          bbox=Y geom=Y edge=   1617.0 m snapshot  
+rino-art-district      naip       2023   co_m_3910409_sw_13_030_20230925_20240104                 bbox=Y geom=Y edge=   1716.9 m snapshot  
+rino-art-district      sentinel2  2015   S2A_MSIL2A_20151216T175252_R098_T13TEE_20210526T043020   bbox=Y geom=Y edge=   1437.1 m snapshot  
+rino-art-district      sentinel2  2016   S2A_MSIL2A_20161130T174712_R098_T13TEE_20210415T070118   bbox=Y geom=Y edge=   1437.1 m snapshot  
+rino-art-district      sentinel2  2017   S2B_MSIL2A_20171220T174729_R098_T13TDE_20201014T152357   bbox=Y geom=Y edge=   8342.9 m snapshot  
+rino-art-district      sentinel2  2018   S2B_MSIL2A_20181218T175739_R141_T13TEE_20201008T111706   bbox=Y geom=Y edge=   1436.9 m snapshot  
+rino-art-district      sentinel2  2019   S2B_MSIL2A_20191203T175719_R141_T13TEE_20201003T002311   bbox=Y geom=Y edge=   1437.1 m snapshot  
+rino-art-district      sentinel2  2020   S2A_MSIL2A_20201222T175741_R141_T13TDE_20201224T173659   bbox=Y geom=Y edge=   8343.4 m snapshot  
+rino-art-district      sentinel2  2021   S2A_MSIL2A_20211227T175751_R141_T13TEE_20211228T061151   bbox=Y geom=Y edge=   1436.9 m snapshot  
+rino-art-district      sentinel2  2022   S2B_MSIL2A_20221217T175739_R141_T13TEE_20221218T130054   bbox=Y geom=Y edge=   1436.9 m snapshot  
+rino-art-district      sentinel2  2023   S2A_MSIL2A_20231217T175741_R141_T13TDE_20231220T075806   bbox=Y geom=Y edge=   8342.9 m snapshot  
+rino-art-district      sentinel2  2024   S2B_MSIL2A_20241206T175639_R141_T13TEE_20241206T211053   bbox=Y geom=Y edge=   1437.1 m snapshot  
+rino-art-district      sentinel2  2025   S2B_MSIL2A_20251228T174639_R098_T13TEE_20251228T224245   bbox=Y geom=Y edge=   1437.1 m snapshot  
+rino-art-district      sentinel2  2026   S2B_MSIL2A_20260904T173859_R098_T13TEE_20260904T213142   bbox=Y geom=Y edge=   1437.1 m selection 
+rodanthe-outer-banks   landsat    1984   LT05_L2SP_014035_19841124_02_T1                          bbox=Y geom=Y edge=  23304.1 m snapshot  
+rodanthe-outer-banks   landsat    1985   LT05_L2SP_013035_19850816_02_T1                          bbox=Y geom=Y edge=  26512.5 m snapshot  
+rodanthe-outer-banks   landsat    1986   LT05_L2SP_013035_19861022_02_T1                          bbox=Y geom=Y edge=  26466.5 m snapshot  
+rodanthe-outer-banks   landsat    1987   LT05_L2SP_014035_19870509_02_T1                          bbox=Y geom=Y edge=  16800.1 m snapshot  
+rodanthe-outer-banks   landsat    1988   LT05_L2SP_014035_19881103_02_T1                          bbox=Y geom=Y edge=  14156.1 m snapshot  
+rodanthe-outer-banks   landsat    1989   LT05_L2SP_014035_19891021_02_T1                          bbox=Y geom=Y edge=  13671.6 m snapshot  
+rodanthe-outer-banks   landsat    1990   LT05_L2SP_014035_19901211_02_T1                          bbox=Y geom=Y edge=  17175.3 m snapshot  
+rodanthe-outer-banks   landsat    1991   LT05_L2SP_014035_19910909_02_T1                          bbox=Y geom=Y edge=  12013.2 m snapshot  
+rodanthe-outer-banks   landsat    1992   LT05_L2SP_014035_19921130_02_T1                          bbox=Y geom=Y edge=  12097.7 m snapshot  
+rodanthe-outer-banks   landsat    1993   LT05_L2SP_014035_19930829_02_T1                          bbox=Y geom=Y edge=  16492.8 m snapshot  
+rodanthe-outer-banks   landsat    1994   LT05_L2SP_014035_19941104_02_T1                          bbox=Y geom=Y edge=  12933.6 m snapshot  
+rodanthe-outer-banks   landsat    1995   LT05_L2SP_013035_19951202_02_T2                          bbox=Y geom=Y edge=  19638.0 m snapshot  
+rodanthe-outer-banks   landsat    1996   LT05_L2SP_014035_19960704_02_T1                          bbox=Y geom=Y edge=  24436.8 m snapshot  
+rodanthe-outer-banks   landsat    1997   LT05_L2SP_014035_19970504_02_T1                          bbox=Y geom=Y edge=  23862.5 m snapshot  
+rodanthe-outer-banks   landsat    1998   LT05_L2SP_014035_19981201_02_T1                          bbox=Y geom=Y edge=  19463.6 m snapshot  
+rodanthe-outer-banks   landsat    1999   LT05_L2SP_014035_19991118_02_T1                          bbox=Y geom=Y edge=  16365.5 m snapshot  
+rodanthe-outer-banks   landsat    2000   LT05_L2SP_014035_20001019_02_T1                          bbox=Y geom=Y edge=  18049.8 m snapshot  
+rodanthe-outer-banks   landsat    2001   LT05_L2SP_014035_20011107_02_T1                          bbox=Y geom=Y edge=  14081.6 m snapshot  
+rodanthe-outer-banks   landsat    2002   LT05_L2SP_014035_20021228_02_T1                          bbox=Y geom=Y edge=  16520.4 m snapshot  
+rodanthe-outer-banks   landsat    2003   LT05_L2SP_014035_20031215_02_T1                          bbox=Y geom=Y edge=  18737.2 m snapshot  
+rodanthe-outer-banks   landsat    2004   LT05_L2SP_013035_20041210_02_T2                          bbox=Y geom=Y edge=  26475.8 m snapshot  
+rodanthe-outer-banks   landsat    2005   LT05_L2SP_014035_20051017_02_T1                          bbox=Y geom=Y edge=  17919.0 m snapshot  
+rodanthe-outer-banks   landsat    2006   LT05_L2SP_013035_20061029_02_T1                          bbox=Y geom=Y edge=  26205.8 m snapshot  
+rodanthe-outer-banks   landsat    2007   LT05_L2SP_014035_20070905_02_T1                          bbox=Y geom=Y edge=  23058.9 m snapshot  
+rodanthe-outer-banks   landsat    2008   LT05_L2SP_014035_20081126_02_T1                          bbox=Y geom=Y edge=  27779.7 m snapshot  
+rodanthe-outer-banks   landsat    2009   LT05_L2SP_013035_20091021_02_T2                          bbox=Y geom=Y edge=  26638.1 m snapshot  
+rodanthe-outer-banks   landsat    2010   LT05_L2SP_013035_20101008_02_T1                          bbox=Y geom=Y edge=  26919.3 m snapshot  
+rodanthe-outer-banks   landsat    2011   LT05_L2SP_013035_20111112_02_T2                          bbox=Y geom=Y edge=  26700.8 m snapshot  
+rodanthe-outer-banks   landsat    2012   LE07_L2SP_014035_20121129_02_T1                          bbox=Y geom=Y edge=  21925.5 m snapshot  
+rodanthe-outer-banks   landsat    2013   LC08_L2SP_013036_20131219_02_T1                          bbox=Y geom=Y edge=    644.5 m snapshot    <<< within 1 km of edge
+rodanthe-outer-banks   landsat    2014   LC08_L2SP_013035_20141120_02_T1                          bbox=Y geom=Y edge=  31523.7 m snapshot  
+rodanthe-outer-banks   landsat    2015   LC08_L2SP_014035_20151216_02_T1                          bbox=Y geom=Y edge=  16972.4 m snapshot  
+rodanthe-outer-banks   landsat    2016   LC08_L2SP_013035_20161024_02_T1                          bbox=Y geom=Y edge=  31902.6 m snapshot  
+rodanthe-outer-banks   landsat    2017   LC08_L2SP_014035_20171103_02_T1                          bbox=Y geom=Y edge=  16438.3 m snapshot  
+rodanthe-outer-banks   landsat    2018   LC08_L2SP_014035_20181005_02_T1                          bbox=Y geom=Y edge=  18444.7 m snapshot  
+rodanthe-outer-banks   landsat    2019   LC08_L2SP_014035_20191125_02_T1                          bbox=Y geom=Y edge=  18833.2 m snapshot  
+rodanthe-outer-banks   landsat    2020   LC08_L2SP_014035_20201229_02_T1                          bbox=Y geom=Y edge=  17787.5 m snapshot  
+rodanthe-outer-banks   landsat    2021   LC09_L2SP_014035_20211109_02_T1                          bbox=Y geom=Y edge=  48568.6 m snapshot  
+rodanthe-outer-banks   landsat    2022   LC08_L2SP_013036_20221126_02_T1                          bbox=Y geom=Y edge=    688.9 m snapshot    <<< within 1 km of edge
+rodanthe-outer-banks   landsat    2023   LC08_L2SP_013035_20231028_02_T1                          bbox=Y geom=Y edge=  32005.5 m snapshot  
+rodanthe-outer-banks   landsat    2024   LC08_L2SP_014035_20241208_02_T1                          bbox=Y geom=Y edge=  17333.5 m snapshot  
+rodanthe-outer-banks   landsat    2025   LC09_L2SP_014035_20251101_02_T1                          bbox=Y geom=Y edge=  18752.9 m snapshot  
+rodanthe-outer-banks   landsat    2026   LC09_L2SP_014035_20260715_02_T1                          bbox=Y geom=Y edge=  18102.0 m snapshot  
+rodanthe-outer-banks   naip       2012   nc_m_3507529_nw_18_1_20120628_20120813                   bbox=Y geom=Y edge=   2773.4 m snapshot  
+rodanthe-outer-banks   naip       2014   nc_m_3507529_nw_18_1_20141017_20141118                   bbox=Y geom=Y edge=   2772.4 m snapshot  
+rodanthe-outer-banks   naip       2016   nc_m_3507529_nw_18_1_20160911                            bbox=Y geom=Y edge=   2772.4 m snapshot  
+rodanthe-outer-banks   naip       2018   nc_m_3507529_nw_18_060_20181029_20190211                 bbox=Y geom=Y edge=   2772.5 m snapshot  
+rodanthe-outer-banks   naip       2020   nc_m_3507529_nw_18_060_20200516                          bbox=Y geom=Y edge=   2717.9 m snapshot  
+rodanthe-outer-banks   naip       2022   nc_m_3507529_nw_18_060_20221007                          bbox=Y geom=Y edge=   2675.3 m snapshot  
+rodanthe-outer-banks   sentinel2  2015   S2A_MSIL2A_20151021T155022_R011_T18SVE_20210412T184030   bbox=Y geom=Y edge=  47765.3 m snapshot  
+rodanthe-outer-banks   sentinel2  2016   S2A_MSIL2A_20160418T153932_R011_T18SVE_20210211T044247   bbox=Y geom=Y edge=  47765.3 m snapshot  
+rodanthe-outer-banks   sentinel2  2017   S2A_MSIL2A_20170212T154411_R011_T18SVE_20210208T112128   bbox=Y geom=Y edge=  47765.3 m snapshot  
+rodanthe-outer-banks   sentinel2  2018   S2A_MSIL2A_20181005T154111_R011_T18SVE_20201009T082116   bbox=Y geom=Y edge=  47765.3 m snapshot  
+rodanthe-outer-banks   sentinel2  2019   S2B_MSIL2A_20190925T153959_R011_T18SVE_20201004T170707   bbox=Y geom=Y edge=  47765.3 m snapshot  
+rodanthe-outer-banks   sentinel2  2020   S2A_MSIL2A_20201103T154431_R011_T18SVE_20201104T163611   bbox=Y geom=Y edge=  47765.3 m snapshot  
+rodanthe-outer-banks   sentinel2  2021   S2B_MSIL2A_20211223T154649_R011_T18SVE_20211224T114513   bbox=Y geom=Y edge=  47765.3 m snapshot  
+rodanthe-outer-banks   sentinel2  2022   S2B_MSIL2A_20221218T154649_R011_T18SVE_20221219T113738   bbox=Y geom=Y edge=  47765.3 m snapshot  
+rodanthe-outer-banks   sentinel2  2023   S2A_MSIL2A_20231108T154441_R011_T18SVE_20241017T155654   bbox=Y geom=Y edge=  47765.3 m snapshot  
+rodanthe-outer-banks   sentinel2  2024   S2B_MSIL2A_20241028T154259_R011_T18SVE_20241028T194754   bbox=Y geom=Y edge=  47765.3 m snapshot  
+rodanthe-outer-banks   sentinel2  2025   S2A_MSIL2A_20251020T154711_R011_T18SVE_20251020T190013   bbox=Y geom=Y edge=  47765.3 m snapshot  
+rodanthe-outer-banks   sentinel2  2026   S2A_MSIL2A_20260319T154711_R011_T18SVE_20260319T233010   bbox=Y geom=Y edge=  47765.3 m snapshot  
+stapleton-central-park landsat    1984   LT05_L2SP_033032_19840622_02_T1                          bbox=Y geom=Y edge=  19655.7 m snapshot  
+stapleton-central-park landsat    1985   LT05_L2SP_033032_19851015_02_T1                          bbox=Y geom=Y edge=  19838.4 m snapshot  
+stapleton-central-park landsat    1986   LT05_L2SP_033032_19860815_02_T1                          bbox=Y geom=Y edge=  20404.8 m snapshot  
+stapleton-central-park landsat    1987   LT05_L2SP_033032_19871021_02_T1                          bbox=Y geom=Y edge=  20689.5 m snapshot  
+stapleton-central-park landsat    1988   LT05_L2SP_033032_19881023_02_T1                          bbox=Y geom=Y edge=  20966.0 m snapshot  
+stapleton-central-park landsat    1989   LT05_L2SP_033032_19891010_02_T1                          bbox=Y geom=Y edge=  20803.7 m snapshot  
+stapleton-central-park landsat    1990   LT05_L2SP_033032_19901029_02_T1                          bbox=Y geom=Y edge=  20397.9 m snapshot  
+stapleton-central-park landsat    1991   LT05_L2SP_033032_19911016_02_T1                          bbox=Y geom=Y edge=  21521.9 m snapshot  
+stapleton-central-park landsat    1992   LT05_L2SP_033032_19921221_02_T1                          bbox=Y geom=Y edge=  21620.6 m snapshot  
+stapleton-central-park landsat    1993   LT05_L2SP_033032_19931021_02_T2                          bbox=Y geom=Y edge=  21717.6 m snapshot  
+stapleton-central-park landsat    1994   LT05_L2SP_033032_19940906_02_T1                          bbox=Y geom=Y edge=  20779.3 m snapshot  
+stapleton-central-park landsat    1995   LT05_L2SP_034032_19951103_02_T1                          bbox=Y geom=Y edge=    933.0 m snapshot    <<< within 1 km of edge
+stapleton-central-park landsat    1996   LT05_L2SP_034032_19960817_02_T1                          bbox=Y geom=Y edge=  14455.6 m snapshot  
+stapleton-central-park landsat    1997   LT05_L2SP_033032_19971016_02_T1                          bbox=Y geom=Y edge=  22685.3 m snapshot  
+stapleton-central-park landsat    1998   LT05_L2SP_033032_19980917_02_T1                          bbox=Y geom=Y edge=  21810.0 m snapshot  
+stapleton-central-park landsat    1999   LT05_L2SP_033032_19991123_02_T1                          bbox=Y geom=Y edge=  19185.3 m snapshot  
+stapleton-central-park landsat    2000   LT05_L2SP_033032_20001125_02_T1                          bbox=Y geom=Y edge=  22876.9 m snapshot  
+stapleton-central-park landsat    2001   LT05_L2SP_033032_20011128_02_T1                          bbox=Y geom=Y edge=  21854.4 m snapshot  
+stapleton-central-park landsat    2002   LT05_L2SP_034032_20021021_02_T1                          bbox=Y geom=Y edge=   1619.7 m snapshot  
+stapleton-central-park landsat    2003   LT05_L2SP_033032_20031017_02_T1                          bbox=Y geom=Y edge=  20222.8 m snapshot  
+stapleton-central-park landsat    2004   LT05_L2SP_033032_20040917_02_T1                          bbox=Y geom=Y edge=  20176.4 m snapshot  
+stapleton-central-park landsat    2005   LT05_L2SP_033032_20051123_02_T1                          bbox=Y geom=Y edge=  19575.2 m snapshot  
+stapleton-central-park landsat    2006   LT05_L2SP_034032_20061203_02_T1                          bbox=Y geom=Y edge=    251.6 m snapshot    <<< within 1 km of edge
+stapleton-central-park landsat    2007   LT05_L2SP_033032_20070926_02_T1                          bbox=Y geom=Y edge=  20806.1 m snapshot  
+stapleton-central-park landsat    2008   LT05_L2SP_033032_20081030_02_T1                          bbox=Y geom=Y edge=  20806.9 m snapshot  
+stapleton-central-park landsat    2009   LT05_L2SP_033032_20091118_02_T1                          bbox=Y geom=Y edge=  21009.8 m snapshot  
+stapleton-central-park landsat    2010   LT05_L2SP_033032_20101105_02_T1                          bbox=Y geom=Y edge=  20860.2 m snapshot  
+stapleton-central-park landsat    2011   LT05_L2SP_033032_20111023_02_T1                          bbox=Y geom=Y edge=  20377.2 m snapshot  
+stapleton-central-park landsat    2012   LE07_L2SP_034032_20121008_02_T1                          bbox=Y geom=Y edge=   8841.4 m snapshot  
+stapleton-central-park landsat    2013   LC08_L2SP_033032_20130926_02_T1                          bbox=Y geom=Y edge=  25948.6 m snapshot  
+stapleton-central-park landsat    2014   LC08_L2SP_033033_20141116_02_T1                          bbox=Y geom=Y edge=   6738.1 m snapshot  
+stapleton-central-park landsat    2015   LC08_L2SP_033032_20151103_02_T1                          bbox=Y geom=Y edge=  26035.4 m snapshot  
+stapleton-central-park landsat    2016   LC08_L2SP_033033_20161020_02_T1                          bbox=Y geom=Y edge=   6645.9 m snapshot  
+stapleton-central-park landsat    2017   LC08_L2SP_033033_20170921_02_T1                          bbox=Y geom=Y edge=   6906.1 m snapshot  
+stapleton-central-park landsat    2018   LC08_L2SP_034032_20180915_02_T1                          bbox=Y geom=Y edge=   6018.2 m snapshot  
+stapleton-central-park landsat    2019   LC08_L2SP_033033_20191013_02_T1                          bbox=Y geom=Y edge=   6783.0 m snapshot  
+stapleton-central-park landsat    2020   LC08_L2SP_033033_20200929_02_T1                          bbox=Y geom=Y edge=   6773.0 m snapshot  
+stapleton-central-park landsat    2021   LC09_L2SP_033033_20211107_02_T1                          bbox=Y geom=Y edge=  13633.1 m snapshot  
+stapleton-central-park landsat    2022   LC09_L2SP_033032_20221130_02_T1                          bbox=Y geom=Y edge=  26213.9 m snapshot  
+stapleton-central-park landsat    2023   LC09_L2SP_033033_20231016_02_T1                          bbox=Y geom=Y edge=   6076.2 m snapshot  
+stapleton-central-park landsat    2024   LC09_L2SP_033033_20241002_02_T1                          bbox=Y geom=Y edge=   6456.0 m snapshot  
+stapleton-central-park landsat    2025   LC08_L2SP_033032_20250927_02_T1                          bbox=Y geom=Y edge=  26231.7 m snapshot  
+stapleton-central-park landsat    2026   LC09_L2SP_033033_20260805_02_T1                          bbox=Y geom=Y edge=   6317.9 m snapshot  
+stapleton-central-park naip       2011   co_m_3910409_se_13_1_20110723_20110901                   bbox=Y geom=Y edge=   1714.2 m snapshot  
+stapleton-central-park naip       2013   co_m_3910409_se_13_1_20130716_20130917                   bbox=Y geom=Y edge=   1710.2 m snapshot  
+stapleton-central-park naip       2015   co_m_3910409_se_13_1_20150910_20151102                   bbox=Y geom=Y edge=   1720.3 m snapshot  
+stapleton-central-park naip       2017   co_m_3910409_se_13_1_20170902_20171017                   bbox=Y geom=Y edge=   1724.2 m snapshot  
+stapleton-central-park naip       2019   co_m_3910409_se_13_060_20190803_20191121                 bbox=Y geom=Y edge=   1612.2 m snapshot  
+stapleton-central-park naip       2021   co_m_3910409_se_13_060_20210728                          bbox=Y geom=Y edge=   1612.2 m snapshot  
+stapleton-central-park naip       2023   co_m_3910409_se_13_030_20230925_20240104                 bbox=Y geom=Y edge=   1709.1 m snapshot  
+stapleton-central-park sentinel2  2015   S2A_MSIL2A_20151216T175252_R098_T13TEE_20210526T043020   bbox=Y geom=Y edge=   9319.8 m snapshot  
+stapleton-central-park sentinel2  2016   S2A_MSIL2A_20161110T175252_R098_T13TEE_20210414T034820   bbox=Y geom=Y edge=   9319.8 m snapshot  
+stapleton-central-park sentinel2  2017   S2B_MSIL2A_20171130T174659_R098_T13TEE_20201014T231309   bbox=Y geom=Y edge=   9319.8 m snapshot  
+stapleton-central-park sentinel2  2018   S2B_MSIL2A_20181218T175739_R141_T13TEE_20201008T111706   bbox=Y geom=Y edge=   9319.6 m snapshot  
+stapleton-central-park sentinel2  2019   S2A_MSIL2A_20191118T175631_R141_T13TEE_20201003T174115   bbox=Y geom=Y edge=   9319.6 m snapshot  
+stapleton-central-park sentinel2  2020   S2B_MSIL2A_20201127T175709_R141_T13TEE_20201128T162535   bbox=Y geom=Y edge=   9319.8 m snapshot  
+stapleton-central-park sentinel2  2021   S2B_MSIL2A_20211202T175719_R141_T13TEE_20211203T065332   bbox=Y geom=Y edge=   9319.6 m snapshot  
+stapleton-central-park sentinel2  2022   S2A_MSIL2A_20221122T175641_R141_T13TDE_20221123T050707   bbox=Y geom=Y edge=    460.7 m snapshot    <<< within 1 km of edge
+stapleton-central-park sentinel2  2023   S2A_MSIL2A_20231217T175741_R141_T13TDE_20231220T075806   bbox=Y geom=Y edge=    460.2 m snapshot    <<< within 1 km of edge
+stapleton-central-park sentinel2  2024   S2B_MSIL2A_20241206T175639_R141_T13TEE_20241206T211053   bbox=Y geom=Y edge=   9319.8 m snapshot  
+stapleton-central-park sentinel2  2025   S2C_MSIL2A_20251113T174611_R098_T13TEE_20251113T204309   bbox=Y geom=Y edge=   9319.8 m snapshot  
+stapleton-central-park sentinel2  2026   S2C_MSIL2A_20260820T173901_R098_T13TEE_20260820T223509   bbox=Y geom=Y edge=   9319.8 m snapshot  
+9973fa5d               landsat    1984   LT05_L2SP_015033_19840324_02_T1                          bbox=Y geom=Y edge=  44685.0 m snapshot  
+f4c63907               landsat    1984   LT05_L2SP_014032_19840921_02_T1                          bbox=Y geom=Y edge=  17392.2 m snapshot  
+e7fabe0d               landsat    1984   LT05_L2SP_044034_19841025_02_T1                          bbox=Y geom=Y edge=  75796.5 m snapshot  
+3003043d               landsat    1984   LT05_L2SP_033032_19840622_02_T1                          bbox=Y geom=Y edge=  25451.0 m snapshot  
+80eb0a69               landsat    1984   LT05_L2SP_044034_19841025_02_T1                          bbox=Y geom=Y edge=  55825.4 m snapshot  
+537b90df               landsat    1984   LT05_L2SP_033032_19840622_02_T1                          bbox=Y geom=Y edge=  25967.6 m snapshot  
+537b90df               landsat    1985   LT05_L2SP_033032_19851015_02_T1                          bbox=Y geom=Y edge=  28923.2 m snapshot  
+f4c63907               landsat    1985   LT05_L2SP_014032_19851026_02_T1                          bbox=Y geom=Y edge=  23202.7 m snapshot  
+80eb0a69               landsat    1985   LT05_L2SP_044034_19851012_02_T1                          bbox=Y geom=Y edge=  53815.1 m snapshot  
+e7fabe0d               landsat    1985   LT05_L2SP_044034_19851012_02_T1                          bbox=Y geom=Y edge=  75992.7 m snapshot  
+9973fa5d               landsat    1985   LT05_L2SP_015033_19851017_02_T1                          bbox=Y geom=Y edge=  84779.2 m snapshot  
+3003043d               landsat    1985   LT05_L2SP_033032_19851015_02_T1                          bbox=Y geom=Y edge=  28405.0 m snapshot  
+3003043d               landsat    1986   LT05_L2SP_033032_19860815_02_T1                          bbox=Y geom=Y edge=  31348.6 m snapshot  
+9973fa5d               landsat    1986   LT05_L2SP_015033_19861020_02_T1                          bbox=Y geom=Y edge=  85366.8 m snapshot  
+537b90df               landsat    1986   LT05_L2SP_033032_19860815_02_T1                          bbox=Y geom=Y edge=  31870.9 m snapshot  
+f4c63907               landsat    1986   LT05_L2SP_013032_19861022_02_T1                          bbox=Y geom=Y edge=  40367.0 m snapshot  
+e7fabe0d               landsat    1986   LT05_L2SP_044034_19861031_02_T1                          bbox=Y geom=Y edge=  69694.1 m snapshot  
+80eb0a69               landsat    1986   LT05_L2SP_043034_19861109_02_T1                          bbox=Y geom=Y edge=   4668.8 m selection 
+e7fabe0d               landsat    1987   LT05_L2SP_044034_19870916_02_T1                          bbox=Y geom=Y edge=  76382.7 m snapshot  
+f4c63907               landsat    1987   LT05_L2SP_013032_19871009_02_T1                          bbox=Y geom=Y edge=  26150.5 m snapshot  
+80eb0a69               landsat    1987   LT05_L2SP_044034_19870916_02_T1                          bbox=Y geom=Y edge=  61613.8 m snapshot  
+9973fa5d               landsat    1987   LT04_L2SP_015033_19870625_02_T1                          bbox=Y geom=Y edge=  84126.2 m snapshot  
+537b90df               landsat    1987   LT05_L2SP_033032_19871021_02_T1                          bbox=Y geom=Y edge=  19474.7 m snapshot  
+3003043d               landsat    1987   LT05_L2SP_033032_19871021_02_T1                          bbox=Y geom=Y edge=  18956.2 m snapshot  
+f4c63907               landsat    1988   LT05_L2SP_014032_19881221_02_T2                          bbox=Y geom=Y edge=  24739.1 m snapshot  
+e7fabe0d               landsat    1988   LT05_L2SP_044034_19881207_02_T1                          bbox=Y geom=Y edge=  75725.6 m snapshot  
+9973fa5d               landsat    1988   LT05_L2SP_015033_19881025_02_T1                          bbox=Y geom=Y edge=  81466.1 m snapshot  
+3003043d               landsat    1988   LT05_L2SP_033032_19881023_02_T1                          bbox=Y geom=Y edge=  24980.8 m snapshot  
+80eb0a69               landsat    1988   LT05_L2SP_044034_19881207_02_T1                          bbox=Y geom=Y edge=  53363.5 m snapshot  
+537b90df               landsat    1988   LT05_L2SP_033032_19881023_02_T1                          bbox=Y geom=Y edge=  25499.3 m snapshot  
+537b90df               landsat    1989   LT05_L2SP_033032_19891010_02_T1                          bbox=Y geom=Y edge=  33454.1 m snapshot  
+80eb0a69               landsat    1989   LT05_L2SP_043034_19890813_02_T1                          bbox=Y geom=Y edge=    925.8 m selection   <<< within 1 km of edge
+f4c63907               landsat    1989   LT05_L2SP_014032_19891005_02_T1                          bbox=Y geom=Y edge=  17439.2 m snapshot  
+3003043d               landsat    1989   LT05_L2SP_033032_19891010_02_T1                          bbox=Y geom=Y edge=  32934.0 m snapshot  
+9973fa5d               landsat    1989   LT05_L2SP_015033_19890809_02_T1                          bbox=Y geom=Y edge=  86611.7 m snapshot  
+e7fabe0d               landsat    1989   LT05_L2SP_044034_19890617_02_T1                          bbox=Y geom=Y edge=  74244.3 m snapshot  
+e7fabe0d               landsat    1990   LT05_L2SP_044034_19901010_02_T1                          bbox=Y geom=Y edge=  74418.5 m snapshot  
+f4c63907               landsat    1990   LT05_L2SP_013032_19900830_02_T1                          bbox=Y geom=Y edge=  34314.2 m snapshot  
+537b90df               landsat    1990   LT05_L2SP_033032_19901029_02_T1                          bbox=Y geom=Y edge=  31256.0 m snapshot  
+3003043d               landsat    1990   LT05_L2SP_033032_19901029_02_T1                          bbox=Y geom=Y edge=  30738.6 m snapshot  
+80eb0a69               landsat    1990   LT05_L2SP_044034_19901010_02_T1                          bbox=Y geom=Y edge=  52056.5 m snapshot  
+9973fa5d               landsat    1990   LT05_L2SP_015033_19901015_02_T1                          bbox=Y geom=Y edge=  86601.0 m snapshot  
+3003043d               landsat    1991   LT05_L2SP_033032_19911016_02_T1                          bbox=Y geom=Y edge=  30218.4 m snapshot  
+80eb0a69               landsat    1991   LT05_L2SP_044034_19911114_02_T1                          bbox=Y geom=Y edge=  53213.7 m snapshot  
+537b90df               landsat    1991   LT05_L2SP_033032_19911016_02_T1                          bbox=Y geom=Y edge=  30734.4 m snapshot  
+e7fabe0d               landsat    1991   LT05_L2SP_044034_19911114_02_T1                          bbox=Y geom=Y edge=  75575.9 m snapshot  
+9973fa5d               landsat    1991   LT05_L2SP_015033_19911018_02_T1                          bbox=Y geom=Y edge=  86596.9 m snapshot  
+f4c63907               landsat    1991   LT05_L2SP_013032_19910817_02_T1                          bbox=Y geom=Y edge=  32721.4 m snapshot  
+80eb0a69               landsat    1992   LT05_L2SP_043034_19920906_02_T1                          bbox=Y geom=Y edge=   1144.8 m selection 
+f4c63907               landsat    1992   LT05_L2SP_014032_19921114_02_T1                          bbox=Y geom=Y edge=  18688.2 m snapshot  
+3003043d               landsat    1992   LT05_L2SP_033032_19921221_02_T1                          bbox=Y geom=Y edge=  26485.0 m snapshot  
+537b90df               landsat    1992   LT05_L2SP_033032_19921221_02_T1                          bbox=Y geom=Y edge=  27001.5 m snapshot  
+9973fa5d               landsat    1992   LT05_L2SP_015033_19920326_02_T2                          bbox=Y geom=Y edge=  85914.6 m snapshot  
+e7fabe0d               landsat    1992   LT05_L2SP_044034_19920422_02_T1                          bbox=Y geom=Y edge=  71757.1 m snapshot  
+f4c63907               landsat    1993   LT05_L2SP_013032_19931025_02_T1                          bbox=Y geom=Y edge=  31928.9 m snapshot  
+e7fabe0d               landsat    1993   LT05_L2SP_044034_19931119_02_T1                          bbox=Y geom=Y edge=  76283.1 m snapshot  
+80eb0a69               landsat    1993   LT05_L2SP_044034_19931119_02_T1                          bbox=Y geom=Y edge=  56459.9 m snapshot  
+9973fa5d               landsat    1993   LT05_L2SP_015033_19931023_02_T1                          bbox=Y geom=Y edge=  82041.6 m snapshot  
+3003043d               landsat    1993   LT05_L2SP_033032_19931021_02_T2                          bbox=Y geom=Y edge=  25871.9 m snapshot  
+537b90df               landsat    1993   LT05_L2SP_033032_19931021_02_T2                          bbox=Y geom=Y edge=  26390.4 m snapshot  
+9973fa5d               landsat    1994   LT05_L2SP_015033_19941111_02_T1                          bbox=Y geom=Y edge=  84253.9 m snapshot  
+3003043d               landsat    1994   LT05_L2SP_033032_19940906_02_T1                          bbox=Y geom=Y edge=  30813.9 m snapshot  
+537b90df               landsat    1994   LT05_L2SP_033032_19940906_02_T1                          bbox=Y geom=Y edge=  31333.0 m snapshot  
+e7fabe0d               landsat    1994   LT05_L2SP_044034_19941122_02_T1                          bbox=Y geom=Y edge=  76468.8 m snapshot  
+80eb0a69               landsat    1994   LT05_L2SP_044034_19941122_02_T1                          bbox=Y geom=Y edge=  54108.8 m snapshot  
+f4c63907               landsat    1994   LT05_L2SP_013032_19941028_02_T1                          bbox=Y geom=Y edge=  35594.2 m snapshot  
+f4c63907               landsat    1995   LT05_L2SP_014032_19950531_02_T1                          bbox=Y geom=Y edge=  21692.5 m snapshot  
+80eb0a69               landsat    1995   LT05_L2SP_044034_19951211_02_T2                          bbox=Y geom=Y edge=  68089.9 m snapshot  
+3003043d               landsat    1995   LT05_L2SP_034032_19951103_02_T1                          bbox=Y geom=Y edge=  29227.9 m snapshot  
+537b90df               landsat    1995   LT05_L2SP_034032_19951103_02_T1                          bbox=Y geom=Y edge=  28746.2 m snapshot  
+e7fabe0d               landsat    1995   LT05_L2SP_044034_19951211_02_T2                          bbox=Y geom=Y edge=  74811.1 m snapshot  
+9973fa5d               landsat    1995   LT05_L2SP_015033_19951013_02_T1                          bbox=Y geom=Y edge=  87255.3 m snapshot  
+f4c63907               landsat    1996   LT05_L2SP_013032_19960830_02_T1                          bbox=Y geom=Y edge=  19708.9 m snapshot  
+e7fabe0d               landsat    1996   LT05_L2SP_044034_19961026_02_T1                          bbox=Y geom=Y edge=  77657.2 m snapshot  
+80eb0a69               landsat    1996   LT05_L2SP_044034_19961026_02_T1                          bbox=Y geom=Y edge=  66305.3 m snapshot  
+3003043d               landsat    1996   LT05_L2SP_034032_19960817_02_T1                          bbox=Y geom=Y edge=  42764.7 m snapshot  
+537b90df               landsat    1996   LT05_L2SP_034032_19960817_02_T1                          bbox=Y geom=Y edge=  42285.6 m snapshot  
+9973fa5d               landsat    1996   LT05_L2SP_015033_19961116_02_T1                          bbox=Y geom=Y edge=  70984.9 m snapshot  
+3003043d               landsat    1997   LT05_L2SP_033032_19971016_02_T1                          bbox=Y geom=Y edge=  18490.9 m snapshot  
+537b90df               landsat    1997   LT05_L2SP_033032_19971016_02_T1                          bbox=Y geom=Y edge=  19009.2 m snapshot  
+f4c63907               landsat    1997   LT05_L2SP_013032_19971020_02_T1                          bbox=Y geom=Y edge=  24985.3 m snapshot  
+80eb0a69               landsat    1997   LT05_L2SP_044034_19971013_02_T1                          bbox=Y geom=Y edge=  63302.5 m snapshot  
+9973fa5d               landsat    1997   LT05_L2SP_015033_19971221_02_T1                          bbox=Y geom=Y edge=  75752.1 m snapshot  
+e7fabe0d               landsat    1997   LT05_L2SP_044034_19971013_02_T1                          bbox=Y geom=Y edge=  78190.2 m snapshot  
+9973fa5d               landsat    1998   LT05_L2SP_015033_19981122_02_T1                          bbox=Y geom=Y edge=  80558.8 m snapshot  
+537b90df               landsat    1998   LT05_L2SP_033032_19980917_02_T1                          bbox=Y geom=Y edge=  24017.1 m snapshot  
+3003043d               landsat    1998   LT05_L2SP_033032_19980917_02_T1                          bbox=Y geom=Y edge=  23499.0 m snapshot  
+e7fabe0d               landsat    1998   LT05_L2SP_044034_19981016_02_T1                          bbox=Y geom=Y edge=  78670.8 m snapshot  
+f4c63907               landsat    1998   LT05_L2SP_014032_19981201_02_T1                          bbox=Y geom=Y edge=  29176.0 m snapshot  
+80eb0a69               landsat    1998   LT05_L2SP_044034_19981016_02_T1                          bbox=Y geom=Y edge=  60440.8 m snapshot  
+80eb0a69               landsat    1999   LT05_L2SP_043034_19991012_02_T1                          bbox=Y geom=Y edge=   2038.8 m selection 
+9973fa5d               landsat    1999   LT05_L2SP_015033_19991211_02_T1                          bbox=Y geom=Y edge=  84233.1 m snapshot  
+537b90df               landsat    1999   LT05_L2SP_033032_19991123_02_T1                          bbox=Y geom=Y edge=  25415.7 m snapshot  
+e7fabe0d               landsat    1999   LT05_L2SP_044034_19991222_02_T1                          bbox=Y geom=Y edge=  71324.8 m snapshot  
+f4c63907               landsat    1999   LT05_L2SP_014032_19991001_02_T1                          bbox=Y geom=Y edge=  25639.8 m snapshot  
+3003043d               landsat    1999   LT05_L2SP_033032_19991123_02_T1                          bbox=Y geom=Y edge=  24891.6 m snapshot  
+3003043d               landsat    2000   LT05_L2SP_033032_20001125_02_T1                          bbox=Y geom=Y edge=  27316.8 m snapshot  
+f4c63907               landsat    2000   LT05_L2SP_013032_20001012_02_T1                          bbox=Y geom=Y edge=  30020.2 m snapshot  
+9973fa5d               landsat    2000   LT05_L2SP_015033_20000706_02_T1                          bbox=Y geom=Y edge=  83364.0 m snapshot  
+537b90df               landsat    2000   LT05_L2SP_033032_20001125_02_T1                          bbox=Y geom=Y edge=  27835.1 m snapshot  
+e7fabe0d               landsat    2000   LT05_L2SP_044034_20000919_02_T1                          bbox=Y geom=Y edge=  77624.0 m snapshot  
+80eb0a69               landsat    2000   LT05_L2SP_044034_20000919_02_T1                          bbox=Y geom=Y edge=  55697.1 m snapshot  
+80eb0a69               landsat    2001   LT05_L2SP_044034_20010906_02_T1                          bbox=Y geom=Y edge=  52314.7 m snapshot  
+f4c63907               landsat    2001   LT05_L2SP_013032_20010913_02_T1                          bbox=Y geom=Y edge=  35522.3 m snapshot  
+e7fabe0d               landsat    2001   LT05_L2SP_044034_20010906_02_T1                          bbox=Y geom=Y edge=  74677.1 m snapshot  
+9973fa5d               landsat    2001   LT05_L2SP_015033_20011029_02_T1                          bbox=Y geom=Y edge=  82851.1 m snapshot  
+3003043d               landsat    2001   LT05_L2SP_033032_20011128_02_T1                          bbox=Y geom=Y edge=  30473.9 m snapshot  
+537b90df               landsat    2001   LT05_L2SP_033032_20011128_02_T1                          bbox=Y geom=Y edge=  30992.3 m snapshot  
+537b90df               landsat    2002   LT05_L2SP_033032_20020811_02_T1                          bbox=Y geom=Y edge=  35464.7 m snapshot  
+e7fabe0d               landsat    2002   LT05_L2SP_044034_20021027_02_T1                          bbox=Y geom=Y edge=  75131.6 m snapshot  
+80eb0a69               landsat    2002   LT05_L2SP_044034_20021027_02_T1                          bbox=Y geom=Y edge=  54054.5 m snapshot  
+f4c63907               landsat    2002   LT05_L2SP_013032_20021002_02_T1                          bbox=Y geom=Y edge=  41831.2 m snapshot  
+9973fa5d               landsat    2002   LT05_L2SP_015033_20021203_02_T1                          bbox=Y geom=Y edge=  85889.7 m snapshot  
+3003043d               landsat    2002   LT05_L2SP_033032_20020811_02_T1                          bbox=Y geom=Y edge=  33829.0 m snapshot  
+f4c63907               landsat    2003   LT05_L2SP_013032_20030701_02_T1                          bbox=Y geom=Y edge=  33874.8 m snapshot  
+e7fabe0d               landsat    2003   LT05_L2SP_044034_20031014_02_T1                          bbox=Y geom=Y edge=  75677.6 m snapshot  
+537b90df               landsat    2003   LT05_L2SP_033032_20031017_02_T1                          bbox=Y geom=Y edge=  28272.7 m snapshot  
+3003043d               landsat    2003   LT05_L2SP_033032_20031017_02_T1                          bbox=Y geom=Y edge=  27749.3 m snapshot  
+9973fa5d               landsat    2003   LT05_L2SP_015033_20030917_02_T1                          bbox=Y geom=Y edge=  84443.3 m snapshot  
+80eb0a69               landsat    2003   LT05_L2SP_044034_20031014_02_T1                          bbox=Y geom=Y edge=  61109.0 m snapshot  
+80eb0a69               landsat    2004   LT05_L2SP_044034_20041203_02_T1                          bbox=Y geom=Y edge=  61220.4 m snapshot  
+e7fabe0d               landsat    2004   LT05_L2SP_044034_20041203_02_T1                          bbox=Y geom=Y edge=  75716.4 m snapshot  
+3003043d               landsat    2004   LT05_L2SP_033032_20040917_02_T1                          bbox=Y geom=Y edge=  25180.9 m snapshot  
+f4c63907               landsat    2004   LT05_L2SP_013032_20041007_02_T1                          bbox=Y geom=Y edge=  31684.7 m snapshot  
+537b90df               landsat    2004   LT05_L2SP_033032_20040917_02_T1                          bbox=Y geom=Y edge=  25703.0 m snapshot  
+9973fa5d               landsat    2004   LT05_L2SP_015033_20040919_02_T1                          bbox=Y geom=Y edge=  81804.7 m snapshot  
+537b90df               landsat    2005   LT05_L2SP_033032_20051123_02_T1                          bbox=Y geom=Y edge=  23783.3 m snapshot  
+9973fa5d               landsat    2005   LT05_L2SP_015033_20050415_02_T1                          bbox=Y geom=Y edge=  83139.6 m snapshot  
+f4c63907               landsat    2005   LT05_L2SP_014032_20051001_02_T1                          bbox=Y geom=Y edge=  28067.2 m snapshot  
+3003043d               landsat    2005   LT05_L2SP_033032_20051123_02_T1                          bbox=Y geom=Y edge=  23260.4 m snapshot  
+e7fabe0d               landsat    2005   LT05_L2SP_044034_20051120_02_T1                          bbox=Y geom=Y edge=  76481.2 m snapshot  
+80eb0a69               landsat    2005   LT05_L2SP_044034_20051120_02_T1                          bbox=Y geom=Y edge=  64683.7 m snapshot  
+537b90df               landsat    2006   LT05_L2SP_034032_20061203_02_T1                          bbox=Y geom=Y edge=  28074.3 m snapshot  
+9973fa5d               landsat    2006   LT05_L2SP_015033_20060504_02_T1                          bbox=Y geom=Y edge=  82066.3 m snapshot  
+3003043d               landsat    2006   LT05_L2SP_034032_20061203_02_T1                          bbox=Y geom=Y edge=  28554.6 m snapshot  
+e7fabe0d               landsat    2006   LT05_L2SP_044034_20061123_02_T1                          bbox=Y geom=Y edge=  75699.7 m snapshot  
+80eb0a69               landsat    2006   LT05_L2SP_044034_20061123_02_T1                          bbox=Y geom=Y edge=  53648.1 m snapshot  
+f4c63907               landsat    2006   LT05_L2SP_013032_20061216_02_T1                          bbox=Y geom=Y edge=  42224.2 m snapshot  
+3003043d               landsat    2007   LT05_L2SP_033032_20070926_02_T1                          bbox=Y geom=Y edge=  29617.6 m snapshot  
+537b90df               landsat    2007   LT05_L2SP_033032_20070926_02_T1                          bbox=Y geom=Y edge=  30143.7 m snapshot  
+f4c63907               landsat    2007   LT05_L2SP_014032_20070804_02_T1                          bbox=Y geom=Y edge=  27893.0 m snapshot  
+80eb0a69               landsat    2007   LT05_L2SP_044034_20070822_02_T1                          bbox=Y geom=Y edge=  63624.6 m selection 
+9973fa5d               landsat    2007   LT05_L2SP_015033_20070507_02_T1                          bbox=Y geom=Y edge=  85912.1 m snapshot  
+e7fabe0d               landsat    2007   LT05_L2SP_044034_20070416_02_T1                          bbox=Y geom=Y edge=  71291.4 m snapshot  
+9973fa5d               landsat    2008   LT05_L2SP_015033_20080525_02_T1                          bbox=Y geom=Y edge=  85497.4 m snapshot  
+537b90df               landsat    2008   LT05_L2SP_033032_20081030_02_T1                          bbox=Y geom=Y edge=  37299.1 m snapshot  
+80eb0a69               landsat    2008   LT05_L2SP_044034_20081011_02_T1                          bbox=Y geom=Y edge=  51840.9 m snapshot  
+f4c63907               landsat    2008   LT05_L2SP_013032_20080831_02_T1                          bbox=Y geom=Y edge=  41808.6 m snapshot  
+e7fabe0d               landsat    2008   LT05_L2SP_044034_20081011_02_T1                          bbox=Y geom=Y edge=  74202.3 m snapshot  
+3003043d               landsat    2008   LT05_L2SP_033032_20081030_02_T1                          bbox=Y geom=Y edge=  35081.0 m snapshot  
+3003043d               landsat    2009   LT05_L2SP_033032_20091118_02_T1                          bbox=Y geom=Y edge=  28706.4 m snapshot  
+9973fa5d               landsat    2009   LT05_L2SP_015033_20091019_02_T1                          bbox=Y geom=Y edge=  85503.7 m snapshot  
+e7fabe0d               landsat    2009   LT05_L2SP_044034_20091115_02_T1                          bbox=Y geom=Y edge=  75911.1 m snapshot  
+537b90df               landsat    2009   LT05_L2SP_033032_20091118_02_T1                          bbox=Y geom=Y edge=  29229.6 m snapshot  
+80eb0a69               landsat    2009   LT05_L2SP_044034_20091115_02_T1                          bbox=Y geom=Y edge=  62299.1 m snapshot  
+f4c63907               landsat    2009   LT05_L2SP_014032_20091129_02_T1                          bbox=Y geom=Y edge=  29413.5 m snapshot  
+80eb0a69               landsat    2010   LT05_L2SP_043034_20101010_02_T1                          bbox=Y geom=Y edge=   3130.9 m selection 
+e7fabe0d               landsat    2010   LT05_L2SP_044034_20100611_02_T1                          bbox=Y geom=Y edge=  76164.7 m snapshot  
+f4c63907               landsat    2010   LT05_L2SP_013032_20101008_02_T1                          bbox=Y geom=Y edge=  40007.2 m snapshot  
+9973fa5d               landsat    2010   LT05_L2SP_015033_20100920_02_T1                          bbox=Y geom=Y edge=  85316.7 m snapshot  
+537b90df               landsat    2010   LT05_L2SP_033032_20101105_02_T1                          bbox=Y geom=Y edge=  31141.3 m snapshot  
+3003043d               landsat    2010   LT05_L2SP_033032_20101105_02_T1                          bbox=Y geom=Y edge=  30618.2 m snapshot  
+9973fa5d               landsat    2011   LT05_L2SP_015033_20111025_02_T1                          bbox=Y geom=Y edge=  85397.2 m snapshot  
+537b90df               landsat    2011   LT05_L2SP_033032_20111023_02_T1                          bbox=Y geom=Y edge=  30653.0 m snapshot  
+e7fabe0d               landsat    2011   LT05_L2SP_044034_20110529_02_T1                          bbox=Y geom=Y edge=  77127.6 m snapshot  
+80eb0a69               landsat    2011   LT05_L2SP_044034_20110918_02_T1                          bbox=Y geom=Y edge=  60240.0 m selection 
+3003043d               landsat    2011   LT05_L2SP_033032_20111023_02_T1                          bbox=Y geom=Y edge=  30129.1 m snapshot  
+f4c63907               landsat    2011   LT05_L2SP_014032_20110714_02_T1                          bbox=Y geom=Y edge=  29132.6 m snapshot  
+80eb0a69               landsat    2012   LE07_L2SP_044034_20120608_02_T1                          bbox=Y geom=Y edge=  61871.7 m snapshot  
+f4c63907               landsat    2012   LE07_L2SP_013032_20121021_02_T1                          bbox=Y geom=Y edge=  33812.9 m snapshot  
+e7fabe0d               landsat    2012   LE07_L2SP_044034_20120608_02_T1                          bbox=Y geom=Y edge=  77216.2 m snapshot  
+9973fa5d               landsat    2012   LE07_L2SP_015033_20120206_02_T1                          bbox=Y geom=Y edge=  85315.2 m snapshot  
+3003043d               landsat    2012   LE07_L2SP_034032_20121008_02_T1                          bbox=Y geom=Y edge=  37147.2 m snapshot  
+537b90df               landsat    2012   LE07_L2SP_034032_20121008_02_T1                          bbox=Y geom=Y edge=  36667.4 m snapshot  
+e7fabe0d               landsat    2013   LC08_L2SP_044034_20130923_02_T1                          bbox=Y geom=Y edge=  79929.6 m snapshot  
+3003043d               landsat    2013   LC08_L2SP_033032_20130926_02_T1                          bbox=Y geom=Y edge=  25217.4 m snapshot  
+9973fa5d               landsat    2013   LC08_L2SP_015033_20130407_02_T1                          bbox=Y geom=Y edge=  30806.1 m snapshot  
+80eb0a69               landsat    2013   LC08_L2SP_044034_20130923_02_T1                          bbox=Y geom=Y edge=  57567.6 m snapshot  
+537b90df               landsat    2013   LC08_L2SP_033032_20130926_02_T1                          bbox=Y geom=Y edge=  25742.2 m snapshot  
+f4c63907               landsat    2013   LC08_L2SP_014031_20130820_02_T1                          bbox=Y geom=Y edge=    155.3 m selection   <<< within 1 km of edge
+e7fabe0d               landsat    2014   LC08_L2SP_044034_20141012_02_T1                          bbox=Y geom=Y edge=  79633.3 m snapshot  
+80eb0a69               landsat    2014   LC08_L2SP_044034_20141012_02_T1                          bbox=Y geom=Y edge=  57270.9 m snapshot  
+3003043d               landsat    2014   LC08_L2SP_033032_20140812_02_T1                          bbox=Y geom=Y edge=  25510.0 m snapshot  
+9973fa5d               landsat    2014   LC08_L2SP_015033_20141017_02_T1                          bbox=Y geom=Y edge=  82718.6 m snapshot  
+f4c63907               landsat    2014   LC08_L2SP_014032_20140807_02_T1                          bbox=Y geom=Y edge=  27971.6 m snapshot  
+537b90df               landsat    2014   LC08_L2SP_033032_20140812_02_T1                          bbox=Y geom=Y edge=  26033.6 m snapshot  
+e7fabe0d               landsat    2015   LC08_L2SP_044034_20151116_02_T1                          bbox=Y geom=Y edge=  80537.5 m snapshot  
+3003043d               landsat    2015   LC08_L2SP_033032_20151103_02_T1                          bbox=Y geom=Y edge=  25155.9 m snapshot  
+f4c63907               landsat    2015   LC08_L2SP_013032_20151006_02_T1                          bbox=Y geom=Y edge=  31615.1 m snapshot  
+537b90df               landsat    2015   LC08_L2SP_033032_20151103_02_T1                          bbox=Y geom=Y edge=  25679.6 m snapshot  
+9973fa5d               landsat    2015   LC08_L2SP_015033_20150817_02_T1                          bbox=Y geom=Y edge=  80701.2 m snapshot  
+80eb0a69               landsat    2015   LC08_L2SP_044034_20151116_02_T1                          bbox=Y geom=Y edge=  58175.0 m snapshot  
+3003043d               landsat    2016   LC08_L2SP_033032_20161020_02_T1                          bbox=Y geom=Y edge=  25716.4 m snapshot  
+9973fa5d               landsat    2016   LC08_L2SP_015033_20161107_02_T1                          bbox=Y geom=Y edge=  81939.8 m snapshot  
+537b90df               landsat    2016   LC08_L2SP_033032_20161020_02_T1                          bbox=Y geom=Y edge=  26240.0 m snapshot  
+f4c63907               landsat    2016   LC08_L2SP_014032_20161015_02_T1                          bbox=Y geom=Y edge=  28128.4 m snapshot  
+80eb0a69               landsat    2016   LC08_L2SP_044034_20161118_02_T1                          bbox=Y geom=Y edge=  57430.8 m snapshot  
+e7fabe0d               landsat    2016   LC08_L2SP_044034_20161118_02_T1                          bbox=Y geom=Y edge=  79793.3 m snapshot  
+f4c63907               landsat    2017   LC08_L2SP_014031_20171018_02_T1                          bbox=Y geom=Y edge=     11.5 m selection   <<< within 1 km of edge
+e7fabe0d               landsat    2017   LC08_L2SP_044034_20170614_02_T1                          bbox=Y geom=Y edge=  80878.6 m snapshot  
+537b90df               landsat    2017   LC08_L2SP_033032_20170921_02_T1                          bbox=Y geom=Y edge=  24955.3 m snapshot  
+3003043d               landsat    2017   LC08_L2SP_033032_20170921_02_T1                          bbox=Y geom=Y edge=  24431.3 m snapshot  
+80eb0a69               landsat    2017   LC08_L2SP_044034_20171207_02_T1                          bbox=Y geom=Y edge=  58140.5 m selection 
+9973fa5d               landsat    2017   LC08_L2SP_015033_20170822_02_T1                          bbox=Y geom=Y edge=  80866.3 m snapshot  
+3003043d               landsat    2018   LC08_L2SP_034032_20180915_02_T1                          bbox=Y geom=Y edge=  34316.1 m snapshot  
+537b90df               landsat    2018   LC08_L2SP_034032_20180915_02_T1                          bbox=Y geom=Y edge=  33834.9 m snapshot  
+f4c63907               landsat    2018   LC08_L2SP_013032_20180710_02_T1                          bbox=Y geom=Y edge=  29641.5 m snapshot  
+9973fa5d               landsat    2018   LC08_L2SP_015033_20180318_02_T1                          bbox=Y geom=Y edge=  81584.3 m snapshot  
+80eb0a69               landsat    2018   LC08_L2SP_044034_20181108_02_T1                          bbox=Y geom=Y edge=  57553.6 m snapshot  
+e7fabe0d               landsat    2018   LC08_L2SP_044034_20181108_02_T1                          bbox=Y geom=Y edge=  79916.4 m snapshot  
+3003043d               landsat    2019   LC08_L2SP_033032_20191013_02_T1                          bbox=Y geom=Y edge=  25031.2 m snapshot  
+9973fa5d               landsat    2019   LC08_L2SP_015033_20190812_02_T1                          bbox=Y geom=Y edge=  79870.4 m snapshot  
+537b90df               landsat    2019   LC08_L2SP_033032_20191013_02_T1                          bbox=Y geom=Y edge=  25555.2 m snapshot  
+f4c63907               landsat    2019   LC08_L2SP_014032_20191024_02_T1                          bbox=Y geom=Y edge=  28274.2 m snapshot  
+80eb0a69               landsat    2019   LC08_L2SP_044034_20190924_02_T1                          bbox=Y geom=Y edge=  58711.0 m snapshot  
+e7fabe0d               landsat    2019   LC08_L2SP_044034_20190924_02_T1                          bbox=Y geom=Y edge=  81073.5 m snapshot  
+e7fabe0d               landsat    2020   LC08_L2SP_044034_20201012_02_T1                          bbox=Y geom=Y edge=  80368.7 m snapshot  
+f4c63907               landsat    2020   LC08_L2SP_013032_20201003_02_T1                          bbox=Y geom=Y edge=  31436.0 m snapshot  
+9973fa5d               landsat    2020   LC08_L2SP_015033_20201017_02_T1                          bbox=Y geom=Y edge=  81446.6 m snapshot  
+3003043d               landsat    2020   LC08_L2SP_033032_20200913_02_T1                          bbox=Y geom=Y edge=  24716.3 m snapshot  
+537b90df               landsat    2020   LC08_L2SP_033032_20200913_02_T1                          bbox=Y geom=Y edge=  25239.9 m snapshot  
+80eb0a69               landsat    2020   LC08_L2SP_044034_20201012_02_T1                          bbox=Y geom=Y edge=  58006.2 m snapshot  
+f4c63907               landsat    2021   LC09_L2SP_014032_20211109_02_T1                          bbox=Y geom=Y edge=  40944.1 m snapshot  
+80eb0a69               landsat    2021   LC08_L2SP_044034_20210929_02_T1                          bbox=Y geom=Y edge=  58604.5 m snapshot  
+9973fa5d               landsat    2021   LC08_L2SP_015033_20211020_02_T1                          bbox=Y geom=Y edge=  82452.0 m snapshot  
+3003043d               landsat    2021   LC08_L2SP_033032_20210916_02_T1                          bbox=Y geom=Y edge=  24432.4 m snapshot  
+537b90df               landsat    2021   LC08_L2SP_033032_20210916_02_T1                          bbox=Y geom=Y edge=  24956.1 m snapshot  
+e7fabe0d               landsat    2021   LC08_L2SP_044034_20210508_02_T1                          bbox=Y geom=Y edge=  80455.5 m snapshot  
+537b90df               landsat    2022   LC08_L2SP_034032_20220926_02_T1                          bbox=Y geom=Y edge=  29922.7 m snapshot  
+80eb0a69               landsat    2022   LC08_L2SP_044034_20221119_02_T1                          bbox=Y geom=Y edge=  57648.6 m snapshot  
+f4c63907               landsat    2022   LC09_L2SP_013032_20221102_02_T1                          bbox=Y geom=Y edge=  31513.8 m snapshot  
+3003043d               landsat    2022   LC08_L2SP_034032_20220926_02_T1                          bbox=Y geom=Y edge=  30402.8 m snapshot  
+9973fa5d               landsat    2022   LC09_L2SP_015033_20221015_02_T1                          bbox=Y geom=Y edge=  82844.4 m snapshot  
+e7fabe0d               landsat    2022   LC08_L2SP_044034_20221119_02_T1                          bbox=Y geom=Y edge=  80011.0 m snapshot  
+9973fa5d               landsat    2023   LC09_L2SP_015033_20230916_02_T1                          bbox=Y geom=Y edge=  82903.6 m snapshot  
+e7fabe0d               landsat    2023   LC08_L2SP_044034_20231005_02_T1                          bbox=Y geom=Y edge=  80758.7 m snapshot  
+f4c63907               landsat    2023   LC08_L2SP_013032_20231028_02_T1                          bbox=Y geom=Y edge=  32447.5 m snapshot  
+537b90df               landsat    2023   LC09_L2SP_033032_20231016_02_T1                          bbox=Y geom=Y edge=  27654.8 m snapshot  
+80eb0a69               landsat    2023   LC08_L2SP_044034_20231005_02_T1                          bbox=Y geom=Y edge=  58396.5 m snapshot  
+3003043d               landsat    2023   LC09_L2SP_033032_20231016_02_T1                          bbox=Y geom=Y edge=  27131.2 m snapshot  
+9973fa5d               landsat    2024   LC08_L2SP_015033_20240910_02_T1                          bbox=Y geom=Y edge=  82282.0 m snapshot  
+f4c63907               landsat    2024   LC09_L2SP_013032_20241022_02_T1                          bbox=Y geom=Y edge=  35015.0 m snapshot  
+80eb0a69               landsat    2024   LC08_L2SP_044034_20240820_02_T1                          bbox=Y geom=Y edge=  57478.4 m snapshot  
+537b90df               landsat    2024   LC09_L2SP_033032_20240831_02_T1                          bbox=Y geom=Y edge=  26603.7 m snapshot  
+3003043d               landsat    2024   LC09_L2SP_033032_20240831_02_T1                          bbox=Y geom=Y edge=  26080.5 m snapshot  
+e7fabe0d               landsat    2024   LC08_L2SP_044034_20240820_02_T1                          bbox=Y geom=Y edge=  79841.4 m snapshot  
+80eb0a69               landsat    2025   LC09_L2SP_044034_20250324_02_T1                          bbox=Y geom=Y edge=  57890.9 m snapshot  
+3003043d               landsat    2025   LC08_L2SP_033032_20250927_02_T1                          bbox=Y geom=Y edge=  25972.5 m snapshot  
+537b90df               landsat    2025   LC08_L2SP_033032_20250927_02_T1                          bbox=Y geom=Y edge=  26496.1 m snapshot  
+e7fabe0d               landsat    2025   LC09_L2SP_044034_20250324_02_T1                          bbox=Y geom=Y edge=  80252.9 m snapshot  
+9973fa5d               landsat    2025   LC08_L2SP_015033_20250321_02_T1                          bbox=Y geom=Y edge=  82482.0 m snapshot  
+f4c63907               landsat    2025   LC08_L2SP_013032_20251102_02_T1                          bbox=Y geom=Y edge=  32738.1 m snapshot  
+80eb0a69               landsat    2026   LC09_L2SP_044034_20260311_02_T1                          bbox=Y geom=Y edge=  56710.9 m snapshot  
+537b90df               landsat    2026   LC09_L2SP_033032_20260720_02_T1                          bbox=Y geom=Y edge=  26522.9 m snapshot  
+3003043d               landsat    2026   LC09_L2SP_033032_20260720_02_T1                          bbox=Y geom=Y edge=  25999.7 m snapshot  
+e7fabe0d               landsat    2026   LC09_L2SP_044034_20260311_02_T1                          bbox=Y geom=Y edge=  79073.1 m snapshot  
+f4c63907               landsat    2026   LC08_L2SP_014032_20260723_02_T1                          bbox=Y geom=Y edge=  28762.4 m snapshot  
+9973fa5d               landsat    2026   LC09_L2SP_015033_20260604_02_T1                          bbox=Y geom=Y edge=  84405.6 m snapshot  
+f4c63907               naip       2010   nj_m_4007309_sw_18_1_20100731                            bbox=Y geom=Y edge=    939.5 m snapshot    <<< within 1 km of edge
+537b90df               naip       2011   co_m_3910507_ne_13_1_20110723_20110901                   bbox=Y geom=Y edge=   2269.1 m selection 
+3003043d               naip       2011   co_m_3910507_ne_13_1_20110723_20110901                   bbox=Y geom=Y edge=   1248.3 m selection 
+f4c63907               naip       2011   ny_m_4007309_sw_18_1_20110705_20111114                   bbox=Y geom=Y edge=    939.5 m snapshot    <<< within 1 km of edge
+9973fa5d               naip       2011   va_m_3807708_se_18_1_20110530                            bbox=Y geom=Y edge=    821.7 m enriched    <<< within 1 km of edge
+f4c63907               naip       2011   ny_m_4007317_nw_18_1_20110705_20111114                   bbox=N geom=N edge=   -267.4 m snapshot   (mosaic tile)
+9973fa5d               naip       2011   md_m_3807716_ne_18_1_20110629_20111116                   bbox=N geom=N edge=    -94.7 m selection  (mosaic tile)
+9973fa5d               naip       2012   va_m_3807708_se_18_1_20120511_20120709                   bbox=Y geom=Y edge=    816.7 m snapshot    <<< within 1 km of edge
+80eb0a69               naip       2012   ca_m_3712142_se_10_1_20120520_20120730                   bbox=Y geom=Y edge=   2310.2 m selection 
+e7fabe0d               naip       2012   ca_m_3712248_ne_10_1_20120520_20120730                   bbox=Y geom=Y edge=   1528.5 m snapshot  
+9973fa5d               naip       2012   va_m_3807716_ne_18_1_20120511_20120709                   bbox=N geom=N edge=    -94.6 m snapshot   (mosaic tile)
+9973fa5d               naip       2013   md_m_3807708_se_18_1_20130924_20131112                   bbox=Y geom=Y edge=    815.7 m snapshot    <<< within 1 km of edge
+537b90df               naip       2013   co_m_3910507_ne_13_1_20130716_20131119                   bbox=Y geom=Y edge=   2264.1 m selection 
+3003043d               naip       2013   co_m_3910507_ne_13_1_20130716_20131119                   bbox=Y geom=Y edge=   1243.3 m selection 
+f4c63907               naip       2013   nj_m_4007309_sw_18_1_20130802_20130826                   bbox=Y geom=Y edge=    934.4 m snapshot    <<< within 1 km of edge
+f4c63907               naip       2013   ny_m_4007317_nw_18_1_20130622_20130729                   bbox=N geom=N edge=   -271.4 m snapshot   (mosaic tile)
+9973fa5d               naip       2013   md_m_3807716_ne_18_1_20130924_20131112                   bbox=N geom=N edge=    -94.7 m snapshot   (mosaic tile)
+e7fabe0d               naip       2014   ca_m_3712248_ne_10_1_20140606_20141030                   bbox=Y geom=Y edge=   1511.4 m snapshot  
+80eb0a69               naip       2014   ca_m_3712142_se_10_1_20140606_20141030                   bbox=Y geom=Y edge=   2299.2 m selection 
+9973fa5d               naip       2014   va_m_3807708_se_18_1_20140927_20141126                   bbox=Y geom=Y edge=    815.7 m snapshot    <<< within 1 km of edge
+9973fa5d               naip       2014   va_m_3807716_ne_18_1_20140927_20141126                   bbox=N geom=N edge=    -94.7 m snapshot   (mosaic tile)
+9973fa5d               naip       2015   md_m_3807708_se_18_1_20150722_20150914                   bbox=Y geom=Y edge=    815.7 m snapshot    <<< within 1 km of edge
+f4c63907               naip       2015   nj_m_4007309_sw_18_1_20150729_20150909                   bbox=Y geom=Y edge=    934.4 m snapshot    <<< within 1 km of edge
+537b90df               naip       2015   co_m_3910507_ne_13_1_20150912_20151102                   bbox=Y geom=Y edge=   2274.1 m selection 
+3003043d               naip       2015   co_m_3910507_ne_13_1_20150912_20151102                   bbox=Y geom=Y edge=   1253.3 m selection 
+f4c63907               naip       2015   ny_m_4007317_nw_18_.5_20150522_20151109                  bbox=N geom=N edge=   -271.4 m snapshot   (mosaic tile)
+9973fa5d               naip       2015   md_m_3807716_ne_18_1_20150722_20150914                   bbox=N geom=N edge=    -94.7 m snapshot   (mosaic tile)
+9973fa5d               naip       2016   va_m_3807708_se_18_1_20160718_20160928                   bbox=Y geom=Y edge=    815.7 m snapshot    <<< within 1 km of edge
+80eb0a69               naip       2016   ca_m_3712142_se_10_.6_20160527_20161004                  bbox=Y geom=Y edge=   2150.2 m selection 
+e7fabe0d               naip       2016   ca_m_3712248_ne_10_.6_20160529_20161004                  bbox=Y geom=Y edge=   1360.5 m snapshot  
+9973fa5d               naip       2016   va_m_3807716_ne_18_1_20160718_20160928                   bbox=N geom=N edge=    -94.7 m snapshot   (mosaic tile)
+537b90df               naip       2017   co_m_3910507_ne_13_1_20170902_20171017                   bbox=Y geom=Y edge=   2276.1 m selection 
+9973fa5d               naip       2017   md_m_3807708_se_18_1_20170725_20170907                   bbox=Y geom=Y edge=    829.7 m snapshot    <<< within 1 km of edge
+f4c63907               naip       2017   nj_m_4007309_sw_18_1_20170719_20171102                   bbox=Y geom=Y edge=    934.4 m snapshot    <<< within 1 km of edge
+3003043d               naip       2017   co_m_3910507_ne_13_1_20170902_20171017                   bbox=Y geom=Y edge=   1255.3 m selection 
+f4c63907               naip       2017   ny_m_4007317_nw_18_1_20170809_20171207                   bbox=N geom=N edge=   -271.4 m snapshot   (mosaic tile)
+9973fa5d               naip       2017   md_m_3807716_ne_18_1_20170716_20170907                   bbox=N geom=N edge=    -83.7 m snapshot   (mosaic tile)
+80eb0a69               naip       2018   ca_m_3712142_se_10_060_20180725_20190209                 bbox=Y geom=Y edge=   2150.2 m selection 
+9973fa5d               naip       2018   va_m_3807708_se_18_060_20181019_20190212                 bbox=Y geom=Y edge=    815.4 m snapshot    <<< within 1 km of edge
+e7fabe0d               naip       2018   ca_m_3712248_ne_10_060_20180815_20190209                 bbox=Y geom=Y edge=   1360.5 m snapshot  
+9973fa5d               naip       2018   va_m_3807716_ne_18_060_20181019_20190211                 bbox=N geom=N edge=    -96.0 m snapshot   (mosaic tile)
+f4c63907               naip       2019   ny_m_4007309_sw_18_060_20190830_20191209                 bbox=Y geom=Y edge=    834.5 m snapshot    <<< within 1 km of edge
+537b90df               naip       2019   co_m_3910507_ne_13_060_20190919_20191121                 bbox=Y geom=Y edge=   2164.1 m selection 
+3003043d               naip       2019   co_m_3910507_ne_13_060_20190919_20191121                 bbox=Y geom=Y edge=   1143.3 m selection 
+f4c63907               naip       2019   ny_m_4007317_nw_18_060_20190830_20191209                 bbox=N geom=N edge=   -372.4 m snapshot   (mosaic tile)
+80eb0a69               naip       2020   ca_m_3712142_se_10_060_20200525                          bbox=Y geom=Y edge=   2198.3 m selection 
+e7fabe0d               naip       2020   ca_m_3712248_ne_10_060_20200525                          bbox=Y geom=Y edge=   1408.4 m snapshot  
+537b90df               naip       2021   co_m_3910507_ne_13_060_20210813                          bbox=Y geom=Y edge=   2164.1 m selection 
+f4c63907               naip       2021   ny_m_4007309_sw_18_060_20211105                          bbox=Y geom=Y edge=    934.7 m snapshot    <<< within 1 km of edge
+9973fa5d               naip       2021   va_m_3807708_se_18_060_20210910                          bbox=Y geom=Y edge=    815.5 m enriched    <<< within 1 km of edge
+3003043d               naip       2021   co_m_3910507_ne_13_060_20210813                          bbox=Y geom=Y edge=   1143.3 m selection 
+9973fa5d               naip       2021   md_m_3807716_ne_18_060_20210617                          bbox=N geom=N edge=   -195.7 m selection  (mosaic tile)
+f4c63907               naip       2021   ny_m_4007317_nw_18_060_20211105                          bbox=N geom=N edge=   -272.2 m snapshot   (mosaic tile)
+f4c63907               naip       2022   ny_m_4007309_sw_18_060_20220719                          bbox=Y geom=Y edge=    834.5 m snapshot    <<< within 1 km of edge
+e7fabe0d               naip       2022   ca_m_3712248_ne_10_060_20220519                          bbox=Y geom=Y edge=   1408.4 m snapshot  
+80eb0a69               naip       2022   ca_m_3712142_se_10_060_20220519                          bbox=Y geom=Y edge=   2198.3 m selection 
+f4c63907               naip       2022   ny_m_4007317_nw_18_060_20220719                          bbox=N geom=N edge=   -372.4 m snapshot   (mosaic tile)
+3003043d               naip       2023   co_m_3910507_ne_13_030_20230925_20240104                 bbox=Y geom=Y edge=   1242.9 m selection 
+537b90df               naip       2023   co_m_3910507_ne_13_030_20230925_20240104                 bbox=Y geom=Y edge=   2263.7 m selection 
+9973fa5d               naip       2023   va_m_3807708_se_18_060_20231113_20240103                 bbox=Y geom=Y edge=    717.7 m enriched    <<< within 1 km of edge
+f4c63907               naip       2023   nj_m_4007309_sw_18_030_20230820_20231019                 bbox=Y geom=Y edge=    661.9 m snapshot    <<< within 1 km of edge
+9973fa5d               naip       2023   md_m_3807716_ne_18_030_20230901_20231018                 bbox=N geom=N edge=   -367.2 m selection  (mosaic tile)
+f4c63907               sentinel2  2015   S2A_MSIL2A_20150924T160136_R054_T18TWL_20210412T122318   bbox=Y geom=Y edge=  17791.2 m snapshot  
+9973fa5d               sentinel2  2015   S2A_MSIL2A_20151116T161042_R097_T18SUJ_20210413T002521   bbox=Y geom=Y edge=   8610.4 m snapshot  
+3003043d               sentinel2  2015   S2A_MSIL2A_20151216T175252_R098_T13TDE_20210526T043016   bbox=Y geom=Y edge=  24836.7 m snapshot  
+80eb0a69               sentinel2  2015   S2A_MSIL2A_20150918T190346_R113_T10SFG_20210412T110003   bbox=Y geom=Y edge=   8859.8 m selection 
+537b90df               sentinel2  2015   S2A_MSIL2A_20151216T175252_R098_T13TDE_20210526T043016   bbox=Y geom=Y edge=  23815.9 m snapshot  
+e7fabe0d               sentinel2  2015   S2A_MSIL2A_20150918T190346_R113_T10SEG_20210412T105957   bbox=Y geom=Y edge=  22378.5 m snapshot  
+3003043d               sentinel2  2016   S2A_MSIL2A_20161110T175252_R098_T13TDE_20210414T034815   bbox=Y geom=Y edge=   8141.7 m snapshot  
+9973fa5d               sentinel2  2016   S2A_MSIL2A_20161117T160132_R054_T18SUJ_20210414T132401   bbox=Y geom=Y edge=  15081.7 m snapshot  
+f4c63907               sentinel2  2016   S2A_MSIL2A_20161018T160122_R054_T18TWL_20210213T115525   bbox=Y geom=Y edge=  18885.6 m snapshot  
+e7fabe0d               sentinel2  2016   S2A_MSIL2A_20160208T190542_R013_T10SEG_20210530T080954   bbox=Y geom=Y edge=  22378.5 m snapshot  
+80eb0a69               sentinel2  2016   S2A_MSIL2A_20161012T190342_R113_T10SFG_20210213T100137   bbox=Y geom=Y edge=   8859.8 m selection 
+537b90df               sentinel2  2016   S2A_MSIL2A_20161110T175252_R098_T13TDE_20210414T034815   bbox=Y geom=Y edge=   7281.7 m snapshot  
+80eb0a69               sentinel2  2017   S2A_MSIL2A_20171027T190351_R113_T10SFG_20201015T023501   bbox=Y geom=Y edge=   8859.4 m selection 
+9973fa5d               sentinel2  2017   S2B_MSIL2A_20171018T155239_R054_T18SUJ_20201015T004618   bbox=Y geom=Y edge=  15081.7 m snapshot  
+3003043d               sentinel2  2017   S2A_MSIL2A_20171125T175251_R098_T13TDE_20201014T221135   bbox=Y geom=Y edge=   7304.5 m snapshot  
+e7fabe0d               sentinel2  2017   S2A_MSIL2A_20171206T190341_R113_T10SEG_20201014T121854   bbox=Y geom=Y edge=  22378.5 m snapshot  
+537b90df               sentinel2  2017   S2A_MSIL2A_20171125T175251_R098_T13TDE_20201014T221135   bbox=Y geom=Y edge=   7311.0 m snapshot  
+f4c63907               sentinel2  2017   S2B_MSIL2A_20171018T155239_R054_T18TWL_20201015T004619   bbox=Y geom=Y edge=  19070.3 m snapshot  
+3003043d               sentinel2  2018   S2A_MSIL2A_20181220T174731_R098_T13TDE_20201008T113900   bbox=Y geom=Y edge=   7207.0 m snapshot  
+80eb0a69               sentinel2  2018   S2B_MSIL2A_20181017T185359_R113_T10SFG_20201009T123851   bbox=Y geom=Y edge=   8859.4 m selection 
+9973fa5d               sentinel2  2018   S2B_MSIL2A_20181023T155319_R054_T18SUJ_20201009T144004   bbox=Y geom=Y edge=  15081.7 m snapshot  
+f4c63907               sentinel2  2018   S2A_MSIL2A_20181107T155441_R054_T18TWL_20201008T163546   bbox=Y geom=Y edge=  17594.8 m snapshot  
+e7fabe0d               sentinel2  2018   S2B_MSIL2A_20181106T185559_R113_T10SEG_20201008T162809   bbox=Y geom=Y edge=  22378.4 m snapshot  
+537b90df               sentinel2  2018   S2A_MSIL2A_20181220T174731_R098_T13TDE_20201008T113900   bbox=Y geom=Y edge=   7746.1 m snapshot  
+537b90df               sentinel2  2019   S2A_MSIL2A_20191006T174211_R098_T13TDE_20201003T231313   bbox=Y geom=Y edge=   8797.4 m snapshot  
+9973fa5d               sentinel2  2019   S2B_MSIL2A_20191028T155259_R054_T18SUJ_20201004T071108   bbox=Y geom=Y edge=  15081.7 m snapshot  
+e7fabe0d               sentinel2  2019   S2B_MSIL2A_20191022T185429_R113_T10SEG_20201004T051307   bbox=Y geom=Y edge=  22378.4 m snapshot  
+f4c63907               sentinel2  2019   S2A_MSIL2A_20191102T155421_R054_T18TWL_20201003T121539   bbox=Y geom=Y edge=  16876.8 m snapshot  
+80eb0a69               sentinel2  2019   S2A_MSIL2A_20191116T185651_R113_T10SFG_20201003T170404   bbox=Y geom=Y edge=   8859.4 m selection 
+3003043d               sentinel2  2019   S2A_MSIL2A_20191006T174211_R098_T13TDE_20201003T231313   bbox=Y geom=Y edge=   8270.5 m snapshot  
+537b90df               sentinel2  2020   S2A_MSIL2A_20201119T174631_R098_T13TDE_20201121T002921   bbox=Y geom=Y edge=   9288.5 m snapshot  
+80eb0a69               sentinel2  2020   S2B_MSIL2A_20201105T185559_R113_T10SFG_20201106T221420   bbox=Y geom=Y edge=   8859.4 m selection 
+e7fabe0d               sentinel2  2020   S2B_MSIL2A_20201016T185359_R113_T10SEG_20201027T134050   bbox=Y geom=Y edge=  22378.4 m snapshot  
+3003043d               sentinel2  2020   S2A_MSIL2A_20201119T174631_R098_T13TDE_20201121T002921   bbox=Y geom=Y edge=   8746.9 m snapshot  
+9973fa5d               sentinel2  2020   S2A_MSIL2A_20201129T160621_R097_T18SUJ_20201130T031640   bbox=Y geom=Y edge=   7971.8 m snapshot  
+f4c63907               sentinel2  2020   S2B_MSIL2A_20201108T154449_R011_T18TWL_20201109T203545   bbox=Y geom=Y edge=  21681.1 m snapshot  
+80eb0a69               sentinel2  2021   S2B_MSIL2A_20211001T185119_R113_T10SFG_20211002T152921   bbox=Y geom=Y edge=   8857.7 m selection 
+3003043d               sentinel2  2021   S2A_MSIL2A_20211204T174721_R098_T13TDE_20211205T043411   bbox=Y geom=Y edge=   8092.3 m snapshot  
+f4c63907               sentinel2  2021   S2A_MSIL2A_20211019T154251_R011_T18TWL_20211020T213419   bbox=Y geom=Y edge=  21681.1 m snapshot  
+e7fabe0d               sentinel2  2021   S2B_MSIL2A_20211210T185759_R113_T10SEG_20211211T014508   bbox=Y geom=Y edge=  22378.4 m snapshot  
+537b90df               sentinel2  2021   S2A_MSIL2A_20211204T174721_R098_T13TDE_20211205T043411   bbox=Y geom=Y edge=   8630.9 m snapshot  
+9973fa5d               sentinel2  2021   S2B_MSIL2A_20211109T160459_R097_T18SUJ_20211110T013502   bbox=Y geom=Y edge=   7477.3 m snapshot  
+9973fa5d               sentinel2  2022   S2B_MSIL2A_20221022T155309_R054_T18SUJ_20221023T135352   bbox=Y geom=Y edge=  15081.7 m snapshot  
+537b90df               sentinel2  2022   S2B_MSIL2A_20221028T175439_R141_T13TDE_20221029T063629   bbox=Y geom=Y edge=  23816.4 m snapshot  
+3003043d               sentinel2  2022   S2B_MSIL2A_20221028T175439_R141_T13TDE_20221029T063629   bbox=Y geom=Y edge=  24837.2 m snapshot  
+80eb0a69               sentinel2  2022   S2B_MSIL2A_20221115T185639_R113_T10SFG_20221116T124612   bbox=Y geom=Y edge=   8859.4 m selection 
+e7fabe0d               sentinel2  2022   S2B_MSIL2A_20220906T184919_R113_T10SEG_20220907T153812   bbox=Y geom=Y edge=  22378.4 m snapshot  
+f4c63907               sentinel2  2022   S2A_MSIL2A_20221126T155611_R054_T18TWL_20221201T134056   bbox=Y geom=Y edge=  17713.3 m snapshot  
+f4c63907               sentinel2  2023   S2B_MSIL2A_20231116T155529_R054_T18TWL_20241010T180337   bbox=Y geom=Y edge=  17257.8 m snapshot  
+537b90df               sentinel2  2023   S2A_MSIL2A_20231217T175741_R141_T13TDE_20231220T075806   bbox=Y geom=Y edge=  23815.9 m snapshot  
+e7fabe0d               sentinel2  2023   S2B_MSIL2A_20231120T185659_R113_T10SEG_20240927T053625   bbox=Y geom=Y edge=  22378.5 m snapshot  
+80eb0a69               sentinel2  2023   S2B_MSIL2A_20231120T185659_R113_T10SFG_20240927T053625   bbox=Y geom=Y edge=   8859.8 m selection 
+9973fa5d               sentinel2  2023   S2B_MSIL2A_20231116T155529_R054_T18SUJ_20241010T180337   bbox=Y geom=Y edge=  15081.7 m snapshot  
+3003043d               sentinel2  2023   S2A_MSIL2A_20231217T175741_R141_T13TDE_20231220T075806   bbox=Y geom=Y edge=  24836.7 m snapshot  
+9973fa5d               sentinel2  2024   S2B_MSIL2A_20241011T155109_R054_T18SUJ_20241011T200805   bbox=Y geom=Y edge=  15081.7 m snapshot  
+f4c63907               sentinel2  2024   S2B_MSIL2A_20241018T154159_R011_T18TWL_20241018T194856   bbox=Y geom=Y edge=  21681.7 m snapshot  
+e7fabe0d               sentinel2  2024   S2B_MSIL2A_20241104T185449_R113_T10SEG_20241104T205941   bbox=Y geom=Y edge=  22378.5 m snapshot  
+537b90df               sentinel2  2024   S2B_MSIL2A_20241206T175639_R141_T13TDE_20241206T211053   bbox=Y geom=Y edge=  23815.9 m snapshot  
+80eb0a69               sentinel2  2024   S2B_MSIL2A_20241204T185659_R113_T10SFG_20241204T204216   bbox=Y geom=Y edge=   8859.8 m selection 
+3003043d               sentinel2  2024   S2B_MSIL2A_20241206T175639_R141_T13TDE_20241206T211053   bbox=Y geom=Y edge=  24836.7 m snapshot  
+e7fabe0d               sentinel2  2025   S2B_MSIL2A_20251229T185709_R113_T10SEG_20251229T224200   bbox=Y geom=Y edge=  22378.5 m snapshot  
+3003043d               sentinel2  2025   S2B_MSIL2A_20251022T175309_R141_T13TDE_20251022T214422   bbox=Y geom=Y edge=  24836.7 m snapshot  
+80eb0a69               sentinel2  2025   S2C_MSIL2A_20251005T185251_R113_T10SFG_20251005T221214   bbox=Y geom=Y edge=   8859.8 m selection 
+537b90df               sentinel2  2025   S2B_MSIL2A_20251022T175309_R141_T13TDE_20251022T214422   bbox=Y geom=Y edge=  23815.9 m snapshot  
+9973fa5d               sentinel2  2025   S2B_MSIL2A_20251016T155139_R054_T18SUJ_20251016T210325   bbox=Y geom=Y edge=  15081.7 m snapshot  
+f4c63907               sentinel2  2025   S2B_MSIL2A_20251006T155029_R054_T18TWL_20251006T194559   bbox=Y geom=Y edge=  17652.9 m snapshot  
+e7fabe0d               sentinel2  2026   S2A_MSIL2A_20260714T185831_R113_T10SEG_20260715T024413   bbox=Y geom=Y edge=  22378.5 m snapshot  
+f4c63907               sentinel2  2026   S2B_MSIL2A_20260812T154809_R054_T18TWL_20260812T194239   bbox=Y geom=Y edge=  17853.8 m snapshot  
+80eb0a69               sentinel2  2026   S2B_MSIL2A_20260826T184919_R113_T10SFG_20260826T223721   bbox=Y geom=Y edge=   8859.8 m selection 
+9973fa5d               sentinel2  2026   S2A_MSIL2A_20260531T155711_R054_T18SUJ_20260601T000401   bbox=Y geom=Y edge=  15081.7 m snapshot  
+537b90df               sentinel2  2026   S2C_MSIL2A_20260820T173901_R098_T13TDE_20260820T223509   bbox=Y geom=Y edge=   8305.8 m snapshot  
+3003043d               sentinel2  2026   S2C_MSIL2A_20260820T173901_R098_T13TDE_20260820T223509   bbox=Y geom=Y edge=   7770.3 m snapshot  
+
+# minimum edge distance per parcel and source
+3003043d               landsat    min edge   18490.9 m   [1997 LT05_L2SP_033032_19971016_02_T1]
+3003043d               naip       min edge    1143.3 m   [2019 co_m_3910507_ne_13_060_20190919_20191121]
+3003043d               sentinel2  min edge    7207.0 m   [2018 S2A_MSIL2A_20181220T174731_R098_T13TDE_20201008T113900]
+537b90df               landsat    min edge   19009.2 m   [1997 LT05_L2SP_033032_19971016_02_T1]
+537b90df               naip       min edge    2164.1 m   [2019 co_m_3910507_ne_13_060_20190919_20191121]
+537b90df               sentinel2  min edge    7281.7 m   [2016 S2A_MSIL2A_20161110T175252_R098_T13TDE_20210414T034815]
+80eb0a69               landsat    min edge     925.8 m   [1989 LT05_L2SP_043034_19890813_02_T1]
+80eb0a69               naip       min edge    2150.2 m   [2016 ca_m_3712142_se_10_.6_20160527_20161004]
+80eb0a69               sentinel2  min edge    8857.7 m   [2021 S2B_MSIL2A_20211001T185119_R113_T10SFG_20211002T152921]
+9973fa5d               landsat    min edge   30806.1 m   [2013 LC08_L2SP_015033_20130407_02_T1]
+9973fa5d               naip       min edge    -367.2 m   [2023 md_m_3807716_ne_18_030_20230901_20231018]
+9973fa5d               sentinel2  min edge    7477.3 m   [2021 S2B_MSIL2A_20211109T160459_R097_T18SUJ_20211110T013502]
+e7fabe0d               landsat    min edge   69694.1 m   [1986 LT05_L2SP_044034_19861031_02_T1]
+e7fabe0d               naip       min edge    1360.5 m   [2016 ca_m_3712248_ne_10_.6_20160529_20161004]
+e7fabe0d               sentinel2  min edge   22378.4 m   [2021 S2B_MSIL2A_20211210T185759_R113_T10SEG_20211211T014508]
+f4c63907               landsat    min edge      11.5 m   [2017 LC08_L2SP_014031_20171018_02_T1]
+f4c63907               naip       min edge    -372.4 m   [2019 ny_m_4007317_nw_18_060_20190830_20191209]
+f4c63907               sentinel2  min edge   16876.8 m   [2019 S2A_MSIL2A_20191102T155421_R054_T18TWL_20201003T121539]
+green-valley-ranch     landsat    min edge    4066.8 m   [2023 LC09_L2SP_033033_20231016_02_T1]
+green-valley-ranch     naip       min edge    2849.3 m   [2019 co_m_3910410_se_13_060_20190912_20191121]
+green-valley-ranch     sentinel2  min edge   13588.7 m   [2024 S2B_MSIL2A_20241014T174209_R098_T13TEE_20241014T220709]
+hudson-yards           landsat    min edge   16183.1 m   [1996 LT05_L2SP_013032_19960830_02_T1]
+hudson-yards           naip       min edge    -405.2 m   [2023 nj_m_4007424_ne_18_030_20230820_20231019]
+hudson-yards           sentinel2  min edge   20371.1 m   [2019 S2A_MSIL2A_20191102T155421_R054_T18TWL_20201003T121539]
+navy-yard-capitol-riverfront landsat    min edge   32866.7 m   [2013 LC08_L2SP_015033_20130407_02_T1]
+navy-yard-capitol-riverfront naip       min edge     -16.5 m   [2023 md_m_3807601_sw_18_030_20230901_20231018]
+navy-yard-capitol-riverfront sentinel2  min edge    5417.2 m   [2021 S2B_MSIL2A_20211109T160459_R097_T18SUJ_20211110T013502]
+rino-art-district      landsat    min edge     528.8 m   [2004 LT05_L2SP_033033_20040917_02_T1]
+rino-art-district      naip       min edge    1617.0 m   [2019 co_m_3910409_sw_13_060_20190803_20191121]
+rino-art-district      sentinel2  min edge    1436.9 m   [2021 S2A_MSIL2A_20211227T175751_R141_T13TEE_20211228T061151]
+rodanthe-outer-banks   landsat    min edge     644.5 m   [2013 LC08_L2SP_013036_20131219_02_T1]
+rodanthe-outer-banks   naip       min edge    2675.3 m   [2022 nc_m_3507529_nw_18_060_20221007]
+rodanthe-outer-banks   sentinel2  min edge   47765.3 m   [2018 S2A_MSIL2A_20181005T154111_R011_T18SVE_20201009T082116]
+stapleton-central-park landsat    min edge     251.6 m   [2006 LT05_L2SP_034032_20061203_02_T1]
+stapleton-central-park naip       min edge    1612.2 m   [2019 co_m_3910409_se_13_060_20190803_20191121]
+stapleton-central-park sentinel2  min edge     460.2 m   [2023 S2A_MSIL2A_20231217T175741_R141_T13TDE_20231220T075806]

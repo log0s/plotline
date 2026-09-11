@@ -1,0 +1,42 @@
+total scene references measured: 794  (primaries 751, mosaic tiles 43)
+bbox=Y geom=N overall: 1   among PRIMARIES: 0
+primaries not containing the point: 0
+mosaic tiles not containing the point: 19 of 43
+
+parcel                   source       n  min edge m  <1km  <200m  worst
+3003043d                 landsat     43     18490.9     0      0  1997 LT05_L2SP_033032_19971016_02_T1
+3003043d                 naip         7      1143.3     0      0  2019 co_m_3910507_ne_13_060_20190919_20191121
+3003043d                 sentinel2   12      7207.0     0      0  2018 S2A_MSIL2A_20181220T174731_R098_T13TDE_20201008T113900
+537b90df                 landsat     43     19009.2     0      0  1997 LT05_L2SP_033032_19971016_02_T1
+537b90df                 naip         7      2164.1     0      0  2019 co_m_3910507_ne_13_060_20190919_20191121
+537b90df                 sentinel2   12      7281.7     0      0  2016 S2A_MSIL2A_20161110T175252_R098_T13TDE_20210414T034815
+80eb0a69                 landsat     43       925.8     1      0  1989 LT05_L2SP_043034_19890813_02_T1
+80eb0a69                 naip         6      2150.2     0      0  2016 ca_m_3712142_se_10_.6_20160527_20161004
+80eb0a69                 sentinel2   12      8857.7     0      0  2021 S2B_MSIL2A_20211001T185119_R113_T10SFG_20211002T152921
+9973fa5d                 landsat     43     30806.1     0      0  2013 LC08_L2SP_015033_20130407_02_T1
+9973fa5d                 naip        10       717.7    10      0  2023 va_m_3807708_se_18_060_20231113_20240103
+9973fa5d                 sentinel2   12      7477.3     0      0  2021 S2B_MSIL2A_20211109T160459_R097_T18SUJ_20211110T013502
+e7fabe0d                 landsat     43     69694.1     0      0  1986 LT05_L2SP_044034_19861031_02_T1
+e7fabe0d                 naip         6      1360.5     0      0  2016 ca_m_3712248_ne_10_.6_20160529_20161004
+e7fabe0d                 sentinel2   12     22378.4     0      0  2018 S2B_MSIL2A_20181106T185559_R113_T10SEG_20201008T162809
+f4c63907                 landsat     43        11.5     2      2  2017 LC08_L2SP_014031_20171018_02_T1
+f4c63907                 naip         9       661.9     9      0  2023 nj_m_4007309_sw_18_030_20230820_20231019
+f4c63907                 sentinel2   12     16876.8     0      0  2019 S2A_MSIL2A_20191102T155421_R054_T18TWL_20201003T121539
+green-valley-ranch       landsat     43      4066.8     0      0  2023 LC09_L2SP_033033_20231016_02_T1
+green-valley-ranch       naip         7      2849.3     0      0  2019 co_m_3910410_se_13_060_20190912_20191121
+green-valley-ranch       sentinel2   12     13588.7     0      0  2015 S2A_MSIL2A_20151216T175252_R098_T13TEE_20210526T043020
+hudson-yards             landsat     43     16183.1     0      0  1996 LT05_L2SP_013032_19960830_02_T1
+hudson-yards             naip         9       124.2     9      1  2023 nj_m_4007309_sw_18_030_20230820_20231019
+hudson-yards             sentinel2   12     20371.1     0      0  2019 S2A_MSIL2A_20191102T155421_R054_T18TWL_20201003T121539
+navy-yard-capitol-riverfront landsat     43     32866.7     0      0  2013 LC08_L2SP_015033_20130407_02_T1
+navy-yard-capitol-riverfront naip        10       245.4    10      0  2023 va_m_3807716_ne_18_060_20231104_20240103
+navy-yard-capitol-riverfront sentinel2   12      5417.2     0      0  2021 S2B_MSIL2A_20211109T160459_R097_T18SUJ_20211110T013502
+rino-art-district        landsat     43       528.8     2      0  2004 LT05_L2SP_033033_20040917_02_T1
+rino-art-district        naip         7      1617.0     0      0  2019 co_m_3910409_sw_13_060_20190803_20191121
+rino-art-district        sentinel2   12      1436.9     0      0  2018 S2B_MSIL2A_20181218T175739_R141_T13TEE_20201008T111706
+rodanthe-outer-banks     landsat     43       644.5     2      0  2013 LC08_L2SP_013036_20131219_02_T1
+rodanthe-outer-banks     naip         6      2675.3     0      0  2022 nc_m_3507529_nw_18_060_20221007
+rodanthe-outer-banks     sentinel2   12     47765.3     0      0  2015 S2A_MSIL2A_20151021T155022_R011_T18SVE_20210412T184030
+stapleton-central-park   landsat     43       251.6     2      0  2006 LT05_L2SP_034032_20061203_02_T1
+stapleton-central-park   naip         7      1612.2     0      0  2019 co_m_3910409_se_13_060_20190803_20191121
+stapleton-central-park   sentinel2   12       460.2     2      0  2023 S2A_MSIL2A_20231217T175741_R141_T13TDE_20231220T075806

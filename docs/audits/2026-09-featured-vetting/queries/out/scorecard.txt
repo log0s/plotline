@@ -1,0 +1,618 @@
+Pager usage is off.
+CREATE VIEW
+CREATE VIEW
+== 1. the served request per parcel
+         label         |               request                |  status  | origin |          created_at           |         completed_at          | secs  | err 
+-----------------------+--------------------------------------+----------+--------+-------------------------------+-------------------------------+-------+-----
+ 1 rino-art-district   | 07438874-6b5f-4b6f-b861-ed38a72dc654 | complete | heal   | 2026-09-11 22:17:04.326651+00 | 2026-09-11 22:18:09.05764+00  |  64.7 | 
+ 10 wharf              | eabfc5bd-44cc-47e6-8881-69e53c9eb785 | complete | user   | 2026-09-11 22:15:55.974382+00 | 2026-09-11 22:17:02.527988+00 |  66.6 | 
+ 11 cornell-tech       | ad4e35e8-a7b5-4d4e-8779-f81fce4f0861 | complete | user   | 2026-09-11 22:16:36.201596+00 | 2026-09-11 22:17:26.424982+00 |  50.2 | 
+ 12 silver-creek       | fb926c3f-c96a-41ff-9881-f51ab32f74eb | complete | user   | 2026-09-11 22:16:04.942907+00 | 2026-09-11 22:17:12.187303+00 |  67.2 | 
+ 2 hudson-yards        | 63423ca1-6187-4420-b6ea-5cc34e6b7fe2 | complete | heal   | 2026-09-11 22:17:04.350449+00 | 2026-09-11 22:19:08.199083+00 | 123.8 | 
+ 3 green-valley-ranch  | e0490576-0b66-41e2-83d2-0a475a3b1236 | complete | heal   | 2026-09-11 22:17:04.333117+00 | 2026-09-11 22:18:11.405111+00 |  67.1 | 
+ 4 navy-yard           | 4011348c-14e9-4b8b-8d84-d584aa1f9db0 | complete | heal   | 2026-09-11 22:17:04.338743+00 | 2026-09-11 22:18:51.584004+00 | 107.2 | 
+ 5 rodanthe            | 25efb97d-f2ba-46aa-9c96-8b4f35799b6e | complete | heal   | 2026-09-11 22:17:04.34489+00  | 2026-09-11 22:18:25.748045+00 |  81.4 | 
+ 6 stapleton           | 03c5240d-6ac8-40bb-bc6e-07b377205ca0 | complete | heal   | 2026-09-11 22:17:04.252047+00 | 2026-09-11 22:17:29.008398+00 |  24.8 | 
+ 7 marshall-sagamore   | 1d521715-67f1-4887-8857-b2b88de818c7 | complete | user   | 2026-09-11 22:15:34.799347+00 | 2026-09-11 22:16:19.005402+00 |  44.2 | 
+ 8 marshall-louisville | f9397be3-caae-481d-9093-85bbf9484c16 | complete | user   | 2026-09-11 22:15:44.17476+00  | 2026-09-11 22:16:59.087962+00 |  74.9 | 
+ 9 apple-park          | 388c36bd-3b1c-40d3-8097-c476e4f8a8f4 | complete | user   | 2026-09-11 22:16:32.800427+00 | 2026-09-11 22:17:15.229764+00 |  42.4 | 
+(12 rows)
+
+== 2. task rows on the served request
+         label         |  source   |  status  | items_found | queries_run | queries_failed | rows_returned | rows_matched |  coverage   |                                  err                                   
+-----------------------+-----------+----------+-------------+-------------+----------------+---------------+--------------+-------------+------------------------------------------------------------------------
+ 1 rino-art-district   | census    | complete |           8 |             |                |               |              |             | 
+ 1 rino-art-district   | landsat   | complete |          43 |             |                |               |              |             | 
+ 1 rino-art-district   | naip      | complete |           7 |             |                |               |              |             | 
+ 1 rino-art-district   | property  | complete |          14 |           2 |              0 |            14 |           13 | covered     | 
+ 1 rino-art-district   | sentinel2 | complete |          12 |             |                |               |              |             | 
+ 1 rino-art-district   | usgs_topo | complete |           7 |             |                |               |              |             | 
+ 10 wharf              | census    | complete |           7 |             |                |               |              |             | 
+ 10 wharf              | landsat   | complete |          43 |             |                |               |              |             | 
+ 10 wharf              | naip      | complete |          10 |             |                |               |              |             | 
+ 10 wharf              | property  | complete |           6 |           8 |              0 |             6 |            6 | covered     | 
+ 10 wharf              | sentinel2 | complete |          12 |             |                |               |              |             | 
+ 10 wharf              | usgs_topo | complete |           6 |             |                |               |              |             | 
+ 11 cornell-tech       | census    | complete |           7 |             |                |               |              |             | 
+ 11 cornell-tech       | landsat   | complete |          43 |             |                |               |              |             | 
+ 11 cornell-tech       | naip      | complete |           9 |             |                |               |              |             | 
+ 11 cornell-tech       | property  | complete |           7 |           3 |              0 |            29 |           29 | covered     | 
+ 11 cornell-tech       | sentinel2 | complete |          12 |             |                |               |              |             | 
+ 11 cornell-tech       | usgs_topo | complete |           8 |             |                |               |              |             | 
+ 12 silver-creek       | census    | complete |           7 |             |                |               |              |             | 
+ 12 silver-creek       | landsat   | complete |          43 |             |                |               |              |             | 
+ 12 silver-creek       | naip      | complete |           6 |             |                |               |              |             | 
+ 12 silver-creek       | property  | complete |           0 |           3 |              0 |             4 |            0 | covered     | 
+ 12 silver-creek       | sentinel2 | complete |          12 |             |                |               |              |             | 
+ 12 silver-creek       | usgs_topo | complete |           6 |             |                |               |              |             | 
+ 2 hudson-yards        | census    | complete |           8 |             |                |               |              |             | 
+ 2 hudson-yards        | landsat   | complete |          43 |             |                |               |              |             | 
+ 2 hudson-yards        | naip      | complete |           9 |             |                |               |              |             | 
+ 2 hudson-yards        | property  | complete |          40 |           3 |              0 |           100 |          100 | covered     | 
+ 2 hudson-yards        | sentinel2 | complete |          12 |             |                |               |              |             | 
+ 2 hudson-yards        | usgs_topo | complete |           9 |             |                |               |              |             | 
+ 3 green-valley-ranch  | census    | complete |           7 |             |                |               |              |             | 
+ 3 green-valley-ranch  | landsat   | complete |          43 |             |                |               |              |             | 
+ 3 green-valley-ranch  | naip      | complete |           7 |             |                |               |              |             | 
+ 3 green-valley-ranch  | property  | complete |          10 |           2 |              0 |            10 |           10 | covered     | 
+ 3 green-valley-ranch  | sentinel2 | complete |          12 |             |                |               |              |             | 
+ 3 green-valley-ranch  | usgs_topo | complete |           7 |             |                |               |              |             | 
+ 4 navy-yard           | census    | complete |           8 |             |                |               |              |             | 
+ 4 navy-yard           | landsat   | complete |          43 |             |                |               |              |             | 
+ 4 navy-yard           | naip      | complete |          10 |             |                |               |              |             | 
+ 4 navy-yard           | property  | complete |         128 |           8 |              0 |           181 |           53 | covered     | 
+ 4 navy-yard           | sentinel2 | complete |          12 |             |                |               |              |             | 
+ 4 navy-yard           | usgs_topo | complete |           7 |             |                |               |              |             | 
+ 5 rodanthe            | census    | complete |           7 |             |                |               |              |             | 
+ 5 rodanthe            | landsat   | complete |          43 |             |                |               |              |             | 
+ 5 rodanthe            | naip      | complete |           6 |             |                |               |              |             | 
+ 5 rodanthe            | property  | skipped  |             |           0 |              0 |               |              | no_adapter  | Property data not yet available for Dare County
+ 5 rodanthe            | sentinel2 | complete |          12 |             |                |               |              |             | 
+ 5 rodanthe            | usgs_topo | complete |           3 |             |                |               |              |             | 
+ 6 stapleton           | census    | complete |           7 |             |                |               |              |             | 
+ 6 stapleton           | landsat   | complete |          43 |             |                |               |              |             | 
+ 6 stapleton           | naip      | complete |           7 |             |                |               |              |             | 
+ 6 stapleton           | property  | complete |          12 |           2 |              0 |            12 |           12 | covered     | 
+ 6 stapleton           | sentinel2 | complete |          12 |             |                |               |              |             | 
+ 6 stapleton           | usgs_topo | complete |           7 |             |                |               |              |             | 
+ 7 marshall-sagamore   | census    | complete |           7 |             |                |               |              |             | 
+ 7 marshall-sagamore   | landsat   | complete |          43 |             |                |               |              |             | 
+ 7 marshall-sagamore   | naip      | complete |           7 |             |                |               |              |             | 
+ 7 marshall-sagamore   | property  | skipped  |             |           0 |              0 |               |              | no_adapter  | Property data not yet available for Boulder County
+ 7 marshall-sagamore   | sentinel2 | complete |          12 |             |                |               |              |             | 
+ 7 marshall-sagamore   | usgs_topo | complete |           5 |             |                |               |              |             | 
+ 8 marshall-louisville | census    | complete |           9 |             |                |               |              |             | 
+ 8 marshall-louisville | landsat   | complete |          43 |             |                |               |              |             | 
+ 8 marshall-louisville | naip      | complete |           7 |             |                |               |              |             | 
+ 8 marshall-louisville | property  | skipped  |             |           0 |              0 |               |              | no_adapter  | Property data not yet available for Boulder County
+ 8 marshall-louisville | sentinel2 | complete |          12 |             |                |               |              |             | 
+ 8 marshall-louisville | usgs_topo | complete |           5 |             |                |               |              |             | 
+ 9 apple-park          | census    | complete |           9 |             |                |               |              |             | 
+ 9 apple-park          | landsat   | complete |          43 |             |                |               |              |             | 
+ 9 apple-park          | naip      | complete |           6 |             |                |               |              |             | 
+ 9 apple-park          | property  | skipped  |             |           0 |              0 |               |              | not_covered | Santa Clara County's records don't cover Cupertino — the city keeps it
+ 9 apple-park          | sentinel2 | complete |          12 |             |                |               |              |             | 
+ 9 apple-park          | usgs_topo | complete |           9 |             |                |               |              |             | 
+(72 rows)
+
+== 3. served imagery rows per source (parcel_scenes)
+         label         |  source   | n  |                                                                                                         groups                                                                                                         
+-----------------------+-----------+----+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 1 rino-art-district   | landsat   | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 1 rino-art-district   | naip      |  7 | 2011,2013,2015,2017,2019,2021,2023
+ 1 rino-art-district   | sentinel2 | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 1 rino-art-district   | usgs_topo |  7 | 1890s,1930s,1940s,1950s,1960s,1980s,1990s
+ 10 wharf              | landsat   | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 10 wharf              | naip      | 10 | 2011,2012,2013,2014,2015,2016,2017,2018,2021,2023
+ 10 wharf              | sentinel2 | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 10 wharf              | usgs_topo |  6 | 1890s,1900s,1940s,1950s,1960s,1980s
+ 11 cornell-tech       | landsat   | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 11 cornell-tech       | naip      |  9 | 2010,2011,2013,2015,2017,2019,2021,2022,2023
+ 11 cornell-tech       | sentinel2 | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 11 cornell-tech       | usgs_topo |  8 | 1880s,1890s,1900s,1940s,1950s,1960s,1980s,1990s
+ 12 silver-creek       | landsat   | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 12 silver-creek       | naip      |  6 | 2012,2014,2016,2018,2020,2022
+ 12 silver-creek       | sentinel2 | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 12 silver-creek       | usgs_topo |  6 | 1880s,1890s,1940s,1950s,1960s,1970s
+ 2 hudson-yards        | landsat   | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 2 hudson-yards        | naip      |  9 | 2010,2011,2013,2015,2017,2019,2021,2022,2023
+ 2 hudson-yards        | sentinel2 | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 2 hudson-yards        | usgs_topo |  9 | 1880s,1890s,1900s,1930s,1940s,1950s,1960s,1980s,1990s
+ 3 green-valley-ranch  | landsat   | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 3 green-valley-ranch  | naip      |  7 | 2011,2013,2015,2017,2019,2021,2023
+ 3 green-valley-ranch  | sentinel2 | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 3 green-valley-ranch  | usgs_topo |  7 | 1890s,1930s,1940s,1950s,1960s,1970s,1980s
+ 4 navy-yard           | landsat   | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 4 navy-yard           | naip      | 10 | 2011,2012,2013,2014,2015,2016,2017,2018,2021,2023
+ 4 navy-yard           | sentinel2 | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 4 navy-yard           | usgs_topo |  7 | 1890s,1900s,1930s,1940s,1950s,1960s,1980s
+ 5 rodanthe            | landsat   | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 5 rodanthe            | naip      |  6 | 2012,2014,2016,2018,2020,2022
+ 5 rodanthe            | sentinel2 | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 5 rodanthe            | usgs_topo |  3 | 1950s,1960s,1980s
+ 6 stapleton           | landsat   | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 6 stapleton           | naip      |  7 | 2011,2013,2015,2017,2019,2021,2023
+ 6 stapleton           | sentinel2 | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 6 stapleton           | usgs_topo |  7 | 1890s,1930s,1940s,1950s,1960s,1970s,1980s
+ 7 marshall-sagamore   | landsat   | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 7 marshall-sagamore   | naip      |  7 | 2011,2013,2015,2017,2019,2021,2023
+ 7 marshall-sagamore   | sentinel2 | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 7 marshall-sagamore   | usgs_topo |  5 | 1890s,1940s,1950s,1960s,1980s
+ 8 marshall-louisville | landsat   | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 8 marshall-louisville | naip      |  7 | 2011,2013,2015,2017,2019,2021,2023
+ 8 marshall-louisville | sentinel2 | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 8 marshall-louisville | usgs_topo |  5 | 1890s,1940s,1950s,1960s,1980s
+ 9 apple-park          | landsat   | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 9 apple-park          | naip      |  6 | 2012,2014,2016,2018,2020,2022
+ 9 apple-park          | sentinel2 | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 9 apple-park          | usgs_topo |  9 | 1880s,1890s,1900s,1940s,1950s,1960s,1970s,1980s,1990s
+(48 rows)
+
+== 4. census rows per dataset, with tract lineage
+         label         |  dataset  |                                             year_at_tract                                             
+-----------------------+-----------+-------------------------------------------------------------------------------------------------------
+ 1 rino-art-district   | acs5      | 2009@08031001600 2012@08031001600 2015@08031001600 2018@08031001600 2021@08031001601 2023@08031001601
+ 1 rino-art-district   | decennial | 2010@08031001600 2020@08031001601
+ 10 wharf              | acs5      | 2012@11001010200 2015@11001010200 2018@11001010200 2021@11001010202 2023@11001010202
+ 10 wharf              | decennial | 2010@11001010200 2020@11001010202
+ 11 cornell-tech       | acs5      | 2012@36061023801 2015@36061023801 2018@36061023801 2021@36061023804 2023@36061023804
+ 11 cornell-tech       | decennial | 2010@36061023801 2020@36061023804
+ 12 silver-creek       | acs5      | 2012@06085503334 2015@06085503334 2018@06085503334 2021@06085503338 2023@06085503338
+ 12 silver-creek       | decennial | 2010@06085503334 2020@06085503338
+ 2 hudson-yards        | acs5      | 2009@36061009900 2012@36061009900 2015@36061009900 2018@36061009900 2021@36061009903 2023@36061009903
+ 2 hudson-yards        | decennial | 2010@36061009900 2020@36061009903
+ 3 green-valley-ranch  | acs5      | 2012@08031008388 2015@08031008388 2018@08031008388 2021@08031008388 2023@08031008388
+ 3 green-valley-ranch  | decennial | 2010@08031008388 2020@08031008388
+ 4 navy-yard           | acs5      | 2009@11001007200 2012@11001007200 2015@11001007200 2018@11001007200 2021@11001007201 2023@11001007201
+ 4 navy-yard           | decennial | 2010@11001007200 2020@11001007201
+ 5 rodanthe            | acs5      | 2012@37055970502 2015@37055970502 2018@37055970502 2021@37055970502 2023@37055970502
+ 5 rodanthe            | decennial | 2010@37055970502 2020@37055970502
+ 6 stapleton           | acs5      | 2012@08031004107 2015@08031004107 2018@08031004107 2021@08031004111 2023@08031004111
+ 6 stapleton           | decennial | 2010@08031004107 2020@08031004111
+ 7 marshall-sagamore   | acs5      | 2012@08013060600 2015@08013060600 2018@08013060600 2021@08013060602 2023@08013060602
+ 7 marshall-sagamore   | decennial | 2010@08013060600 2020@08013060602
+ 8 marshall-louisville | acs5      | 2009@08013013004 2012@08013013004 2015@08013013004 2018@08013013004 2021@08013013004 2023@08013013004
+ 8 marshall-louisville | decennial | 2000@08013013004 2010@08013013004 2020@08013013004
+ 9 apple-park          | acs5      | 2009@06085508102 2012@06085508102 2015@06085508102 2018@06085508102 2021@06085508102 2023@06085508102
+ 9 apple-park          | decennial | 2000@06085508102 2010@06085508102 2020@06085508102
+(24 rows)
+
+== 5. property events per parcel
+         label         | events |  earliest  |   latest   
+-----------------------+--------+------------+------------
+ 1 rino-art-district   |     14 | 2014-12-08 | 2017-07-21
+ 10 wharf              |      6 | 2020-11-17 | 2026-07-24
+ 11 cornell-tech       |      7 | 2015-05-05 | 2019-05-08
+ 12 silver-creek       |      0 |            | 
+ 2 hudson-yards        |     40 | 2016-06-09 | 2020-12-29
+ 3 green-valley-ranch  |     10 | 2012-06-27 | 2020-10-08
+ 4 navy-yard           |    128 | 2019-03-13 | 2026-04-07
+ 5 rodanthe            |      0 |            | 
+ 6 stapleton           |     12 | 2014-02-25 | 2023-09-15
+ 7 marshall-sagamore   |      0 |            | 
+ 8 marshall-louisville |      0 |            | 
+ 9 apple-park          |      0 |            | 
+(12 rows)
+
+== 6. ledger outcomes on the served request, by source/outcome/reason
+         label         |      source      |    outcome    |                                                          reason                                                          | n  |                                                                                                         groups                                                                                                         
+-----------------------+------------------+---------------+--------------------------------------------------------------------------------------------------------------------------+----+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 1 rino-art-district   | census_acs5      | ok            |                                                                                                                          |  6 | 2009,2012,2015,2018,2021,2023
+ 1 rino-art-district   | census_decennial | absent        | api_no_data                                                                                                              |  1 | 2000
+ 1 rino-art-district   | census_decennial | ok            |                                                                                                                          |  2 | 2010,2020
+ 1 rino-art-district   | landsat          | ok            |                                                                                                                          | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 1 rino-art-district   | naip             | absent        | no_scenes                                                                                                                | 10 | 2010,2012,2014,2016,2018,2020,2022,2024,2025,2026
+ 1 rino-art-district   | naip             | ok            |                                                                                                                          |  7 | 2011,2013,2015,2017,2019,2021,2023
+ 1 rino-art-district   | sentinel2        | ok            |                                                                                                                          | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 1 rino-art-district   | usgs_topo        | ok            |                                                                                                                          |  7 | 1890s,1930s,1940s,1950s,1960s,1980s,1990s
+ 10 wharf              | census_acs5      | absent        | api_no_data                                                                                                              |  1 | 2009
+ 10 wharf              | census_acs5      | ok            |                                                                                                                          |  5 | 2012,2015,2018,2021,2023
+ 10 wharf              | census_decennial | absent        | api_no_data                                                                                                              |  1 | 2000
+ 10 wharf              | census_decennial | ok            |                                                                                                                          |  2 | 2010,2020
+ 10 wharf              | landsat          | ok            |                                                                                                                          | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 10 wharf              | naip             | absent        | no_scenes                                                                                                                |  7 | 2010,2019,2020,2022,2024,2025,2026
+ 10 wharf              | naip             | ok            |                                                                                                                          | 10 | 2011,2012,2013,2014,2015,2016,2017,2018,2021,2023
+ 10 wharf              | sentinel2        | ok            |                                                                                                                          | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 10 wharf              | usgs_topo        | ok            |                                                                                                                          |  6 | 1890s,1900s,1940s,1950s,1960s,1980s
+ 11 cornell-tech       | census_acs5      | absent        | api_no_data                                                                                                              |  1 | 2009
+ 11 cornell-tech       | census_acs5      | ok            |                                                                                                                          |  5 | 2012,2015,2018,2021,2023
+ 11 cornell-tech       | census_decennial | absent        | api_no_data                                                                                                              |  1 | 2000
+ 11 cornell-tech       | census_decennial | ok            |                                                                                                                          |  2 | 2010,2020
+ 11 cornell-tech       | landsat          | ok            |                                                                                                                          | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 11 cornell-tech       | naip             | absent        | no_scenes                                                                                                                |  8 | 2012,2014,2016,2018,2020,2024,2025,2026
+ 11 cornell-tech       | naip             | ok            |                                                                                                                          |  9 | 2010,2011,2013,2015,2017,2019,2021,2022,2023
+ 11 cornell-tech       | sentinel2        | ok            |                                                                                                                          | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 11 cornell-tech       | usgs_topo        | ok            |                                                                                                                          |  8 | 1880s,1890s,1900s,1940s,1950s,1960s,1980s,1990s
+ 12 silver-creek       | census_acs5      | absent        | api_no_data                                                                                                              |  1 | 2009
+ 12 silver-creek       | census_acs5      | ok            |                                                                                                                          |  5 | 2012,2015,2018,2021,2023
+ 12 silver-creek       | census_decennial | absent        | api_no_data                                                                                                              |  1 | 2000
+ 12 silver-creek       | census_decennial | ok            |                                                                                                                          |  2 | 2010,2020
+ 12 silver-creek       | landsat          | ok            |                                                                                                                          | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 12 silver-creek       | naip             | absent        | no_scenes                                                                                                                | 11 | 2010,2011,2013,2015,2017,2019,2021,2023,2024,2025,2026
+ 12 silver-creek       | naip             | ok            |                                                                                                                          |  6 | 2012,2014,2016,2018,2020,2022
+ 12 silver-creek       | sentinel2        | ok            |                                                                                                                          | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 12 silver-creek       | usgs_topo        | ok            |                                                                                                                          |  6 | 1880s,1890s,1940s,1950s,1960s,1970s
+ 2 hudson-yards        | census_acs5      | ok            |                                                                                                                          |  6 | 2009,2012,2015,2018,2021,2023
+ 2 hudson-yards        | census_decennial | absent        | api_no_data                                                                                                              |  1 | 2000
+ 2 hudson-yards        | census_decennial | ok            |                                                                                                                          |  2 | 2010,2020
+ 2 hudson-yards        | landsat          | ok            |                                                                                                                          | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 2 hudson-yards        | naip             | absent        | no_scenes                                                                                                                |  8 | 2012,2014,2016,2018,2020,2024,2025,2026
+ 2 hudson-yards        | naip             | ok            |                                                                                                                          |  9 | 2010,2011,2013,2015,2017,2019,2021,2022,2023
+ 2 hudson-yards        | sentinel2        | ok            |                                                                                                                          | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 2 hudson-yards        | usgs_topo        | indeterminate | TNM response hit its row cap at usgs_topo.search_usgs_topo_products; a decade absent from the response may be truncation |  1 | *
+ 2 hudson-yards        | usgs_topo        | ok            |                                                                                                                          |  9 | 1880s,1890s,1900s,1930s,1940s,1950s,1960s,1980s,1990s
+ 3 green-valley-ranch  | census_acs5      | absent        | api_no_data                                                                                                              |  1 | 2009
+ 3 green-valley-ranch  | census_acs5      | ok            |                                                                                                                          |  5 | 2012,2015,2018,2021,2023
+ 3 green-valley-ranch  | census_decennial | absent        | api_no_data                                                                                                              |  1 | 2000
+ 3 green-valley-ranch  | census_decennial | ok            |                                                                                                                          |  2 | 2010,2020
+ 3 green-valley-ranch  | landsat          | ok            |                                                                                                                          | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 3 green-valley-ranch  | naip             | absent        | no_scenes                                                                                                                | 10 | 2010,2012,2014,2016,2018,2020,2022,2024,2025,2026
+ 3 green-valley-ranch  | naip             | ok            |                                                                                                                          |  7 | 2011,2013,2015,2017,2019,2021,2023
+ 3 green-valley-ranch  | sentinel2        | ok            |                                                                                                                          | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 3 green-valley-ranch  | usgs_topo        | ok            |                                                                                                                          |  7 | 1890s,1930s,1940s,1950s,1960s,1970s,1980s
+ 4 navy-yard           | census_acs5      | ok            |                                                                                                                          |  6 | 2009,2012,2015,2018,2021,2023
+ 4 navy-yard           | census_decennial | absent        | api_no_data                                                                                                              |  1 | 2000
+ 4 navy-yard           | census_decennial | ok            |                                                                                                                          |  2 | 2010,2020
+ 4 navy-yard           | landsat          | ok            |                                                                                                                          | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 4 navy-yard           | naip             | absent        | no_scenes                                                                                                                |  7 | 2010,2019,2020,2022,2024,2025,2026
+ 4 navy-yard           | naip             | ok            |                                                                                                                          | 10 | 2011,2012,2013,2014,2015,2016,2017,2018,2021,2023
+ 4 navy-yard           | sentinel2        | ok            |                                                                                                                          | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 4 navy-yard           | usgs_topo        | ok            |                                                                                                                          |  7 | 1890s,1900s,1930s,1940s,1950s,1960s,1980s
+ 5 rodanthe            | census_acs5      | absent        | api_no_data                                                                                                              |  1 | 2009
+ 5 rodanthe            | census_acs5      | ok            |                                                                                                                          |  5 | 2012,2015,2018,2021,2023
+ 5 rodanthe            | census_decennial | absent        | api_no_data                                                                                                              |  1 | 2000
+ 5 rodanthe            | census_decennial | ok            |                                                                                                                          |  2 | 2010,2020
+ 5 rodanthe            | landsat          | ok            |                                                                                                                          | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 5 rodanthe            | naip             | absent        | no_scenes                                                                                                                | 11 | 2010,2011,2013,2015,2017,2019,2021,2023,2024,2025,2026
+ 5 rodanthe            | naip             | ok            |                                                                                                                          |  6 | 2012,2014,2016,2018,2020,2022
+ 5 rodanthe            | sentinel2        | ok            |                                                                                                                          | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 5 rodanthe            | usgs_topo        | ok            |                                                                                                                          |  3 | 1950s,1960s,1980s
+ 6 stapleton           | census_acs5      | absent        | api_no_data                                                                                                              |  1 | 2009
+ 6 stapleton           | census_acs5      | ok            |                                                                                                                          |  5 | 2012,2015,2018,2021,2023
+ 6 stapleton           | census_decennial | absent        | api_no_data                                                                                                              |  1 | 2000
+ 6 stapleton           | census_decennial | ok            |                                                                                                                          |  2 | 2010,2020
+ 6 stapleton           | landsat          | ok            |                                                                                                                          | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 6 stapleton           | naip             | absent        | no_scenes                                                                                                                | 10 | 2010,2012,2014,2016,2018,2020,2022,2024,2025,2026
+ 6 stapleton           | naip             | ok            |                                                                                                                          |  7 | 2011,2013,2015,2017,2019,2021,2023
+ 6 stapleton           | sentinel2        | ok            |                                                                                                                          | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 6 stapleton           | usgs_topo        | ok            |                                                                                                                          |  7 | 1890s,1930s,1940s,1950s,1960s,1970s,1980s
+ 7 marshall-sagamore   | census_acs5      | absent        | api_no_data                                                                                                              |  1 | 2009
+ 7 marshall-sagamore   | census_acs5      | ok            |                                                                                                                          |  5 | 2012,2015,2018,2021,2023
+ 7 marshall-sagamore   | census_decennial | absent        | api_no_data                                                                                                              |  1 | 2000
+ 7 marshall-sagamore   | census_decennial | ok            |                                                                                                                          |  2 | 2010,2020
+ 7 marshall-sagamore   | landsat          | ok            |                                                                                                                          | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 7 marshall-sagamore   | naip             | absent        | no_scenes                                                                                                                | 10 | 2010,2012,2014,2016,2018,2020,2022,2024,2025,2026
+ 7 marshall-sagamore   | naip             | ok            |                                                                                                                          |  7 | 2011,2013,2015,2017,2019,2021,2023
+ 7 marshall-sagamore   | sentinel2        | ok            |                                                                                                                          | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 7 marshall-sagamore   | usgs_topo        | ok            |                                                                                                                          |  5 | 1890s,1940s,1950s,1960s,1980s
+ 8 marshall-louisville | census_acs5      | ok            |                                                                                                                          |  6 | 2009,2012,2015,2018,2021,2023
+ 8 marshall-louisville | census_decennial | ok            |                                                                                                                          |  3 | 2000,2010,2020
+ 8 marshall-louisville | landsat          | ok            |                                                                                                                          | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 8 marshall-louisville | naip             | absent        | no_scenes                                                                                                                | 10 | 2010,2012,2014,2016,2018,2020,2022,2024,2025,2026
+ 8 marshall-louisville | naip             | ok            |                                                                                                                          |  7 | 2011,2013,2015,2017,2019,2021,2023
+ 8 marshall-louisville | sentinel2        | ok            |                                                                                                                          | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 8 marshall-louisville | usgs_topo        | ok            |                                                                                                                          |  5 | 1890s,1940s,1950s,1960s,1980s
+ 9 apple-park          | census_acs5      | ok            |                                                                                                                          |  6 | 2009,2012,2015,2018,2021,2023
+ 9 apple-park          | census_decennial | ok            |                                                                                                                          |  3 | 2000,2010,2020
+ 9 apple-park          | landsat          | ok            |                                                                                                                          | 43 | 1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 9 apple-park          | naip             | absent        | no_scenes                                                                                                                | 11 | 2010,2011,2013,2015,2017,2019,2021,2023,2024,2025,2026
+ 9 apple-park          | naip             | ok            |                                                                                                                          |  6 | 2012,2014,2016,2018,2020,2022
+ 9 apple-park          | sentinel2        | ok            |                                                                                                                          | 12 | 2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026
+ 9 apple-park          | usgs_topo        | ok            |                                                                                                                          |  9 | 1880s,1890s,1900s,1940s,1950s,1960s,1970s,1980s,1990s
+(102 rows)
+
+== 7. every non-ok ledger row in full (the M4 surface)
+         label         |      source      | group_key |    outcome    |                                                          reason                                                          |                detail                
+-----------------------+------------------+-----------+---------------+--------------------------------------------------------------------------------------------------------------------------+--------------------------------------
+ 1 rino-art-district   | census_decennial | 2000      | absent        | api_no_data                                                                                                              | empty response for tract 08031001601
+ 1 rino-art-district   | naip             | 2010      | absent        | no_scenes                                                                                                                | 
+ 1 rino-art-district   | naip             | 2012      | absent        | no_scenes                                                                                                                | 
+ 1 rino-art-district   | naip             | 2014      | absent        | no_scenes                                                                                                                | 
+ 1 rino-art-district   | naip             | 2016      | absent        | no_scenes                                                                                                                | 
+ 1 rino-art-district   | naip             | 2018      | absent        | no_scenes                                                                                                                | 
+ 1 rino-art-district   | naip             | 2020      | absent        | no_scenes                                                                                                                | 
+ 1 rino-art-district   | naip             | 2022      | absent        | no_scenes                                                                                                                | 
+ 1 rino-art-district   | naip             | 2024      | absent        | no_scenes                                                                                                                | 
+ 1 rino-art-district   | naip             | 2025      | absent        | no_scenes                                                                                                                | 
+ 1 rino-art-district   | naip             | 2026      | absent        | no_scenes                                                                                                                | 
+ 10 wharf              | census_acs5      | 2009      | absent        | api_no_data                                                                                                              | empty response for tract 11001010200
+ 10 wharf              | census_decennial | 2000      | absent        | api_no_data                                                                                                              | empty response for tract 11001010202
+ 10 wharf              | naip             | 2010      | absent        | no_scenes                                                                                                                | 
+ 10 wharf              | naip             | 2019      | absent        | no_scenes                                                                                                                | 
+ 10 wharf              | naip             | 2020      | absent        | no_scenes                                                                                                                | 
+ 10 wharf              | naip             | 2022      | absent        | no_scenes                                                                                                                | 
+ 10 wharf              | naip             | 2024      | absent        | no_scenes                                                                                                                | 
+ 10 wharf              | naip             | 2025      | absent        | no_scenes                                                                                                                | 
+ 10 wharf              | naip             | 2026      | absent        | no_scenes                                                                                                                | 
+ 11 cornell-tech       | census_acs5      | 2009      | absent        | api_no_data                                                                                                              | empty response for tract 36061023801
+ 11 cornell-tech       | census_decennial | 2000      | absent        | api_no_data                                                                                                              | empty response for tract 36061023804
+ 11 cornell-tech       | naip             | 2012      | absent        | no_scenes                                                                                                                | 
+ 11 cornell-tech       | naip             | 2014      | absent        | no_scenes                                                                                                                | 
+ 11 cornell-tech       | naip             | 2016      | absent        | no_scenes                                                                                                                | 
+ 11 cornell-tech       | naip             | 2018      | absent        | no_scenes                                                                                                                | 
+ 11 cornell-tech       | naip             | 2020      | absent        | no_scenes                                                                                                                | 
+ 11 cornell-tech       | naip             | 2024      | absent        | no_scenes                                                                                                                | 
+ 11 cornell-tech       | naip             | 2025      | absent        | no_scenes                                                                                                                | 
+ 11 cornell-tech       | naip             | 2026      | absent        | no_scenes                                                                                                                | 
+ 12 silver-creek       | census_acs5      | 2009      | absent        | api_no_data                                                                                                              | empty response for tract 06085503334
+ 12 silver-creek       | census_decennial | 2000      | absent        | api_no_data                                                                                                              | empty response for tract 06085503338
+ 12 silver-creek       | naip             | 2010      | absent        | no_scenes                                                                                                                | 
+ 12 silver-creek       | naip             | 2011      | absent        | no_scenes                                                                                                                | 
+ 12 silver-creek       | naip             | 2013      | absent        | no_scenes                                                                                                                | 
+ 12 silver-creek       | naip             | 2015      | absent        | no_scenes                                                                                                                | 
+ 12 silver-creek       | naip             | 2017      | absent        | no_scenes                                                                                                                | 
+ 12 silver-creek       | naip             | 2019      | absent        | no_scenes                                                                                                                | 
+ 12 silver-creek       | naip             | 2021      | absent        | no_scenes                                                                                                                | 
+ 12 silver-creek       | naip             | 2023      | absent        | no_scenes                                                                                                                | 
+ 12 silver-creek       | naip             | 2024      | absent        | no_scenes                                                                                                                | 
+ 12 silver-creek       | naip             | 2025      | absent        | no_scenes                                                                                                                | 
+ 12 silver-creek       | naip             | 2026      | absent        | no_scenes                                                                                                                | 
+ 2 hudson-yards        | census_decennial | 2000      | absent        | api_no_data                                                                                                              | empty response for tract 36061009903
+ 2 hudson-yards        | naip             | 2012      | absent        | no_scenes                                                                                                                | 
+ 2 hudson-yards        | naip             | 2014      | absent        | no_scenes                                                                                                                | 
+ 2 hudson-yards        | naip             | 2016      | absent        | no_scenes                                                                                                                | 
+ 2 hudson-yards        | naip             | 2018      | absent        | no_scenes                                                                                                                | 
+ 2 hudson-yards        | naip             | 2020      | absent        | no_scenes                                                                                                                | 
+ 2 hudson-yards        | naip             | 2024      | absent        | no_scenes                                                                                                                | 
+ 2 hudson-yards        | naip             | 2025      | absent        | no_scenes                                                                                                                | 
+ 2 hudson-yards        | naip             | 2026      | absent        | no_scenes                                                                                                                | 
+ 2 hudson-yards        | usgs_topo        | *         | indeterminate | TNM response hit its row cap at usgs_topo.search_usgs_topo_products; a decade absent from the response may be truncation | 
+ 3 green-valley-ranch  | census_acs5      | 2009      | absent        | api_no_data                                                                                                              | empty response for tract 08031008388
+ 3 green-valley-ranch  | census_decennial | 2000      | absent        | api_no_data                                                                                                              | empty response for tract 08031008388
+ 3 green-valley-ranch  | naip             | 2010      | absent        | no_scenes                                                                                                                | 
+ 3 green-valley-ranch  | naip             | 2012      | absent        | no_scenes                                                                                                                | 
+ 3 green-valley-ranch  | naip             | 2014      | absent        | no_scenes                                                                                                                | 
+ 3 green-valley-ranch  | naip             | 2016      | absent        | no_scenes                                                                                                                | 
+ 3 green-valley-ranch  | naip             | 2018      | absent        | no_scenes                                                                                                                | 
+ 3 green-valley-ranch  | naip             | 2020      | absent        | no_scenes                                                                                                                | 
+ 3 green-valley-ranch  | naip             | 2022      | absent        | no_scenes                                                                                                                | 
+ 3 green-valley-ranch  | naip             | 2024      | absent        | no_scenes                                                                                                                | 
+ 3 green-valley-ranch  | naip             | 2025      | absent        | no_scenes                                                                                                                | 
+ 3 green-valley-ranch  | naip             | 2026      | absent        | no_scenes                                                                                                                | 
+ 4 navy-yard           | census_decennial | 2000      | absent        | api_no_data                                                                                                              | empty response for tract 11001007201
+ 4 navy-yard           | naip             | 2010      | absent        | no_scenes                                                                                                                | 
+ 4 navy-yard           | naip             | 2019      | absent        | no_scenes                                                                                                                | 
+ 4 navy-yard           | naip             | 2020      | absent        | no_scenes                                                                                                                | 
+ 4 navy-yard           | naip             | 2022      | absent        | no_scenes                                                                                                                | 
+ 4 navy-yard           | naip             | 2024      | absent        | no_scenes                                                                                                                | 
+ 4 navy-yard           | naip             | 2025      | absent        | no_scenes                                                                                                                | 
+ 4 navy-yard           | naip             | 2026      | absent        | no_scenes                                                                                                                | 
+ 5 rodanthe            | census_acs5      | 2009      | absent        | api_no_data                                                                                                              | empty response for tract 37055970502
+ 5 rodanthe            | census_decennial | 2000      | absent        | api_no_data                                                                                                              | empty response for tract 37055970502
+ 5 rodanthe            | naip             | 2010      | absent        | no_scenes                                                                                                                | 
+ 5 rodanthe            | naip             | 2011      | absent        | no_scenes                                                                                                                | 
+ 5 rodanthe            | naip             | 2013      | absent        | no_scenes                                                                                                                | 
+ 5 rodanthe            | naip             | 2015      | absent        | no_scenes                                                                                                                | 
+ 5 rodanthe            | naip             | 2017      | absent        | no_scenes                                                                                                                | 
+ 5 rodanthe            | naip             | 2019      | absent        | no_scenes                                                                                                                | 
+ 5 rodanthe            | naip             | 2021      | absent        | no_scenes                                                                                                                | 
+ 5 rodanthe            | naip             | 2023      | absent        | no_scenes                                                                                                                | 
+ 5 rodanthe            | naip             | 2024      | absent        | no_scenes                                                                                                                | 
+ 5 rodanthe            | naip             | 2025      | absent        | no_scenes                                                                                                                | 
+ 5 rodanthe            | naip             | 2026      | absent        | no_scenes                                                                                                                | 
+ 6 stapleton           | census_acs5      | 2009      | absent        | api_no_data                                                                                                              | empty response for tract 08031004107
+ 6 stapleton           | census_decennial | 2000      | absent        | api_no_data                                                                                                              | empty response for tract 08031004111
+ 6 stapleton           | naip             | 2010      | absent        | no_scenes                                                                                                                | 
+ 6 stapleton           | naip             | 2012      | absent        | no_scenes                                                                                                                | 
+ 6 stapleton           | naip             | 2014      | absent        | no_scenes                                                                                                                | 
+ 6 stapleton           | naip             | 2016      | absent        | no_scenes                                                                                                                | 
+ 6 stapleton           | naip             | 2018      | absent        | no_scenes                                                                                                                | 
+ 6 stapleton           | naip             | 2020      | absent        | no_scenes                                                                                                                | 
+ 6 stapleton           | naip             | 2022      | absent        | no_scenes                                                                                                                | 
+ 6 stapleton           | naip             | 2024      | absent        | no_scenes                                                                                                                | 
+ 6 stapleton           | naip             | 2025      | absent        | no_scenes                                                                                                                | 
+ 6 stapleton           | naip             | 2026      | absent        | no_scenes                                                                                                                | 
+ 7 marshall-sagamore   | census_acs5      | 2009      | absent        | api_no_data                                                                                                              | empty response for tract 08013060600
+ 7 marshall-sagamore   | census_decennial | 2000      | absent        | api_no_data                                                                                                              | empty response for tract 08013060602
+ 7 marshall-sagamore   | naip             | 2010      | absent        | no_scenes                                                                                                                | 
+ 7 marshall-sagamore   | naip             | 2012      | absent        | no_scenes                                                                                                                | 
+ 7 marshall-sagamore   | naip             | 2014      | absent        | no_scenes                                                                                                                | 
+ 7 marshall-sagamore   | naip             | 2016      | absent        | no_scenes                                                                                                                | 
+ 7 marshall-sagamore   | naip             | 2018      | absent        | no_scenes                                                                                                                | 
+ 7 marshall-sagamore   | naip             | 2020      | absent        | no_scenes                                                                                                                | 
+ 7 marshall-sagamore   | naip             | 2022      | absent        | no_scenes                                                                                                                | 
+ 7 marshall-sagamore   | naip             | 2024      | absent        | no_scenes                                                                                                                | 
+ 7 marshall-sagamore   | naip             | 2025      | absent        | no_scenes                                                                                                                | 
+ 7 marshall-sagamore   | naip             | 2026      | absent        | no_scenes                                                                                                                | 
+ 8 marshall-louisville | naip             | 2010      | absent        | no_scenes                                                                                                                | 
+ 8 marshall-louisville | naip             | 2012      | absent        | no_scenes                                                                                                                | 
+ 8 marshall-louisville | naip             | 2014      | absent        | no_scenes                                                                                                                | 
+ 8 marshall-louisville | naip             | 2016      | absent        | no_scenes                                                                                                                | 
+ 8 marshall-louisville | naip             | 2018      | absent        | no_scenes                                                                                                                | 
+ 8 marshall-louisville | naip             | 2020      | absent        | no_scenes                                                                                                                | 
+ 8 marshall-louisville | naip             | 2022      | absent        | no_scenes                                                                                                                | 
+ 8 marshall-louisville | naip             | 2024      | absent        | no_scenes                                                                                                                | 
+ 8 marshall-louisville | naip             | 2025      | absent        | no_scenes                                                                                                                | 
+ 8 marshall-louisville | naip             | 2026      | absent        | no_scenes                                                                                                                | 
+ 9 apple-park          | naip             | 2010      | absent        | no_scenes                                                                                                                | 
+ 9 apple-park          | naip             | 2011      | absent        | no_scenes                                                                                                                | 
+ 9 apple-park          | naip             | 2013      | absent        | no_scenes                                                                                                                | 
+ 9 apple-park          | naip             | 2015      | absent        | no_scenes                                                                                                                | 
+ 9 apple-park          | naip             | 2017      | absent        | no_scenes                                                                                                                | 
+ 9 apple-park          | naip             | 2019      | absent        | no_scenes                                                                                                                | 
+ 9 apple-park          | naip             | 2021      | absent        | no_scenes                                                                                                                | 
+ 9 apple-park          | naip             | 2023      | absent        | no_scenes                                                                                                                | 
+ 9 apple-park          | naip             | 2024      | absent        | no_scenes                                                                                                                | 
+ 9 apple-park          | naip             | 2025      | absent        | no_scenes                                                                                                                | 
+ 9 apple-park          | naip             | 2026      | absent        | no_scenes                                                                                                                | 
+(131 rows)
+
+== 8. scene provenance and footprint presence for served rows
+         label         |  source   | provenance | n  | footprint_null 
+-----------------------+-----------+------------+----+----------------
+ 1 rino-art-district   | landsat   | snapshot   | 43 |              0
+ 1 rino-art-district   | naip      | snapshot   |  7 |              0
+ 1 rino-art-district   | sentinel2 | selection  |  1 |              0
+ 1 rino-art-district   | sentinel2 | snapshot   | 11 |              0
+ 1 rino-art-district   | usgs_topo | snapshot   |  7 |              7
+ 10 wharf              | landsat   | snapshot   | 43 |              0
+ 10 wharf              | naip      | enriched   |  3 |              0
+ 10 wharf              | naip      | snapshot   |  7 |              0
+ 10 wharf              | sentinel2 | snapshot   | 12 |              0
+ 10 wharf              | usgs_topo | snapshot   |  6 |              6
+ 11 cornell-tech       | landsat   | selection  |  2 |              0
+ 11 cornell-tech       | landsat   | snapshot   | 41 |              0
+ 11 cornell-tech       | naip      | snapshot   |  9 |              0
+ 11 cornell-tech       | sentinel2 | snapshot   | 12 |              0
+ 11 cornell-tech       | usgs_topo | selection  |  2 |              2
+ 11 cornell-tech       | usgs_topo | snapshot   |  6 |              6
+ 12 silver-creek       | landsat   | selection  |  8 |              0
+ 12 silver-creek       | landsat   | snapshot   | 35 |              0
+ 12 silver-creek       | naip      | selection  |  6 |              0
+ 12 silver-creek       | sentinel2 | selection  | 12 |              0
+ 12 silver-creek       | usgs_topo | snapshot   |  6 |              6
+ 2 hudson-yards        | landsat   | snapshot   | 43 |              0
+ 2 hudson-yards        | naip      | snapshot   |  9 |              0
+ 2 hudson-yards        | sentinel2 | snapshot   | 12 |              0
+ 2 hudson-yards        | usgs_topo | snapshot   |  9 |              9
+ 3 green-valley-ranch  | landsat   | snapshot   | 43 |              0
+ 3 green-valley-ranch  | naip      | snapshot   |  7 |              0
+ 3 green-valley-ranch  | sentinel2 | snapshot   | 12 |              0
+ 3 green-valley-ranch  | usgs_topo | snapshot   |  7 |              7
+ 4 navy-yard           | landsat   | snapshot   | 43 |              0
+ 4 navy-yard           | naip      | snapshot   | 10 |              0
+ 4 navy-yard           | sentinel2 | snapshot   | 12 |              0
+ 4 navy-yard           | usgs_topo | snapshot   |  7 |              7
+ 5 rodanthe            | landsat   | snapshot   | 43 |              0
+ 5 rodanthe            | naip      | snapshot   |  6 |              0
+ 5 rodanthe            | sentinel2 | snapshot   | 12 |              0
+ 5 rodanthe            | usgs_topo | snapshot   |  3 |              3
+ 6 stapleton           | landsat   | snapshot   | 43 |              0
+ 6 stapleton           | naip      | snapshot   |  7 |              0
+ 6 stapleton           | sentinel2 | snapshot   | 12 |              0
+ 6 stapleton           | usgs_topo | snapshot   |  7 |              7
+ 7 marshall-sagamore   | landsat   | snapshot   | 43 |              0
+ 7 marshall-sagamore   | naip      | selection  |  7 |              0
+ 7 marshall-sagamore   | sentinel2 | snapshot   | 12 |              0
+ 7 marshall-sagamore   | usgs_topo | selection  |  3 |              3
+ 7 marshall-sagamore   | usgs_topo | snapshot   |  2 |              2
+ 8 marshall-louisville | landsat   | snapshot   | 43 |              0
+ 8 marshall-louisville | naip      | selection  |  7 |              0
+ 8 marshall-louisville | sentinel2 | snapshot   | 12 |              0
+ 8 marshall-louisville | usgs_topo | selection  |  3 |              3
+ 8 marshall-louisville | usgs_topo | snapshot   |  2 |              2
+ 9 apple-park          | landsat   | snapshot   | 43 |              0
+ 9 apple-park          | naip      | snapshot   |  6 |              0
+ 9 apple-park          | sentinel2 | snapshot   | 12 |              0
+ 9 apple-park          | usgs_topo | snapshot   |  9 |              9
+(55 rows)
+
+== 9. NAIP capture dates (the pre/post-fire question)
+         label         | group_key |                 item_id                  | capture_date | resolution_m | extra_tiles 
+-----------------------+-----------+------------------------------------------+--------------+--------------+-------------
+ 1 rino-art-district   | 2011      | co_m_3910409_sw_13_1_20110723_20110901   | 2011-07-23   |            1 |           0
+ 1 rino-art-district   | 2013      | co_m_3910409_sw_13_1_20130716_20130917   | 2013-07-16   |            1 |           0
+ 1 rino-art-district   | 2015      | co_m_3910409_sw_13_1_20150910_20151102   | 2015-09-10   |            1 |           0
+ 1 rino-art-district   | 2017      | co_m_3910409_sw_13_1_20170902_20171017   | 2017-09-02   |            1 |           0
+ 1 rino-art-district   | 2019      | co_m_3910409_sw_13_060_20190803_20191121 | 2019-08-03   |          0.6 |           0
+ 1 rino-art-district   | 2021      | co_m_3910409_sw_13_060_20210728          | 2021-07-28   |          0.6 |           0
+ 1 rino-art-district   | 2023      | co_m_3910409_sw_13_030_20230925_20240104 | 2023-09-25   |          0.3 |           0
+ 10 wharf              | 2011      | va_m_3807708_se_18_1_20110530            | 2011-05-30   |            1 |           1
+ 10 wharf              | 2012      | va_m_3807708_se_18_1_20120511_20120709   | 2012-05-11   |            1 |           1
+ 10 wharf              | 2013      | md_m_3807708_se_18_1_20130924_20131112   | 2013-09-24   |            1 |           1
+ 10 wharf              | 2014      | va_m_3807708_se_18_1_20140927_20141126   | 2014-09-27   |            1 |           1
+ 10 wharf              | 2015      | md_m_3807708_se_18_1_20150722_20150914   | 2015-07-22   |            1 |           1
+ 10 wharf              | 2016      | va_m_3807708_se_18_1_20160718_20160928   | 2016-07-18   |            1 |           1
+ 10 wharf              | 2017      | md_m_3807708_se_18_1_20170725_20170907   | 2017-07-25   |            1 |           1
+ 10 wharf              | 2018      | va_m_3807708_se_18_060_20181019_20190212 | 2018-10-19   |          0.6 |           1
+ 10 wharf              | 2021      | va_m_3807708_se_18_060_20210910          | 2021-09-10   |          0.6 |           1
+ 10 wharf              | 2023      | va_m_3807708_se_18_060_20231113_20240103 | 2023-11-13   |          0.6 |           1
+ 11 cornell-tech       | 2010      | nj_m_4007309_sw_18_1_20100731            | 2010-07-31   |            1 |           0
+ 11 cornell-tech       | 2011      | ny_m_4007309_sw_18_1_20110705_20111114   | 2011-07-05   |            1 |           1
+ 11 cornell-tech       | 2013      | nj_m_4007309_sw_18_1_20130802_20130826   | 2013-08-02   |            1 |           1
+ 11 cornell-tech       | 2015      | nj_m_4007309_sw_18_1_20150729_20150909   | 2015-07-29   |            1 |           1
+ 11 cornell-tech       | 2017      | nj_m_4007309_sw_18_1_20170719_20171102   | 2017-07-19   |            1 |           1
+ 11 cornell-tech       | 2019      | ny_m_4007309_sw_18_060_20190830_20191209 | 2019-08-30   |          0.6 |           1
+ 11 cornell-tech       | 2021      | ny_m_4007309_sw_18_060_20211105          | 2021-11-05   |          0.6 |           1
+ 11 cornell-tech       | 2022      | ny_m_4007309_sw_18_060_20220719          | 2022-07-19   |          0.6 |           1
+ 11 cornell-tech       | 2023      | nj_m_4007309_sw_18_030_20230820_20231019 | 2023-08-20   |          0.3 |           0
+ 12 silver-creek       | 2012      | ca_m_3712142_se_10_1_20120520_20120730   | 2012-05-20   |            1 |           0
+ 12 silver-creek       | 2014      | ca_m_3712142_se_10_1_20140606_20141030   | 2014-06-06   |            1 |           0
+ 12 silver-creek       | 2016      | ca_m_3712142_se_10_.6_20160527_20161004  | 2016-05-27   |          0.6 |           0
+ 12 silver-creek       | 2018      | ca_m_3712142_se_10_060_20180725_20190209 | 2018-07-25   |          0.6 |           0
+ 12 silver-creek       | 2020      | ca_m_3712142_se_10_060_20200525          | 2020-05-25   |          0.6 |           0
+ 12 silver-creek       | 2022      | ca_m_3712142_se_10_060_20220519          | 2022-05-19   |          0.6 |           0
+ 2 hudson-yards        | 2010      | nj_m_4007309_sw_18_1_20100731            | 2010-07-31   |            1 |           1
+ 2 hudson-yards        | 2011      | ny_m_4007309_sw_18_1_20110705_20111114   | 2011-07-05   |            1 |           1
+ 2 hudson-yards        | 2013      | nj_m_4007309_sw_18_1_20130802_20130826   | 2013-08-02   |            1 |           1
+ 2 hudson-yards        | 2015      | nj_m_4007309_sw_18_1_20150729_20150909   | 2015-07-29   |            1 |           1
+ 2 hudson-yards        | 2017      | nj_m_4007309_sw_18_1_20170719_20171102   | 2017-07-19   |            1 |           1
+ 2 hudson-yards        | 2019      | ny_m_4007309_sw_18_060_20190830_20191209 | 2019-08-30   |          0.6 |           1
+ 2 hudson-yards        | 2021      | ny_m_4007309_sw_18_060_20211105          | 2021-11-05   |          0.6 |           1
+ 2 hudson-yards        | 2022      | ny_m_4007309_sw_18_060_20220719          | 2022-07-19   |          0.6 |           1
+ 2 hudson-yards        | 2023      | nj_m_4007309_sw_18_030_20230820_20231019 | 2023-08-20   |          0.3 |           2
+ 3 green-valley-ranch  | 2011      | co_m_3910410_se_13_1_20110723_20110901   | 2011-07-23   |            1 |           0
+ 3 green-valley-ranch  | 2013      | co_m_3910410_se_13_1_20130716_20130917   | 2013-07-16   |            1 |           0
+ 3 green-valley-ranch  | 2015      | co_m_3910410_se_13_1_20150910_20151102   | 2015-09-10   |            1 |           0
+ 3 green-valley-ranch  | 2017      | co_m_3910410_se_13_1_20170828_20171017   | 2017-08-28   |            1 |           0
+ 3 green-valley-ranch  | 2019      | co_m_3910410_se_13_060_20190912_20191121 | 2019-09-12   |          0.6 |           0
+ 3 green-valley-ranch  | 2021      | co_m_3910410_se_13_060_20210728          | 2021-07-28   |          0.6 |           0
+ 3 green-valley-ranch  | 2023      | co_m_3910410_se_13_030_20230925_20240104 | 2023-09-25   |          0.3 |           0
+ 4 navy-yard           | 2011      | va_m_3807716_ne_18_1_20110530            | 2011-05-30   |            1 |           2
+ 4 navy-yard           | 2012      | va_m_3807716_ne_18_1_20120511_20120709   | 2012-05-11   |            1 |           1
+ 4 navy-yard           | 2013      | md_m_3807716_ne_18_1_20130924_20131112   | 2013-09-24   |            1 |           2
+ 4 navy-yard           | 2014      | va_m_3807716_ne_18_1_20140927_20141126   | 2014-09-27   |            1 |           1
+ 4 navy-yard           | 2015      | md_m_3807716_ne_18_1_20150722_20150914   | 2015-07-22   |            1 |           2
+ 4 navy-yard           | 2016      | va_m_3807716_ne_18_1_20160718_20160928   | 2016-07-18   |            1 |           1
+ 4 navy-yard           | 2017      | md_m_3807716_ne_18_1_20170716_20170907   | 2017-07-16   |            1 |           1
+ 4 navy-yard           | 2018      | va_m_3807716_ne_18_060_20181019_20190211 | 2018-10-19   |          0.6 |           2
+ 4 navy-yard           | 2021      | va_m_3807716_ne_18_060_20210910          | 2021-09-10   |          0.6 |           2
+ 4 navy-yard           | 2023      | va_m_3807716_ne_18_060_20231104_20240103 | 2023-11-04   |          0.6 |           2
+ 5 rodanthe            | 2012      | nc_m_3507529_nw_18_1_20120628_20120813   | 2012-06-28   |            1 |           0
+ 5 rodanthe            | 2014      | nc_m_3507529_nw_18_1_20141017_20141118   | 2014-10-17   |            1 |           0
+ 5 rodanthe            | 2016      | nc_m_3507529_nw_18_1_20160911            | 2016-09-11   |            1 |           0
+ 5 rodanthe            | 2018      | nc_m_3507529_nw_18_060_20181029_20190211 | 2018-10-29   |          0.6 |           0
+ 5 rodanthe            | 2020      | nc_m_3507529_nw_18_060_20200516          | 2020-05-16   |          0.6 |           0
+ 5 rodanthe            | 2022      | nc_m_3507529_nw_18_060_20221007          | 2022-10-07   |          0.6 |           0
+ 6 stapleton           | 2011      | co_m_3910409_se_13_1_20110723_20110901   | 2011-07-23   |            1 |           0
+ 6 stapleton           | 2013      | co_m_3910409_se_13_1_20130716_20130917   | 2013-07-16   |            1 |           0
+ 6 stapleton           | 2015      | co_m_3910409_se_13_1_20150910_20151102   | 2015-09-10   |            1 |           0
+ 6 stapleton           | 2017      | co_m_3910409_se_13_1_20170902_20171017   | 2017-09-02   |            1 |           0
+ 6 stapleton           | 2019      | co_m_3910409_se_13_060_20190803_20191121 | 2019-08-03   |          0.6 |           0
+ 6 stapleton           | 2021      | co_m_3910409_se_13_060_20210728          | 2021-07-28   |          0.6 |           0
+ 6 stapleton           | 2023      | co_m_3910409_se_13_030_20230925_20240104 | 2023-09-25   |          0.3 |           0
+ 7 marshall-sagamore   | 2011      | co_m_3910507_ne_13_1_20110723_20110901   | 2011-07-23   |            1 |           0
+ 7 marshall-sagamore   | 2013      | co_m_3910507_ne_13_1_20130716_20131119   | 2013-07-16   |            1 |           0
+ 7 marshall-sagamore   | 2015      | co_m_3910507_ne_13_1_20150912_20151102   | 2015-09-12   |            1 |           0
+ 7 marshall-sagamore   | 2017      | co_m_3910507_ne_13_1_20170902_20171017   | 2017-09-02   |            1 |           0
+ 7 marshall-sagamore   | 2019      | co_m_3910507_ne_13_060_20190919_20191121 | 2019-09-19   |          0.6 |           0
+ 7 marshall-sagamore   | 2021      | co_m_3910507_ne_13_060_20210813          | 2021-08-13   |          0.6 |           0
+ 7 marshall-sagamore   | 2023      | co_m_3910507_ne_13_030_20230925_20240104 | 2023-09-25   |          0.3 |           0
+ 8 marshall-louisville | 2011      | co_m_3910507_ne_13_1_20110723_20110901   | 2011-07-23   |            1 |           0
+ 8 marshall-louisville | 2013      | co_m_3910507_ne_13_1_20130716_20131119   | 2013-07-16   |            1 |           0
+ 8 marshall-louisville | 2015      | co_m_3910507_ne_13_1_20150912_20151102   | 2015-09-12   |            1 |           0
+ 8 marshall-louisville | 2017      | co_m_3910507_ne_13_1_20170902_20171017   | 2017-09-02   |            1 |           0
+ 8 marshall-louisville | 2019      | co_m_3910507_ne_13_060_20190919_20191121 | 2019-09-19   |          0.6 |           0
+ 8 marshall-louisville | 2021      | co_m_3910507_ne_13_060_20210813          | 2021-08-13   |          0.6 |           0
+ 8 marshall-louisville | 2023      | co_m_3910507_ne_13_030_20230925_20240104 | 2023-09-25   |          0.3 |           0
+ 9 apple-park          | 2012      | ca_m_3712248_ne_10_1_20120520_20120730   | 2012-05-20   |            1 |           0
+ 9 apple-park          | 2014      | ca_m_3712248_ne_10_1_20140606_20141030   | 2014-06-06   |            1 |           0
+ 9 apple-park          | 2016      | ca_m_3712248_ne_10_.6_20160529_20161004  | 2016-05-29   |          0.6 |           0
+ 9 apple-park          | 2018      | ca_m_3712248_ne_10_060_20180815_20190209 | 2018-08-15   |          0.6 |           0
+ 9 apple-park          | 2020      | ca_m_3712248_ne_10_060_20200525          | 2020-05-25   |          0.6 |           0
+ 9 apple-park          | 2022      | ca_m_3712248_ne_10_060_20220519          | 2022-05-19   |          0.6 |           0
+(91 rows)
+
+== 10. every request created during the sweep window (retry accounting)
+         label         |                  id                  |  status  | origin |                      sources                       |          created_at           |         completed_at          
+-----------------------+--------------------------------------+----------+--------+----------------------------------------------------+-------------------------------+-------------------------------
+ 1 rino-art-district   | 07438874-6b5f-4b6f-b861-ed38a72dc654 | complete | heal   | {census,landsat,naip,property,sentinel2,usgs_topo} | 2026-09-11 22:17:04.326651+00 | 2026-09-11 22:18:09.05764+00
+ 10 wharf              | eabfc5bd-44cc-47e6-8881-69e53c9eb785 | complete | user   | {census,landsat,naip,property,sentinel2,usgs_topo} | 2026-09-11 22:15:55.974382+00 | 2026-09-11 22:17:02.527988+00
+ 11 cornell-tech       | ad4e35e8-a7b5-4d4e-8779-f81fce4f0861 | complete | user   | {census,landsat,naip,property,sentinel2,usgs_topo} | 2026-09-11 22:16:36.201596+00 | 2026-09-11 22:17:26.424982+00
+ 12 silver-creek       | fb926c3f-c96a-41ff-9881-f51ab32f74eb | complete | user   | {census,landsat,naip,property,sentinel2,usgs_topo} | 2026-09-11 22:16:04.942907+00 | 2026-09-11 22:17:12.187303+00
+ 2 hudson-yards        | 63423ca1-6187-4420-b6ea-5cc34e6b7fe2 | complete | heal   | {census,landsat,naip,property,sentinel2,usgs_topo} | 2026-09-11 22:17:04.350449+00 | 2026-09-11 22:19:08.199083+00
+ 3 green-valley-ranch  | e0490576-0b66-41e2-83d2-0a475a3b1236 | complete | heal   | {census,landsat,naip,property,sentinel2,usgs_topo} | 2026-09-11 22:17:04.333117+00 | 2026-09-11 22:18:11.405111+00
+ 4 navy-yard           | 4011348c-14e9-4b8b-8d84-d584aa1f9db0 | complete | heal   | {census,landsat,naip,property,sentinel2,usgs_topo} | 2026-09-11 22:17:04.338743+00 | 2026-09-11 22:18:51.584004+00
+ 5 rodanthe            | 25efb97d-f2ba-46aa-9c96-8b4f35799b6e | complete | heal   | {census,landsat,naip,property,sentinel2,usgs_topo} | 2026-09-11 22:17:04.34489+00  | 2026-09-11 22:18:25.748045+00
+ 6 stapleton           | 03c5240d-6ac8-40bb-bc6e-07b377205ca0 | complete | heal   | {census,landsat,naip,property,sentinel2,usgs_topo} | 2026-09-11 22:17:04.252047+00 | 2026-09-11 22:17:29.008398+00
+ 7 marshall-sagamore   | 1d521715-67f1-4887-8857-b2b88de818c7 | complete | user   | {census,landsat,naip,property,sentinel2,usgs_topo} | 2026-09-11 22:15:34.799347+00 | 2026-09-11 22:16:19.005402+00
+ 8 marshall-louisville | f9397be3-caae-481d-9093-85bbf9484c16 | complete | user   | {census,landsat,naip,property,sentinel2,usgs_topo} | 2026-09-11 22:15:44.17476+00  | 2026-09-11 22:16:59.087962+00
+ 9 apple-park          | 388c36bd-3b1c-40d3-8097-c476e4f8a8f4 | complete | user   | {census,landsat,naip,property,sentinel2,usgs_topo} | 2026-09-11 22:16:32.800427+00 | 2026-09-11 22:17:15.229764+00
+(12 rows)
+
+== 11. fleet totals after the sweep
+ parcels | parcel_scenes | scenes | census_snapshots | property_events | ledger_rows 
+---------+---------------+--------+------------------+-----------------+-------------
+      51 |          3496 |   1386 |              379 |             673 |       18944
+(1 row)
+

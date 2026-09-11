@@ -1,0 +1,75 @@
+2026-09-11T22:17:04.228257Z [warning  ] deploy_check_skipped           [__main__] danger='re-queueing through the un-fixed imagery point filter re-selects the same wrong granules, healing the parcel back into the defect' skipped='verification that the deployed API carries the imagery geometry fix (point-in-footprint instead of point-in-bbox)'
+FROM parcels 
+WHERE parcels.id IN (%(id_1_1)s::UUID, %(id_1_2)s::UUID, %(id_1_3)s::UUID, %(id_1_4)s::UUID, %(id_1_5)s::UUID, %(id_1_6)s::UUID)
+2026-09-11T22:17:04.247787Z [info     ] SELECT parcels.id 
+FROM parcels 
+Re-queuing 6 parcel(s).
+FROM timeline_requests 
+WHERE timeline_requests.status IN (%(status_1_1)s, %(status_1_2)s)
+2026-09-11T22:17:04.251808Z [info     ] SELECT count(*) AS count_1 
+FROM timeline_requests 
+FROM timeline_requests 
+WHERE timeline_requests.id = %(pk_1)s::UUID
+2026-09-11T22:17:04.260062Z [info     ] SELECT timeline_requests.id, timeline_requests.parcel_id, timeline_requests.status, timeline_requests.sources, timeline_requests.origin, timeline_requests.deployed_sha, timeline_requests.created_at, timeline_requests.updated_at, timeline_requests.completed_at, timeline_requests.error_message 
+FROM timeline_requests 
+2026-09-11T22:17:04.260872Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=70a496c7-3480-4752-b3ad-e0bdc59d8736 request_id=03c5240d-6ac8-40bb-bc6e-07b377205ca0 sources=['census', 'landsat', 'naip', 'property', 'sentinel2', 'usgs_topo']
+2026-09-11T22:17:04.325093Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=03c5240d-6ac8-40bb-bc6e-07b377205ca0
+  queued 03c5240d-6ac8-40bb-bc6e-07b377205ca0 for parcel 70a496c7-3480-4752-b3ad-e0bdc59d8736 [census,landsat,naip,property,sentinel2,usgs_topo]
+FROM timeline_requests 
+WHERE timeline_requests.status IN (%(status_1_1)s, %(status_1_2)s)
+2026-09-11T22:17:04.326425Z [info     ] SELECT count(*) AS count_1 
+FROM timeline_requests 
+FROM timeline_requests 
+WHERE timeline_requests.id = %(pk_1)s::UUID
+2026-09-11T22:17:04.330285Z [info     ] SELECT timeline_requests.id, timeline_requests.parcel_id, timeline_requests.status, timeline_requests.sources, timeline_requests.origin, timeline_requests.deployed_sha, timeline_requests.created_at, timeline_requests.updated_at, timeline_requests.completed_at, timeline_requests.error_message 
+FROM timeline_requests 
+2026-09-11T22:17:04.330989Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=c78a1019-5cb5-4a07-9fcd-9b109bb05530 request_id=07438874-6b5f-4b6f-b861-ed38a72dc654 sources=['census', 'landsat', 'naip', 'property', 'sentinel2', 'usgs_topo']
+2026-09-11T22:17:04.331929Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=07438874-6b5f-4b6f-b861-ed38a72dc654
+  queued 07438874-6b5f-4b6f-b861-ed38a72dc654 for parcel c78a1019-5cb5-4a07-9fcd-9b109bb05530 [census,landsat,naip,property,sentinel2,usgs_topo]
+FROM timeline_requests 
+WHERE timeline_requests.status IN (%(status_1_1)s, %(status_1_2)s)
+2026-09-11T22:17:04.332907Z [info     ] SELECT count(*) AS count_1 
+FROM timeline_requests 
+FROM timeline_requests 
+WHERE timeline_requests.id = %(pk_1)s::UUID
+2026-09-11T22:17:04.336155Z [info     ] SELECT timeline_requests.id, timeline_requests.parcel_id, timeline_requests.status, timeline_requests.sources, timeline_requests.origin, timeline_requests.deployed_sha, timeline_requests.created_at, timeline_requests.updated_at, timeline_requests.completed_at, timeline_requests.error_message 
+FROM timeline_requests 
+2026-09-11T22:17:04.336754Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=c8ecf010-5096-41c4-86e2-00dccb62248c request_id=e0490576-0b66-41e2-83d2-0a475a3b1236 sources=['census', 'landsat', 'naip', 'property', 'sentinel2', 'usgs_topo']
+2026-09-11T22:17:04.337493Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=e0490576-0b66-41e2-83d2-0a475a3b1236
+  queued e0490576-0b66-41e2-83d2-0a475a3b1236 for parcel c8ecf010-5096-41c4-86e2-00dccb62248c [census,landsat,naip,property,sentinel2,usgs_topo]
+FROM timeline_requests 
+WHERE timeline_requests.status IN (%(status_1_1)s, %(status_1_2)s)
+2026-09-11T22:17:04.338487Z [info     ] SELECT count(*) AS count_1 
+FROM timeline_requests 
+FROM timeline_requests 
+WHERE timeline_requests.id = %(pk_1)s::UUID
+2026-09-11T22:17:04.341984Z [info     ] SELECT timeline_requests.id, timeline_requests.parcel_id, timeline_requests.status, timeline_requests.sources, timeline_requests.origin, timeline_requests.deployed_sha, timeline_requests.created_at, timeline_requests.updated_at, timeline_requests.completed_at, timeline_requests.error_message 
+FROM timeline_requests 
+2026-09-11T22:17:04.342742Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=800643ba-a8d2-41c9-92e2-d72d6801eb8b request_id=4011348c-14e9-4b8b-8d84-d584aa1f9db0 sources=['census', 'landsat', 'naip', 'property', 'sentinel2', 'usgs_topo']
+2026-09-11T22:17:04.343595Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=4011348c-14e9-4b8b-8d84-d584aa1f9db0
+  queued 4011348c-14e9-4b8b-8d84-d584aa1f9db0 for parcel 800643ba-a8d2-41c9-92e2-d72d6801eb8b [census,landsat,naip,property,sentinel2,usgs_topo]
+FROM timeline_requests 
+WHERE timeline_requests.status IN (%(status_1_1)s, %(status_1_2)s)
+2026-09-11T22:17:04.344670Z [info     ] SELECT count(*) AS count_1 
+FROM timeline_requests 
+FROM timeline_requests 
+WHERE timeline_requests.id = %(pk_1)s::UUID
+2026-09-11T22:17:04.347910Z [info     ] SELECT timeline_requests.id, timeline_requests.parcel_id, timeline_requests.status, timeline_requests.sources, timeline_requests.origin, timeline_requests.deployed_sha, timeline_requests.created_at, timeline_requests.updated_at, timeline_requests.completed_at, timeline_requests.error_message 
+FROM timeline_requests 
+2026-09-11T22:17:04.348525Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=14518754-4017-46d3-b950-bc764aea37ad request_id=25efb97d-f2ba-46aa-9c96-8b4f35799b6e sources=['census', 'landsat', 'naip', 'property', 'sentinel2', 'usgs_topo']
+2026-09-11T22:17:04.349253Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=25efb97d-f2ba-46aa-9c96-8b4f35799b6e
+  queued 25efb97d-f2ba-46aa-9c96-8b4f35799b6e for parcel 14518754-4017-46d3-b950-bc764aea37ad [census,landsat,naip,property,sentinel2,usgs_topo]
+FROM timeline_requests 
+WHERE timeline_requests.status IN (%(status_1_1)s, %(status_1_2)s)
+2026-09-11T22:17:04.350208Z [info     ] SELECT count(*) AS count_1 
+FROM timeline_requests 
+FROM timeline_requests 
+WHERE timeline_requests.id = %(pk_1)s::UUID
+2026-09-11T22:17:04.353776Z [info     ] SELECT timeline_requests.id, timeline_requests.parcel_id, timeline_requests.status, timeline_requests.sources, timeline_requests.origin, timeline_requests.deployed_sha, timeline_requests.created_at, timeline_requests.updated_at, timeline_requests.completed_at, timeline_requests.error_message 
+FROM timeline_requests 
+2026-09-11T22:17:04.354457Z [info     ] Created new timeline request   [app.services.imagery] origin=heal parcel_id=5c27245c-5827-430b-ad43-baae66e69335 request_id=63423ca1-6187-4420-b6ea-5cc34e6b7fe2 sources=['census', 'landsat', 'naip', 'property', 'sentinel2', 'usgs_topo']
+2026-09-11T22:17:04.355183Z [info     ] Timeline task dispatched       [app.services.imagery] request_id=63423ca1-6187-4420-b6ea-5cc34e6b7fe2
+  queued 63423ca1-6187-4420-b6ea-5cc34e6b7fe2 for parcel 5c27245c-5827-430b-ad43-baae66e69335 [census,landsat,naip,property,sentinel2,usgs_topo]
+
+Done — queued 6 timeline request(s), skipped 0.
+exit_code=0

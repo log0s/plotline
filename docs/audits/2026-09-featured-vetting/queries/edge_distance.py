@@ -48,7 +48,7 @@ SELECT f.slug, p.id AS parcel_id, p.address, p.latitude, p.longitude,
   JOIN scenes s ON s.id = ps.scene_id
   JOIN parcels p ON p.id = ps.parcel_id
   LEFT JOIN featured_locations f ON f.parcel_id = p.id
- WHERE p.id = ANY(:ids)
+ WHERE p.id = ANY(CAST(:ids AS uuid[]))
 UNION ALL
 SELECT f.slug, p.id, p.address, p.latitude, p.longitude,
        ps.source, ps.group_key, s.collection, s.item_id, s.provenance,
@@ -58,7 +58,7 @@ SELECT f.slug, p.id, p.address, p.latitude, p.longitude,
   LEFT JOIN featured_locations f ON f.parcel_id = p.id
   CROSS JOIN LATERAL unnest(ps.mosaic_scene_ids) AS m(scene_id)
   JOIN scenes s ON s.id = m.scene_id
- WHERE p.id = ANY(:ids)
+ WHERE p.id = ANY(CAST(:ids AS uuid[]))
  ORDER BY 1, 6, 7, 12
 """
 
