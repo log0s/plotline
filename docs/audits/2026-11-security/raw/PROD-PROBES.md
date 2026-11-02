@@ -37,6 +37,11 @@ curl takes SNI from the URL, so Fly can still route the request by SNI.
 There is no "patched vs unpatched" difference to observe on the API, because
 no API endpoint reflects `request.url`.
 
+*Later (2026-11-02): as written, P2 and P3 negotiate HTTP/2, and Fly resets
+the stream (`curl: (92) … PROTOCOL_ERROR`), so they never reach the app. Add
+`--http1.1`: with it, Fly forwards the malformed Host to both apps. Results:
+`../VERIFY-SEC-17-19.md`.*
+
 ## P3 — Does unpatched Starlette in Titiler reflect it? (only if P2 returned 200)
 
 If P1 returned 401, append `&access_token=<the Titiler token>` or `?access_token=…`.

@@ -847,9 +847,9 @@ set, per Ryan; see the P1 note under the fix batch below.)*
 
 | # | Severity | Status | Where |
 |---|---|---|---|
-| SEC-17 Titiler image: GDAL 3.12.1, starlette 0.52.1 (KEV BadHost), rio-tiler 8.0.5 unguarded expressions, tag-pinned | MEDIUM (P1 = 401, per Ryan 2026-11-02) | **Fixed, pending deploy (`36531b1`, `1c3fe32`; committed 2026-11-02, not deployed).** 2.4.0 by digest: starlette 1.6.0, rio-tiler 9.4.4 with guard, uid 65532. **Residual:** GDAL 3.12.4 (< 3.13.1; netCDF driver unregistered), Python 3.14.7 (< 3.14.10), certifi 2026.7.22 still GDAL's CA bundle and still trusts emSign G3, pip-audit 22 advisories in 7 packages. No newer stock release exists. | `../2026-11-security/FINDINGS.md` §SEC-17 |
-| SEC-18 GDAL selects drivers by content; `.tif` VRT steps past the P5 allowlist; `GDAL_SKIP` unset | MEDIUM | **Partially fixed, pending deploy (`36531b1`, `1c3fe32`; not deployed).** 142 of 147 drivers skipped; HDF5/netCDF fixtures refuse. **VRT half open:** VRT can't be skipped (rasterio warps through it), so `vrt_ssrf.tif` still opens and hits the canary. The fix needs a custom reader passing `driver=["GTiff"]`, which means a custom image: Ryan's decision. Until then the risk rests on the token, which is now confirmed set. | `../2026-11-security/FINDINGS.md` §SEC-18 |
-| SEC-19 Unpinned flyctl binary in deploy jobs with a multi-app token; no branch protection or `permissions:` | MEDIUM | **Binary half fixed, pending deploy (`aef5fe6`, `1c3fe32`; not yet exercised by CI).** flyctl 0.4.123, `sha256sum -c` before extract in all three jobs. Branch protection: done (Ryan). Token re-scope: Ryan's, open. Top-level `permissions:` and `Dockerfile.fly` base digests: still open, out of scope for this batch. | `../2026-11-security/FINDINGS.md` §SEC-19 |
+| SEC-17 Titiler image: GDAL 3.12.1, starlette 0.52.1 (KEV BadHost), rio-tiler 8.0.5 unguarded expressions, tag-pinned | MEDIUM (P1 = 401, per Ryan 2026-11-02; observed 401 on 2.4.0 post-deploy) | **Fixed, deployed 2026-11-02** (`36531b1`, Titiler release v10 via the `aef5fe6` push; verified in `../2026-11-security/VERIFY-SEC-17-19.md`; tests `1c3fe32` committed, not yet pushed). 2.4.0 by digest: starlette 1.6.0, rio-tiler 9.4.4 with guard, uid 65532. **Residual:** GDAL 3.12.4 (< 3.13.1; netCDF driver unregistered), Python 3.14.7 (< 3.14.10), certifi 2026.7.22 still GDAL's CA bundle and still trusts emSign G3, pip-audit 22 advisories in 7 packages. No newer stock release exists. | `../2026-11-security/FINDINGS.md` §SEC-17 |
+| SEC-18 GDAL selects drivers by content; `.tif` VRT steps past the P5 allowlist; `GDAL_SKIP` unset | MEDIUM | **Partially fixed, deployed 2026-11-02** (`36531b1`, Titiler v10; deployed `[env]` equals `fly.titiler.toml`, per `VERIFY-SEC-17-19.md` 4b; the in-machine driver count is not observed in production, since that needs `fly ssh`). 142 of 147 drivers skipped; HDF5/netCDF fixtures refuse. **VRT half open:** VRT can't be skipped (rasterio warps through it), so `vrt_ssrf.tif` still opens and hits the canary. The fix needs a custom reader passing `driver=["GTiff"]`, which means a custom image: Ryan's decision. Until then the risk rests on the token, which is now confirmed set. | `../2026-11-security/FINDINGS.md` §SEC-18 |
+| SEC-19 Unpinned flyctl binary in deploy jobs with a multi-app token; no branch protection or `permissions:` | MEDIUM | **Binary half fixed, live in CI since 2026-11-02** (`aef5fe6`). First real run: `deploy-titiler`, run `41503221445`, `flyctl.tgz: OK`. The `deploy-api`/`deploy-worker` copies haven't run yet; they first run on the push carrying `1c3fe32`. flyctl 0.4.123, `sha256sum -c` before extract in all three jobs. Branch protection: done (Ryan). Token re-scope: Ryan's, open. Top-level `permissions:` and `Dockerfile.fly` base digests: still open, out of scope for this batch. | `../2026-11-security/FINDINGS.md` §SEC-19 |
 | SEC-20 API/worker image trusts the compromised emSign chain (Python 3.12.14, certifi 2026.05.20); not rebuilt since 2026-09-07 | LOW-MEDIUM | **Open** | `../2026-11-security/FINDINGS.md` §SEC-20 |
 | SEC-21 Basemap attribution HTML to `innerHTML`, no CSP | LOW-MEDIUM | **Open** | `../2026-11-security/FINDINGS.md` §SEC-21 |
 | SEC-22 Dev stack listens on all interfaces with default credentials | LOW | **Open** | `../2026-11-security/FINDINGS.md` §SEC-22 |
@@ -928,6 +928,48 @@ MEDIUM, and the M9 accept's precondition holds.
   and `uv:0.11` (SEC-19's tag-pinned inputs). Pushing through `aef5fe6`
   first deploys Titiler alone.
 
+### Fix batch SEC-17/18/19 — post-deploy verification (2026-11-02)
+
+Report: `../2026-11-security/VERIFY-SEC-17-19.md`, evidence in
+`../2026-11-security/raw/verify/`. Read-only; P2–P4 authorized by Ryan.
+
+- **Deploy: as predicted by `FIX-SEC-17-19.md` §After push.**
+  - Only `deploy-titiler` ran. Its flyctl step printed `flyctl.tgz: OK`.
+  - Titiler v10 runs the `linux/amd64` manifest `29286aa3…` of the pinned
+    index `5b739117…`.
+  - Anonymous `/healthz` → 401. `Listening at: http://0.0.0.0:8000`, run
+    as `nonroot`. Deployed `[env]` equals `fly.titiler.toml`.
+  - API/worker are still `bac725c`.
+  - One tile per source renders through the API proxy (200, `immutable`).
+    The USGS topo tile, the only lab scene reachable read-only, is
+    byte-identical to the lab output (23,699 B).
+- **P4: M2's premise confirmed.** 121 spoofed `Fly-Client-IP` warmups in
+  13.4 s gave 120 × 204 and 1 × 429. Every spoofed value was unique, so
+  only the real-IP bucket could trip. See the M2 note below.
+- **P2: PROD-PROBES' row 2, but only over HTTP/1.1.** Recorded as
+  discovered below.
+- **P3:** the API doesn't reflect the bad Host. **Titiler is open:**
+  reflection can't be seen without the token, so it's Ryan's to run. The
+  command is in the report; it must use `--http1.1`.
+- **Not run:** the timeline `POST` from the verification prompt. It can
+  queue worker runs (`imagery.py:83-106`), which is a production write.
+  `GET …/imagery` and the tile renders stood in for it.
+
+**Discovered:**
+
+- **Fly forwards a malformed `Host` to both apps over HTTP/1.1.** Over
+  HTTP/2 it resets the stream (`PROTOCOL_ERROR`). So **BadHost is not
+  mitigated at Fly's proxy**: the app's own Host handling is what counts.
+  - API: no reflection observed.
+  - Titiler 2.4.0: starlette 1.6.0, no reflection in the lab, unobserved
+    in production.
+  - PROD-PROBES P2/P3 as written use curl's default h2, so they can't
+    score this. They need `--http1.1`.
+- **Titiler has no `GH_SHA` label, and `fly image show` reports the
+  platform manifest, not the pinned index.** Titiler is the stock image.
+  Checking its deploy identity means resolving the index's amd64 child
+  (`docker buildx imagetools inspect`), not comparing a commit SHA.
+
 ## Accepted, with reasons
 
 - **The SAS wait budgets now bound elapsed time, not sleep time.**
@@ -992,6 +1034,10 @@ MEDIUM, and the M9 accept's precondition holds.
   deployment topology load-bearing, and the assumption is written into
   `rate_limit.py` at the branch itself so nobody has to find this document to
   learn it.
+  *Later (2026-11-02): premise verified in production (PROD-PROBES P4,
+  `../2026-11-security/VERIFY-SEC-17-19.md`). 121 warmups with unique
+  spoofed `Fly-Client-IP` values gave 120 × 204 + 1 × 429 inside one
+  window, so Fly overwrites the header. The accept holds.*
 - **M9, routing.** Internal `.internal` addressing was implemented and
   reverted in c6213d5 — Fly private DNS is IPv6-only and it broke
   API→Titiler. The doubled public request load is the price of that

@@ -141,6 +141,12 @@ GDAL is 3.12.4, still below 3.13.1 (the netCDF driver is now unregistered,
 GDAL's CA bundle and still trusts emSign G3. No stock release ships
 anything newer. Lab and residuals: `FIX-SEC-17-19.md`.
 
+**Later (2026-11-02): deployed.** Titiler release v10 (push of `aef5fe6`)
+runs the amd64 manifest of the pinned index. Anonymous `/healthz` → 401,
+port 8000, non-root, all four sources render. BadHost: Fly forwards a
+malformed Host over HTTP/1.1. The API doesn't reflect it; Titiler's
+reflection needs the token to observe. `VERIFY-SEC-17-19.md`.
+
 ---
 
 ## SEC-18 · MEDIUM · GDAL picks drivers by content; the extension filter is not a format filter, and a `.tif` VRT steps around the host allowlist
@@ -214,6 +220,11 @@ still reproduce**, canary hit included. `GDAL_SKIP=VRT` breaks every
 reprojected tile, because rasterio 1.5.1 opens an in-memory VRT to warp.
 Closing it needs a custom reader (`FIX-SEC-17-19.md` §Residuals).
 
+**Later (2026-11-02): deployed** (Titiler v10). Deployed `[env]` equals
+`fly.titiler.toml`, `GDAL_SKIP` included. The registered-driver count on
+the machine itself is unobserved; it needs `fly ssh`.
+`VERIFY-SEC-17-19.md`.
+
 ---
 
 ## SEC-19 · MEDIUM · Deploy jobs run an unpinned flyctl binary holding a token that spans all three apps
@@ -280,6 +291,11 @@ extraction in all three jobs. Branch protection is done (Ryan, before
 this batch). Token re-scoping is Ryan's. `permissions:` and the
 `Dockerfile.fly` base-image digests are still open: they were out of
 scope for this batch.
+
+**Later (2026-11-02): exercised in CI.** `deploy-titiler`, run
+`41503221445`: `flyctl.tgz: OK` before extraction. The `deploy-api` and
+`deploy-worker` copies run first on the next `backend/**` push.
+`VERIFY-SEC-17-19.md`.
 
 ---
 

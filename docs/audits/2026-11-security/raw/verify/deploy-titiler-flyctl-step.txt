@@ -1,0 +1,14 @@
+# gh run view 41503221445 --log, job deploy-titiler, step 'Install flyctl (pinned, sha256-verified)' (ANSI stripped)
+2026-11-02T18:43:42.1693344Z ##[group]Run curl -fsSL --retry 3 -o "$RUNNER_TEMP/flyctl.tgz" \
+2026-11-02T18:43:42.1693827Z curl -fsSL --retry 3 -o "$RUNNER_TEMP/flyctl.tgz" \
+2026-11-02T18:43:42.1694394Z   "https://github.com/superfly/flyctl/releases/download/v${FLYCTL_VERSION}/flyctl_${FLYCTL_VERSION}_Linux_x86_64.tar.gz"
+2026-11-02T18:43:42.1694945Z echo "${FLYCTL_SHA256}  $RUNNER_TEMP/flyctl.tgz" | sha256sum -c -
+2026-11-02T18:43:42.1695267Z mkdir -p "$RUNNER_TEMP/flyctl-bin"
+2026-11-02T18:43:42.1695622Z tar -xzf "$RUNNER_TEMP/flyctl.tgz" -C "$RUNNER_TEMP/flyctl-bin" flyctl
+2026-11-02T18:43:42.1695977Z echo "$RUNNER_TEMP/flyctl-bin" >> "$GITHUB_PATH"
+2026-11-02T18:43:42.1716765Z shell: /usr/bin/bash -e {0}
+2026-11-02T18:43:42.1717041Z env:
+2026-11-02T18:43:42.1717216Z   FLYCTL_VERSION: 0.4.123
+2026-11-02T18:43:42.1717533Z   FLYCTL_SHA256: 08d8b45e04ed99223cd938622407664dbed70abeda8f1d15ccc7f4b3e91094bc
+2026-11-02T18:43:42.1717893Z ##[endgroup]
+2026-11-02T18:43:42.6682978Z /home/runner/work/_temp/flyctl.tgz: OK
