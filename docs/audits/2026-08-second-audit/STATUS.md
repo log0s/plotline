@@ -833,6 +833,27 @@ nothing here.
 | PF5 | **New — open. Falsifies a premise the build prompt carried in.** | **No "post-2011" extent is recorded for Adams County anywhere at HEAD**, and more generally the repo's richest coverage statements are unreadable by code. `grep -rn 2011` over `services/county_adapters.py` and `SUPPORTED_COUNTIES.md` is empty; the Adams adapter states unincorporated-only (`county_adapters.py:310-320`) and nothing about a start year. `SUPPORTED_COUNTIES.md` — row caps, date extents, field lists, "Known coverage gaps" — is **last verified 2026-08-03** and no code reads it. So `describe_coverage` built from the registry today can report jurisdiction and whether sales/permits exist, and **cannot report time extent** without new declarations: DC's 2020-2026 is implicit in `PERMIT_LAYERS` (`:467-476`), NYC's 2016+ is in a docstring (`:747-752`), and Denver, Adams and Santa Clara state nothing. Proposed remedy, five lines per adapter: a frozen `AdapterCoverage(jurisdiction, has_sales, has_permits, earliest_year, caveat)` and one abstract `coverage` property on `CountyAdapter`, abstract for the same reason `display_name` is (`:166-173`) — so no adapter can be registered without one. `earliest_year=None` means "not established" and must never be guessed. `PREFLIGHT.md` §5. |
 | PF6 | **New — open, and it is what `describe_coverage` must not read.** | **`timeline_request_tasks.coverage` is right only on rows written since 0014, so coverage must be derived from the adapter registry.** Production, 2026-09-11: `property` tasks split `complete`/NULL 171, `complete`/`covered` 27, `skipped`/NULL **670**, `skipped`/`no_adapter` 6, `skipped`/`not_covered` 6, `failed`/NULL 1. The 841 NULL rows are AA5 and AA6 exactly as those rows describe, and nothing self-running converges them. A tool that answered "is this county covered?" from the column would report 12 classified rows out of 853. `get_adapter_for_county` (`county_adapters.py:981`) is the honest source. `PREFLIGHT.md` §5. |
 
+## Security audit 2026-11
+
+Report-only audit of the deployed images (`bac725c` API/worker, Titiler
+`1.2.1` digest `9cc74708`) against advisories disclosed May–October 2026 and
+the npm/PyPI worm campaigns. Nothing was changed outside
+`../2026-11-security/`. IDs continue after SEC-13 (and after the SEC-14…16
+of the uncommitted `../2026-11-dependency-advisories/REPORT.md`) so one ledger
+never holds two rows with the same ID. **SEC-17 and SEC-18 change severity on
+PROD-PROBES P1 (is Titiler's token set?), which is also the M9 accept's
+precondition and is unverified in production.**
+
+| # | Severity | Status | Where |
+|---|---|---|---|
+| SEC-17 Titiler image: GDAL 3.12.1, starlette 0.52.1 (KEV BadHost), rio-tiler 8.0.5 unguarded expressions, tag-pinned | HIGH if P1 = 200 / MEDIUM if 401 | **Open** | `../2026-11-security/FINDINGS.md` §SEC-17 |
+| SEC-18 GDAL selects drivers by content; `.tif` VRT steps past the P5 allowlist; `GDAL_SKIP` unset | MEDIUM | **Open** | `../2026-11-security/FINDINGS.md` §SEC-18 |
+| SEC-19 Unpinned flyctl binary in deploy jobs with a multi-app token; no branch protection or `permissions:` | MEDIUM | **Open** | `../2026-11-security/FINDINGS.md` §SEC-19 |
+| SEC-20 API/worker image trusts the compromised emSign chain (Python 3.12.14, certifi 2026.05.20); not rebuilt since 2026-09-07 | LOW-MEDIUM | **Open** | `../2026-11-security/FINDINGS.md` §SEC-20 |
+| SEC-21 Basemap attribution HTML to `innerHTML`, no CSP | LOW-MEDIUM | **Open** | `../2026-11-security/FINDINGS.md` §SEC-21 |
+| SEC-22 Dev stack listens on all interfaces with default credentials | LOW | **Open** | `../2026-11-security/FINDINGS.md` §SEC-22 |
+| SEC-23 No install-script or release-age controls | LOW | **Open** | `../2026-11-security/FINDINGS.md` §SEC-23 |
+
 ## Accepted, with reasons
 
 - **The SAS wait budgets now bound elapsed time, not sleep time.**

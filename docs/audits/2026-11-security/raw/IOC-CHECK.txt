@@ -1,0 +1,5 @@
+IoC list sizes: npm 88 name@version (TanStack 42 pkgs x2 + axios 2 + plain-crypto-js 2); PyPI 82 name==version (woodpecker 38 entries + litellm/lightning/pytorch-lightning/mistralai/telnyx/durabletask/guardrails-ai)
+npm: package-lock.json, all 5 revisions: 511 name@version scanned; exact IoC matches: none; IoC package NAMES present at any version: none
+PyPI: uv.lock, all 3 revisions: 77 name@version scanned; exact IoC matches: none; IoC package NAMES present at any version: none
+PyPI: API/worker image: 51 name@version scanned; exact IoC matches: none; IoC package NAMES present at any version: none
+PyPI: Titiler image: 71 name@version scanned; exact IoC matches: none; IoC package NAMES present at any version: none

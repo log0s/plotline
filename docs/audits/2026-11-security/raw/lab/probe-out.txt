@@ -1,0 +1,33 @@
+== token instance, no / wrong token, no url param
+401	/cog/info?	{"detail": "Missing `access_token`"}
+401	/cog/info?access_token=wrong	{"detail": "Invalid `access_token`"}
+401	/healthz?	{"detail": "Missing `access_token`"}
+401	/cog/info?url=http%3A%2F%2Faudit-files%3A8080%2Freal.tif	{"detail": "Missing `access_token`"}
+200	/cog/info?url=http%3A%2F%2Faudit-files%3A8080%2Freal.tif&access_token=labtoken-not-a-real-secret	{"bounds": [-105.0, 39.936, -104.936, 40.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/4326", "band_metadata": [["b1", {}]], "band_descriptions": [["b1", ""]], "dtype": "uint8", "nodata_type": "None", "colorinterp": ["gray"], "scales": [1.0], "offsets": [0.0], "driver": "GTiff", "count": 1, "wid
+== open instance (as production would be if the token secret is unset)
+200	/cog/info?url=http%3A%2F%2Faudit-files%3A8080%2Freal.tif	{"bounds": [-105.0, 39.936, -104.936, 40.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/4326", "band_metadata": [["b1", {}]], "band_descriptions": [["b1", ""]], "dtype": "uint8", "nodata_type": "None", "colorinterp": ["gray"], "scales": [1.0], "offsets": [0.0], "driver": "GTiff", "count": 1, "wid
+500	/cog/info?url=http%3A%2F%2Faudit-files%3A8080%2Fnotallowed.png	{"detail": "'/vsicurl/http://audit-files:8080/notallowed.png' does not exist in the file system, and is not recognized as a supported dataset name."}
+== format confusion: .tif URL, other bytes
+500	/cog/info?url=http%3A%2F%2Faudit-files%3A8080%2Fnc_classic.tif	{"detail": "Opening a /vsi file with the netCDF driver requires Linux userfaultfd to be available. If running from Docker, --security-opt seccomp=unconfined might be needed."}
+500	/cog/info?url=%2Fvsicurl%2Fhttp%3A%2F%2Faudit-files%3A8080%2Fnc_classic.tif	{"detail": "Opening a /vsi file with the netCDF driver requires Linux userfaultfd to be available. If running from Docker, --security-opt seccomp=unconfined might be needed."}
+500	/cog/info?url=http%3A%2F%2Faudit-files%3A8080%2Fnc4.tif	{"detail": "'NoneType' object has no attribute 'to_authority'"}
+500	/cog/info?url=%2Fvsicurl%2Fhttp%3A%2F%2Faudit-files%3A8080%2Fnc4.tif	{"detail": "'NoneType' object has no attribute 'to_authority'"}
+== VRT served as .tif (GDAL_SKIP not set)
+200	/cog/info?url=http%3A%2F%2Faudit-files%3A8080%2Fvrt_ssrf.tif	{"bounds": [-105.0, 39.936, -104.936, 40.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/4326", "band_metadata": [["b1", {}]], "band_descriptions": [["b1", ""]], "dtype": "uint8", "nodata_type": "None", "colorinterp": ["undefined"], "scales": [1.0], "offsets": [0.0], "driver": "VRT", "count": 1, "
+200	/cog/statistics?url=http%3A%2F%2Faudit-files%3A8080%2Fvrt_ssrf.tif	{"b1": {"min": 7.0, "max": 7.0, "mean": 7.0, "count": 4096.0, "sum": 28672.0, "std": 0.0, "median": 7.0, "majority": 7.0, "minority": 7.0, "unique": 1.0, "histogram": [[0, 0, 0, 0, 0, 4096, 0, 0, 0, 0], [6.5, 6.6, 6.7, 6.8, 6.9, 7.0, 7.1, 7.2, 7.3, 7.4, 7.5]], "valid_percent": 100.0, "masked_pixels"
+500	/cog/info?url=http%3A%2F%2Faudit-files%3A8080%2Fvrt_raw_hostname.tif	{"detail": "'/etc/hostname' is invalid because the relativeToVRT flag is not set and the GDAL_VRT_RAWRASTERBAND_ALLOWED_SOURCE configuration option is not set (and thus defaults to SIBLING_OR_CHILD_OF_VRT_PATH. Consult https://gdal.org/drivers/raster/vrt.html#vrtrawrasterband_restricted_access for m
+500	/cog/statistics?url=http%3A%2F%2Faudit-files%3A8080%2Fvrt_raw_hostname.tif	{"detail": "'/etc/hostname' is invalid because the relativeToVRT flag is not set and the GDAL_VRT_RAWRASTERBAND_ALLOWED_SOURCE configuration option is not set (and thus defaults to SIBLING_OR_CHILD_OF_VRT_PATH. Consult https://gdal.org/drivers/raster/vrt.html#vrtrawrasterband_restricted_access for m
+500	/cog/info?url=http%3A%2F%2Faudit-files%3A8080%2Fvrt_raw_environ.tif	{"detail": "'/proc/self/environ' is invalid because the relativeToVRT flag is not set and the GDAL_VRT_RAWRASTERBAND_ALLOWED_SOURCE configuration option is not set (and thus defaults to SIBLING_OR_CHILD_OF_VRT_PATH. Consult https://gdal.org/drivers/raster/vrt.html#vrtrawrasterband_restricted_access 
+500	/cog/statistics?url=http%3A%2F%2Faudit-files%3A8080%2Fvrt_raw_environ.tif	{"detail": "'/proc/self/environ' is invalid because the relativeToVRT flag is not set and the GDAL_VRT_RAWRASTERBAND_ALLOWED_SOURCE configuration option is not set (and thus defaults to SIBLING_OR_CHILD_OF_VRT_PATH. Consult https://gdal.org/drivers/raster/vrt.html#vrtrawrasterband_restricted_access 
+== local paths directly
+500	/cog/info?url=%2Fetc%2Fhostname	{"detail": "'/etc/hostname' not recognized as being in a supported file format."}
+500	/cog/info?url=%2Fproc%2Fself%2Fenviron	{"detail": "'/proc/self/environ' not recognized as being in a supported file format."}
+500	/cog/info?url=file%3A%2F%2F%2Fetc%2Fpasswd	{"detail": "'/etc/passwd' not recognized as being in a supported file format."}
+== mosaic disabled?
+404	/mosaicjson/info?url=http%3A%2F%2Faudit-files%3A8080%2Fx.json	{"detail": "Not Found"}
+== same format-confusion probes with userfaultfd available (seccomp=unconfined, approximates a Fly microVM where Titiler runs as root)
+ERR	/cog/info?url=http%3A%2F%2Faudit-files%3A8080%2Fnc_classic.tif	<25 bytes>
+ERR	/cog/info?url=http%3A%2F%2Faudit-files%3A8080%2Fnc4.tif	<25 bytes>
+ERR	/cog/info?url=http%3A%2F%2Faudit-files%3A8080%2Fvrt_ssrf.tif	<25 bytes>
+== extension filter: VRT nested source with a non-.tif extension
+200	/cog/info?url=http%3A%2F%2Faudit-files%3A8080%2Fvrt_ssrf_noext.tif	{"bounds": [-105.0, 39.936, -104.936, 40.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/4326", "band_metadata": [["b1", {}]], "band_descriptions": [["b1", ""]], "dtype": "uint8", "nodata_type": "None", "colorinterp": ["undefined"], "scales": [1.0], "offsets": [0.0], "driver": "VRT", "count": 1, "

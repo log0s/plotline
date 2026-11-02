@@ -1,0 +1,20 @@
+### -X POST http://127.0.0.1:18000/api/v1/imagery/00000000-0000-0000-0000-000000000001/warmup
+status=204
+### -X POST -H Host: localhost/api/v1/health?x= http://127.0.0.1:18000/api/v1/imagery/00000000-0000-0000-0000-000000000001/warmup
+status=204
+### -X POST -H Host: localhost/api/v1/health# http://127.0.0.1:18000/api/v1/imagery/00000000-0000-0000-0000-000000000001/warmup
+status=204
+### -X POST -H Host: evil.example/x? http://127.0.0.1:18000/api/v1/imagery/00000000-0000-0000-0000-000000000001/warmup
+status=204
+### -H Host: localhost/api/v1/health?x= http://127.0.0.1:18000/static/../app/config.py
+status=404
+### -H Host: localhost/static/featured? http://127.0.0.1:18000/api/v1/health
+status=200
+### -X POST -H X-Forwarded-For: 9.9.9.9 http://127.0.0.1:18000/api/v1/imagery/00000000-0000-0000-0000-000000000001/warmup
+status=204
+### -X POST -H Fly-Client-IP: 8.8.8.8 http://127.0.0.1:18000/api/v1/imagery/00000000-0000-0000-0000-000000000001/warmup
+status=204
+### redis keys after:
+ratelimit:/api/v1/imagery/{snapshot_id}/warmup:172.18.0.1 = 4
+ratelimit:/api/v1/imagery/{snapshot_id}/warmup:8.8.8.8 = 1
+ratelimit:/api/v1/imagery/{snapshot_id}/warmup:9.9.9.9 = 1

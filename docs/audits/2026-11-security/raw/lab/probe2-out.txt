@@ -1,0 +1,4 @@
+ERR	/healthz?	<25 bytes>
+ERR	/cog/info?url=http%3A%2F%2Faudit-files%3A8080%2Fnc_classic.tif	<25 bytes>
+ERR	/cog/info?url=http%3A%2F%2Faudit-files%3A8080%2Fnc4.tif	<25 bytes>
+500	/cog/statistics?url=http%3A%2F%2Faudit-files%3A8080%2Fvrt_ssrf_noext.tif	{"detail": "Read failed. See previous exception for details."}

@@ -1,0 +1,2 @@
+gitleaks-history 1 [('generic-api-key', 'backend/tests/test_redact.py', 16, '52b02231')]
+gitleaks-worktree 2 [('generic-api-key', '.env', 16, ''), ('generic-api-key', 'backend/tests/test_redact.py', 16, '')]

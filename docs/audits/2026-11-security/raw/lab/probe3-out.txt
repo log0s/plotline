@@ -1,0 +1,4 @@
+200	/cog/statistics?url=http%3A%2F%2Faudit-files%3A8080%2Freal.tif&expression=b1%2A2	{"b1*2": {"min": 14.0, "max": 14.0, "mean": 14.0, "count": 4096.0, "sum": 57344.0, "std": 0.0, "median": 14.0, "majority": 14.0, "minority": 14.0, "unique": 1.0, "histogram": 
+500	/cog/statistics?url=http%3A%2F%2Faudit-files%3A8080%2Freal.tif&expression=b1.__class__	{"detail": "Expression b1.__class__ has forbidden control characters."}
+500	/cog/statistics?url=http%3A%2F%2Faudit-files%3A8080%2Freal.tif&expression=b1%2A0%2Bsum%28c+for+c+in+%5B%5D%29	{"detail": "Expression b1*0+sum(c for c in []) has forbidden control characters."}
+200	/cog/statistics?url=http%3A%2F%2Faudit-files%3A8080%2Freal.tif&expression=where%28b1%3E0%2C1%2C0%29	{"where(b1>0,1,0)": {"min": 1.0, "max": 1.0, "mean": 1.0, "count": 4096.0, "sum": 4096.0, "std": 0.0, "median": 1.0, "majority": 1.0, "minority": 1.0, "uniq

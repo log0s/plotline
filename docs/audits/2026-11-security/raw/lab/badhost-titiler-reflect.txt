@@ -1,0 +1,2 @@
+200 'plotline-titiler.fly.dev' -> http://plotline-titiler.fly.dev/tileMatrixSets/CDB1GlobalGrid
+200 'plotline-titiler.fly.dev/badhost-probe?x=' -> http://plotline-titiler.fly.dev/badhost-probe/tileMatrixSets/CDB1GlobalGrid

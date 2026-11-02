@@ -1,0 +1,4 @@
+/usr/local/lib/python3.14/site-packages/rasterio/__init__.py:367: NotGeoreferencedWarning: Dataset has no geotransform, gcps, or rpcs. The identity matrix will be returned.
+  dataset = DatasetReader(path, driver=driver, sharing=sharing, thread_safe=thread_safe, **kwargs)
+nc_classic OPENED driver= netCDF shape (64, 64) max 7
+nc4 OPENED driver= HDF5Image shape (64, 64) max 7

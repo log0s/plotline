@@ -1,0 +1,8 @@
+starlette 1.6.0 host='localhost'                      scope.path=/cog/tiles/1/2/3 url.path='/cog/tiles/1/2/3' url='http://localhost/cog/tiles/1/2/3?url=x'
+starlette 1.6.0 host='localhost/api/v1/health?x='     scope.path=/cog/tiles/1/2/3 url.path='/cog/tiles/1/2/3' url='http://127.0.0.1/cog/tiles/1/2/3?url=x'
+starlette 1.6.0 host='evil.example/admin#'            scope.path=/cog/tiles/1/2/3 url.path='/cog/tiles/1/2/3' url='http://127.0.0.1/cog/tiles/1/2/3?url=x'
+starlette 1.6.0 host='a@b'                            scope.path=/cog/tiles/1/2/3 url.path='/cog/tiles/1/2/3' url='http://127.0.0.1/cog/tiles/1/2/3?url=x'
+starlette 0.52.1 host='localhost'                      scope.path=/cog/tiles/1/2/3 url.path='/cog/tiles/1/2/3' url='http://localhost/cog/tiles/1/2/3?url=x'
+starlette 0.52.1 host='localhost/api/v1/health?x='     scope.path=/cog/tiles/1/2/3 url.path='/api/v1/health' url='http://localhost/api/v1/health?x=/cog/tiles/1/2/3?url=x'
+starlette 0.52.1 host='evil.example/admin#'            scope.path=/cog/tiles/1/2/3 url.path='/admin' url='http://evil.example/admin#/cog/tiles/1/2/3?url=x'
+starlette 0.52.1 host='a@b'                            scope.path=/cog/tiles/1/2/3 url.path='/cog/tiles/1/2/3' url='http://a@b/cog/tiles/1/2/3?url=x'

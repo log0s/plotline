@@ -1,0 +1,2 @@
+<VRTDataset rasterXSize="64" rasterYSize="1"><VRTRasterBand dataType="Byte" band="1" subClass="VRTRawRasterBand">
+<SourceFilename relativetoVRT="0">/etc/hostname</SourceFilename><ImageOffset>0</ImageOffset><PixelOffset>1</PixelOffset><LineOffset>64</LineOffset></VRTRasterBand></VRTDataset>

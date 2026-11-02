@@ -1,0 +1,30 @@
+Scanner runs, 2026-11-02, in the order run. "Exit 1" from pip-audit, osv-scanner,
+npm audit and gitleaks means "completed, findings present". It is not an error.
+Each run below was checked against its stdout for that distinction.
+
+tool / target                                                     exit  state
+pip-audit 2.10.1 -r api-worker-pip-freeze.txt (deployed image)    1     COMPLETED, 44 advisories in 4 packages
+pip-audit 2.10.1 -r titiler-pip-freeze.txt (deployed image)       1     COMPLETED, 27 advisories in 8 packages
+                                                                         (4 titiler-* file:// lines removed first; those are titiler's own source)
+pip-audit 2.10.1 -r `uv export --frozen` of backend/uv.lock        1     COMPLETED, 44 in 4 (identical to the image; lock == installed)
+osv-scanner 2.7.0 --lockfile uv.lock --lockfile package-lock.json 1     COMPLETED, findings; zero MAL- ids
+npm audit (frontend, all deps)                                    1     COMPLETED, 34 (1 low, 21 moderate, 8 high, 4 critical)
+npm audit --omit=dev                                              1     COMPLETED, 3 (maplibre-gl, lodash, protocol-buffers-schema)
+osv-scanner scan image <api digest>                               127   ERRORED: "file blobs/sha256/c94b… not found in tar"
+                                                                         (docker's containerd store exports a layerless tar)
+osv-scanner scan image --archive <docker save of api>             127   ERRORED: same; docker save wrote a 9.7 KB tar
+osv-scanner scan image <titiler digest>                           1     COMPLETED, 93 packages with findings (1115 Debian ids, 50 PyPI ids)
+                                                                         full JSON (48 MB) kept out of the repo; summary in osv-image-titiler-summary.tsv
+osv-scanner scan source -r <exported api rootfs> os/dpkg+wheelegg 1     PARTIAL: PyPI completed (7 pkgs; summary tsv). The dpkg extractor
+                                                                         never fired (0 Debian packages); counted as NOT SCANNED for OS packages
+OSV /v1/querybatch over the api rootfs /var/lib/dpkg/status       0     COMPLETED (manual substitute for the failed dpkg pass):
+                                                                         87 source packages, 1270 ids; osv-image-api-debian-summary.tsv
+gitleaks 8.30.1 git --log-opts=--all --redact (387 commits)       1     COMPLETED, 1 hit: synthetic test fixture (see gitleaks-summary.txt)
+gitleaks 8.30.1 dir --redact (working tree incl. untracked)       1     COMPLETED, 2 hits: the same fixture + gitignored .env (never committed)
+custom git log -p --all grep for infra credential shapes           -     COMPLETED, 16 lines, all local-default or placeholder URLs
+
+Not run, and why:
+- trivy/grype: not installed; osv-scanner image mode covered the same ground for Titiler.
+- Nothing scans the native libraries vendored inside rasterio.libs (libgdal 3.12.1,
+  libcurl 8.17.0, OpenSSL 3.6.0, libnetcdf 4.9.3, libhdf5 1.14.6). They are wheel-internal,
+  so no package database lists them. Versions were read out with `strings` (titiler-inventory.txt).

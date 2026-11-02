@@ -1,0 +1,2 @@
+<VRTDataset rasterXSize="64" rasterYSize="64"><SRS>EPSG:4326</SRS><GeoTransform>-105,0.001,0,40,0,-0.001</GeoTransform>
+<VRTRasterBand dataType="Byte" band="1"><SimpleSource><SourceFilename relativeToVRT="0">/vsicurl/http://audit-canary:8080/latest/meta-data</SourceFilename><SourceBand>1</SourceBand></SimpleSource></VRTRasterBand></VRTDataset>

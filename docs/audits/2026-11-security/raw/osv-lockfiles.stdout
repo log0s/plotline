@@ -1,0 +1,4 @@
+Starting filesystem walk for root: /
+Scanned /home/logos/dev/plotline/backend/uv.lock file and found 75 packages
+Scanned /home/logos/dev/plotline/frontend/package-lock.json file and found 485 packages
+End status: 0 dirs visited, 2 inodes visited, 2 Extract calls, 36.226404ms elapsed, 36.226434ms wall time
