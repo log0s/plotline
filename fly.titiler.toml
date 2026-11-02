@@ -7,13 +7,24 @@ app = 'plotline-titiler'
 primary_region = 'lax'
 
 [build]
-  image = 'ghcr.io/developmentseed/titiler:1.2.1'
+  # titiler 2.4.0 (2026-09-21), multi-arch index digest. Pinned by digest so
+  # a redeploy cannot silently re-resolve the tag (security audit SEC-17).
+  # Bumping it means regenerating GDAL_SKIP below from the new image's
+  # driver list; backend/tests/test_titiler_config.py fails until you do.
+  image = 'ghcr.io/developmentseed/titiler@sha256:5b739117ff60d3cef9b0e0b8d9f4d628032c00a4965117e3f745cadc79fa7287'
 
 [env]
   # Nothing in Plotline uses /mosaicjson; left enabled it was a free mosaic
   # renderer for anyone (security audit SEC-1). The access token itself is
   # a Fly secret (TITILER_API_GLOBAL_ACCESS_TOKEN), never a value here.
   TITILER_API_DISABLE_MOSAIC = 'TRUE'
+  # titiler 2.x adds /zarr (xarray readers, outside GDAL); Plotline never
+  # calls it.
+  TITILER_API_DISABLE_ZARR = 'TRUE'
+  # 2.x runs as uid 65532, which cannot bind :80 without an unprivileged-port
+  # sysctl; the API reaches Titiler through the fly.dev edge, so the
+  # container port is invisible to it.
+  PORT = '8000'
   MAX_WORKERS = '2'
   WORKERS_PER_CORE = '1'
   GDAL_DISABLE_READDIR_ON_OPEN = 'EMPTY_DIR'
@@ -21,13 +32,43 @@ primary_region = 'lax'
   VSI_CACHE_SIZE = '268435456'
   GDAL_CACHEMAX = '200'
   CPL_VSIL_CURL_ALLOWED_EXTENSIONS = '.tif,.tiff'
+  # Driver allowlist, expressed as its complement because GDAL 3.12 has no
+  # positive form: every driver registered in the pinned image except GTiff
+  # (all four sources are GeoTIFF/COG), PNG and JPEG (tile encoding), MEM
+  # and VRT. The extension filter above is a suffix check, not a format
+  # check: without this, HDF5/netCDF bytes at a .tif URL are parsed
+  # (security audit SEC-18).
+  # VRT stays registered, which leaves SEC-18's VRT half open: rasterio
+  # 1.5.1 opens an in-memory <VRTDataset> string to compute every warp, so
+  # GDAL_SKIP=VRT (Titiler's own advice) fails every reprojected tile. A VRT
+  # served at a .tif URL still opens and fetches the .tif sources it names.
+  # Closing that needs a custom reader passing driver=["GTiff"] to
+  # rasterio.open, i.e. a custom image. The assumption carrying the risk:
+  # only allowlisted upstreams (stac.ALLOWED_UPSTREAM_HOSTS) reach url=,
+  # which holds only while TITILER_API_GLOBAL_ACCESS_TOKEN is set.
+  GDAL_SKIP = """\
+    AAIGrid,ACE2,ADRG,AIG,AVCBin,AVCE00,AirSAR,BAG,BIGGIF,BMP,BSB,BT,\
+    BYN,CALS,CEOS,COASP,COG,COSAR,CPG,CTG,DAAS,DERIVED,DIMAP,DOQ1,DOQ2,\
+    DTED,ECRGTOC,EEDA,EEDAI,EHdr,EIR,ENVI,ERS,ESAT,ESRI Shapefile,ESRIC,\
+    ESRIJSON,FAST,GDALG,GFF,GIF,GNMDatabase,GNMFile,GPKG,GRASSASCIIGrid,\
+    GRIB,GS7BG,GSAG,GSBG,GSC,GTI,GTX,GXF,GenBin,GeoJSON,GeoJSONSeq,HDF5,\
+    HDF5Image,HF2,HFA,HTTP,ILWIS,IRIS,ISCE,ISG,ISIS2,ISIS3,JAXAPALSAR,\
+    JDEM,JP2OpenJPEG,KMLSUPEROVERLAY,KRO,L1B,LAN,LCP,LIBERTIFF,LOSLAS,\
+    Leveller,MAP,MBTiles,MFF,MFF2,MRF,MSGN,MVT,MiraMonRaster,NDF,\
+    NGSGEOID,NITF,NOAA_B,NSIDCbin,NTv2,NWT_GRC,NWT_GRD,OSM,PAux,PCIDSK,\
+    PCRaster,PDF,PDS,PDS4,PLMOSAIC,PNM,PRF,RCM,RIK,RMF,ROI_PAC,RPFTOC,\
+    RRASTER,RS2,RST,S102,S104,S111,SAFE,SAGA,SAR_CEOS,SENTINEL2,SIGDEM,\
+    SNAP_TIFF,SNODAS,SQLite,SRP,SRTMHGT,STACIT,STACTA,TGA,TIL,TSX,\
+    Terragen,TopoJSON,USGSDEM,VICAR,WCS,WEBP,WMS,WMTS,XYZ,ZMap,Zarr,\
+    netCDF"""
   GDAL_HTTP_MERGE_CONSECUTIVE_RANGES = 'YES'
   GDAL_HTTP_MULTIPLEX = 'YES'
   GDAL_HTTP_MAX_RETRY = '3'
   GDAL_HTTP_RETRY_DELAY = '1'
-  # No knob here bounds the STAC item cache. rio-tiler 8.0.5 caches fetched
-  # items in a module-level LRUCache(maxsize=512) with no TTL
-  # (rio_tiler/io/stac.py:100-102), keyed on the item URL; it reads no
+  # No knob here bounds the STAC item cache. rio-tiler caches fetched items
+  # in a module-level LRUCache(maxsize=512) with no TTL (8.0.5:
+  # rio_tiler/io/stac.py:100-102; unchanged in 9.4.4, stac.py:37,105-107),
+  # keyed on the item URL; it reads no
   # environment variable, and RIO_TILER_CACHE_* does not exist in rio-tiler or
   # titiler. An entry lives until 512-slot eviction or process restart, which
   # is how a cached SAS token outlived its expiry by hours and 502'd every
@@ -36,7 +77,7 @@ primary_region = 'lax'
   # with the token. See docs/audits/2026-08-titiler-cache/FINDINGS.md.
 
 [http_service]
-  internal_port = 80
+  internal_port = 8000
   force_https = true
   auto_stop_machines = 'off'
   auto_start_machines = true
