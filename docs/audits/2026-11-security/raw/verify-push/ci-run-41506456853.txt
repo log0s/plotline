@@ -1,0 +1,38 @@
+# gh run view 41506456853 --log, excerpts (push of 8c8e297), captured 2026-11-02T19:18:58Z
+changes	success	2026-11-02T19:04:19Z	2026-11-02T19:04:34Z
+deploy-titiler	success	2026-11-02T19:04:37Z	2026-11-02T19:05:30Z
+test	success	2026-11-02T19:04:37Z	2026-11-02T19:05:51Z
+test-frontend	skipped	2026-11-02T19:04:35Z	2026-11-02T19:04:35Z
+deploy-worker	success	2026-11-02T19:05:54Z	2026-11-02T19:07:43Z
+deploy-api	success	2026-11-02T19:05:53Z	2026-11-02T19:08:03Z
+
+Log diff base for this run	2026-11-02T19:04:26.0448696Z - base: `bac725c5a7d196a8cd8c7aa4f6da84c7bb063bda`
+Run dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d	2026-11-02T19:04:26.1492294Z ##[group]Filter backend = true
+Run dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d	2026-11-02T19:04:26.1495845Z ##[group]Filter api = true
+Run dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d	2026-11-02T19:04:26.1498460Z ##[group]Filter worker = true
+Run dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d	2026-11-02T19:04:26.1501394Z ##[group]Filter titiler = true
+Run dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d	2026-11-02T19:04:26.1503562Z ##[group]Filter frontend = false
+deploy-titiler	Install flyctl (pinned, sha256-verified)	2026-11-02T19:04:40.7393566Z /home/runner/work/_temp/flyctl.tgz: OK
+deploy-titiler	Run flyctl deploy --remote-only --config fly.titiler.toml	2026-11-02T19:04:41.8998520Z Searching for image 'ghcr.io/developmentseed/titiler@sha256:5b739117ff60d3cef9b0e0b8d9f4d628032c00a4965117e3f745cadc79fa7287' remotely...
+deploy-titiler	Run flyctl deploy --remote-only --config fly.titiler.toml	2026-11-02T19:04:42.5184159Z image found: img_lj9x4d50x1gmpwo1
+deploy-titiler	Run flyctl deploy --remote-only --config fly.titiler.toml	2026-11-02T19:04:44.4973872Z > [1/2] Waiting for machine 825d6ea73e9278 to reach a good state
+deploy-titiler	Run flyctl deploy --remote-only --config fly.titiler.toml	2026-11-02T19:05:05.7751521Z ✔ [1/2] Machine 825d6ea73e9278 is now in a good state
+deploy-titiler	Run flyctl deploy --remote-only --config fly.titiler.toml	2026-11-02T19:05:06.3419394Z > [2/2] Waiting for machine 080e603a732098 to reach a good state
+deploy-titiler	Run flyctl deploy --remote-only --config fly.titiler.toml	2026-11-02T19:05:28.4727483Z ✔ [2/2] Machine 080e603a732098 is now in a good state
+test	Run backend tests	2026-11-02T19:05:36.3486981Z ====================== 771 passed, 112 warnings in 28.24s ======================
+deploy-worker	Install flyctl (pinned, sha256-verified)	2026-11-02T19:05:59.2266222Z /home/runner/work/_temp/flyctl.tgz: OK
+deploy-worker	Run flyctl deploy --remote-only --config fly.worker.toml \	2026-11-02T19:06:19.8984326Z #5 FROM ghcr.io/astral-sh/uv:0.11@sha256:77280f2f771df71f90786c314fe1bbc1e023feac652969bbf139c280babf2eb7
+deploy-worker	Run flyctl deploy --remote-only --config fly.worker.toml \	2026-11-02T19:06:20.0615107Z #6 [stage-0 1/9] FROM docker.io/library/python:3.12-slim@sha256:b18b261e1b4974b4f321451ad5251ded85abb22c2b8b262da527dda1d031ab30
+deploy-worker	Run flyctl deploy --remote-only --config fly.worker.toml \	2026-11-02T19:07:10.8400820Z image: registry.fly.io/plotline-worker:deployment-01M6ETEY1B7YQ4D2KVBVR3W3BT
+deploy-worker	Run flyctl deploy --remote-only --config fly.worker.toml \	2026-11-02T19:07:14.6842262Z > [2/2] Waiting for machine e7845415f57728 to reach a good state
+deploy-worker	Run flyctl deploy --remote-only --config fly.worker.toml \	2026-11-02T19:07:14.7134743Z > [1/2] Waiting for machine e2862966b306d8 to reach a good state
+deploy-worker	Run flyctl deploy --remote-only --config fly.worker.toml \	2026-11-02T19:07:27.6905631Z ✔ [2/2] Machine e7845415f57728 is now in a good state
+deploy-worker	Run flyctl deploy --remote-only --config fly.worker.toml \	2026-11-02T19:07:38.5734159Z ✔ [1/2] Machine e2862966b306d8 is now in a good state
+deploy-api	Install flyctl (pinned, sha256-verified)	2026-11-02T19:05:57.7004435Z /home/runner/work/_temp/flyctl.tgz: OK
+deploy-api	Run flyctl deploy --remote-only \	2026-11-02T19:06:25.0311526Z #5 [stage-0 1/9] FROM docker.io/library/python:3.12-slim@sha256:b18b261e1b4974b4f321451ad5251ded85abb22c2b8b262da527dda1d031ab30
+deploy-api	Run flyctl deploy --remote-only \	2026-11-02T19:06:34.9072223Z #8 FROM ghcr.io/astral-sh/uv:0.11@sha256:77280f2f771df71f90786c314fe1bbc1e023feac652969bbf139c280babf2eb7
+deploy-api	Run flyctl deploy --remote-only \	2026-11-02T19:07:10.5078436Z image: registry.fly.io/log0s-plotline-api:deployment-01M6ETEW601D5TS3900SAJ6HM7
+deploy-api	Run flyctl deploy --remote-only \	2026-11-02T19:07:14.9728488Z > [1/2] Waiting for machine 48e0de9a713918 to reach a good state
+deploy-api	Run flyctl deploy --remote-only \	2026-11-02T19:07:38.3391253Z ✔ [1/2] Machine 48e0de9a713918 is now in a good state
+deploy-api	Run flyctl deploy --remote-only \	2026-11-02T19:07:39.4662565Z > [2/2] Waiting for machine 825d69b7e46618 to reach a good state
+deploy-api	Run flyctl deploy --remote-only \	2026-11-02T19:08:00.9247160Z ✔ [2/2] Machine 825d69b7e46618 is now in a good state

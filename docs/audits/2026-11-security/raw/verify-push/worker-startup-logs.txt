@@ -1,0 +1,46 @@
+# fly logs -a plotline-worker --no-tail, captured 2026-11-02T19:18:58Z. Redis host replaced with <redis-host>.
+2026-11-02T19:07:14Z runner[e7845415f57728] lax [info]Pulling container image registry.fly.io/plotline-worker@sha256:a1ec7e79a68fbed4d3748aada6949dec654ea1ed2d6d69f84a46584bf0422299
+2026-11-02T19:07:14Z runner[e2862966b306d8] lax [info]Pulling container image registry.fly.io/plotline-worker@sha256:a1ec7e79a68fbed4d3748aada6949dec654ea1ed2d6d69f84a46584bf0422299
+2026-11-02T19:07:22Z runner[e2862966b306d8] lax [info]Successfully prepared image registry.fly.io/plotline-worker@sha256:a1ec7e79a68fbed4d3748aada6949dec654ea1ed2d6d69f84a46584bf0422299 (7.534543086s)
+2026-11-02T19:07:23Z runner[e7845415f57728] lax [info]Successfully prepared image registry.fly.io/plotline-worker@sha256:a1ec7e79a68fbed4d3748aada6949dec654ea1ed2d6d69f84a46584bf0422299 (8.348620583s)
+2026-11-02T19:07:23Z runner[e2862966b306d8] lax [info]Configuring firecracker
+2026-11-02T19:07:23Z app[e2862966b306d8] lax [info]worker: Hitting Ctrl+C again will initiate cold shutdown, terminating all running tasks!
+2026-11-02T19:07:23Z app[e2862966b306d8] lax [info]worker: Warm shutdown (MainProcess)
+2026-11-02T19:07:23Z app[e2862966b306d8] lax [info] INFO Sending signal SIGINT to main child process w/ PID 639
+2026-11-02T19:07:23Z runner[e7845415f57728] lax [info]Configuring firecracker
+2026-11-02T19:07:26Z app[e2862966b306d8] lax [info] INFO Main child exited normally with code: 1
+2026-11-02T19:07:26Z app[e2862966b306d8] lax [info] INFO Starting clean up.
+2026-11-02T19:07:26Z app[e2862966b306d8] lax [info][1232945.036975] reboot: Restarting system
+2026-11-02T19:07:26Z app[e2862966b306d8] lax [info]2026-11-02T19:07:26.791862589 [01M6ETH69S5T244MVX6WKGG6HP:main] Running Firecracker v1.14.4
+2026-11-02T19:07:26Z app[e2862966b306d8] lax [info]2026-11-02T19:07:26.791995701 [01M6ETH69S5T244MVX6WKGG6HP:main] Listening on API socket ("/fc.sock").
+2026-11-02T19:07:27Z app[e2862966b306d8] lax [info] INFO Starting init (commit: b99d4b17)...
+2026-11-02T19:07:27Z app[e2862966b306d8] lax [info] INFO Preparing to run: `/entrypoint.sh celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2` as root
+2026-11-02T19:07:27Z app[e2862966b306d8] lax [info] INFO [fly api proxy] listening at /.fly/api
+2026-11-02T19:07:27Z runner[e2862966b306d8] lax [info]Machine created and started in 12.581s
+2026-11-02T19:07:27Z app[e2862966b306d8] lax [info]Starting service...
+2026-11-02T19:07:27Z app[e2862966b306d8] lax [info]2026/11/02 19:07:27 INFO SSH listening listen_address=[fdaa:58:2ead:a7b:8f:85b7:569e:2]:22
+2026-11-02T19:07:31Z app[e2862966b306d8] lax [info]/usr/local/lib/python3.12/site-packages/celery/platforms.py:841: SecurityWarning: You're running the worker with superuser privileges: this is
+2026-11-02T19:07:31Z app[e2862966b306d8] lax [info]absolutely not recommended!
+2026-11-02T19:07:31Z app[e2862966b306d8] lax [info]Please specify a different user using the --uid option.
+2026-11-02T19:07:31Z app[e2862966b306d8] lax [info]User information: uid=0 euid=0 gid=0 egid=0
+2026-11-02T19:07:31Z app[e2862966b306d8] lax [info]  warnings.warn(SecurityWarning(ROOT_DISCOURAGED.format(
+2026-11-02T19:07:32Z app[e2862966b306d8] lax [info] -------------- celery@e2862966b306d8 v5.6.3 (recovery)
+2026-11-02T19:07:32Z app[e2862966b306d8] lax [info]--- ***** -----
+2026-11-02T19:07:32Z app[e2862966b306d8] lax [info]-- ******* ---- Linux-6.12.114-fly-x86_64-with-glibc2.41 2026-11-02 19:07:32
+2026-11-02T19:07:32Z app[e2862966b306d8] lax [info]- *** --- * ---
+2026-11-02T19:07:32Z app[e2862966b306d8] lax [info]- ** ---------- [config]
+2026-11-02T19:07:32Z app[e2862966b306d8] lax [info]- ** ---------- .> app:         plotline:0x7fb8068a67e0
+2026-11-02T19:07:32Z app[e2862966b306d8] lax [info]- ** ---------- .> transport:   rediss://default:**@<redis-host>:6379//
+2026-11-02T19:07:32Z app[e2862966b306d8] lax [info]- ** ---------- .> results:     rediss://default:**@<redis-host>:6379/
+2026-11-02T19:07:32Z app[e2862966b306d8] lax [info]- *** --- * --- .> concurrency: 2 (prefork)
+2026-11-02T19:07:32Z app[e2862966b306d8] lax [info]-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+2026-11-02T19:07:32Z app[e2862966b306d8] lax [info]--- ***** -----
+2026-11-02T19:07:32Z app[e2862966b306d8] lax [info] -------------- [queues]
+2026-11-02T19:07:32Z app[e2862966b306d8] lax [info]                .> celery           exchange=celery(direct) key=celery
+2026-11-02T19:07:32Z app[e2862966b306d8] lax [info][tasks]
+2026-11-02T19:07:32Z app[e2862966b306d8] lax [info]  . tasks.fetch_imagery_timeline
+2026-11-02T19:07:32Z app[e2862966b306d8] lax [info]{"event": "Connected to rediss://default:***@<redis-host>:6379//", "logger": "celery.worker.consumer.connection", "level": "info", "timestamp": "2026-11-02T19:07:32.812034Z"}
+2026-11-02T19:07:33Z app[e2862966b306d8] lax [info]{"event": "mingle: searching for neighbors", "logger": "celery.worker.consumer.mingle", "level": "info", "timestamp": "2026-11-02T19:07:33.007523Z"}
+2026-11-02T19:07:34Z app[e2862966b306d8] lax [info]{"event": "mingle: all alone", "logger": "celery.worker.consumer.mingle", "level": "info", "timestamp": "2026-11-02T19:07:34.542367Z"}
+2026-11-02T19:07:36Z app[e2862966b306d8] lax [info]{"event": "Janitor found no stranded work", "logger": "app.services.imagery", "level": "info", "timestamp": "2026-11-02T19:07:36.503806Z"}
+2026-11-02T19:07:36Z app[e2862966b306d8] lax [info]{"event": "celery@e2862966b306d8 ready.", "logger": "celery.apps.worker", "level": "info", "timestamp": "2026-11-02T19:07:36.504246Z"}

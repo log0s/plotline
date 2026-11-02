@@ -1,0 +1,6 @@
+# Step 4: GET https://log0s-plotline-api.fly.dev/api/v1/imagery/<snapshot>/tiles/<z/x/y>, anonymous, 2026-11-02T19:14:49Z, same snapshots and coords as ../verify/tiles-headers.txt
+# name snapshot z/x/y | status, cache-control, content-length, content-type | first 4 bytes | sha256[:16]
+topo 186f4004-6ee6-4f5a-9222-66c45977a8ca 13/1708/3109 | HTTP/2 200  cache-control: public, max-age=86400, immutable content-length: 23699 content-type: image/jpeg | ffd8ffe0 | 47e6a135dd6ea920
+naip d1e5e2db-84cb-40d0-90c3-63bd2066e3fe 16/13656/24866 | HTTP/2 200  cache-control: public, max-age=86400, immutable content-length: 28680 content-type: image/jpeg | ffd8ffe0 | 6d199b8e61e90446
+s2 67dba3d8-54f0-4fb4-b0a7-9cbf058a4083 13/1706/3109 | HTTP/2 200  cache-control: public, max-age=86400, immutable content-length: 67014 content-type: image/png | 89504e47 | fb19eaacb3f9c3ed
+landsat e30da741-bd42-44ab-8e9d-f6912fded595 12/853/1554 | HTTP/2 200  cache-control: public, max-age=86400, immutable content-length: 182291 content-type: image/png | 89504e47 | a41c27e160cd7f19

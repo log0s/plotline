@@ -224,6 +224,10 @@ local `main` ahead of `origin/main` = `aef5fe6`.
 - `fly image show` `GH_SHA` matches on both apps.
 - One tile still renders through the proxy.
 
+*Later (2026-11-02): all three confirmed after the push of `8c8e297`
+(`VERIFY-PUSH-8c8e297.md`). P3 on Titiler is still open: the token
+supplied for it was rejected as invalid.*
+
 **Not blocking:** P3 on Titiler with the token (above) and the in-machine
 driver count (note B).
 

@@ -1,0 +1,70 @@
+# Playwright 1.64.1 (mcr.microsoft.com/playwright:v1.64.1-noble), 2026-11-02T19:18:58Z
+# https://plotline.land/explore/bdf4bdcc-3e7f-4cb6-b918-2337c3a0a808 (RiNo), 15 s settle.
+# Every non-GET/HEAD/OPTIONS request was aborted in the browser (route.abort) and listed under BLOCKED; none left the browser.
+BLOCKED (aborted in browser):
+  POST https://plotline.land/cdn-cgi/rum?
+  POST https://api.plotline.land/api/v1/parcels/bdf4bdcc-3e7f-4cb6-b918-2337c3a0a808/timeline
+  POST https://api.plotline.land/api/v1/imagery/d1e5e2db-84cb-40d0-90c3-63bd2066e3fe/warmup
+API responses (non-tile):
+  200 GET /api/v1/parcels/bdf4bdcc-3e7f-4cb6-b918-2337c3a0a808
+  200 GET /api/v1/parcels/bdf4bdcc-3e7f-4cb6-b918-2337c3a0a808/imagery
+  200 GET /api/v1/parcels/bdf4bdcc-3e7f-4cb6-b918-2337c3a0a808/demographics
+  200 GET /api/v1/parcels/bdf4bdcc-3e7f-4cb6-b918-2337c3a0a808/events
+Tile responses: 28, non-200: 0
+  200 GET /api/v1/imagery/d1e5e2db-84cb-40d0-90c3-63bd2066e3fe/tiles/16/13656/24868
+  200 GET /api/v1/imagery/d1e5e2db-84cb-40d0-90c3-63bd2066e3fe/tiles/16/13658/24867
+  200 GET /api/v1/imagery/d1e5e2db-84cb-40d0-90c3-63bd2066e3fe/tiles/16/13655/24867
+  200 GET /api/v1/imagery/d1e5e2db-84cb-40d0-90c3-63bd2066e3fe/tiles/16/13655/24865
+  200 GET /api/v1/imagery/d1e5e2db-84cb-40d0-90c3-63bd2066e3fe/tiles/16/13658/24866
+  200 GET /api/v1/imagery/d1e5e2db-84cb-40d0-90c3-63bd2066e3fe/tiles/16/13654/24865
+Text checks:
+  population/income/census text: true
+  property text: true
+  error text: [ 'Could not start timeline: Failed to fetch' ]
+
+# --- script (smoke.mjs) ---
+import { chromium } from "playwright";
+
+const url = process.argv[2];
+const shot = process.argv[3];
+const log = [];
+const blocked = [];
+const tiles = [];
+
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+
+await page.route("**/*", (route) => {
+  const req = route.request();
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method())) return route.continue();
+  blocked.push(`${req.method()} ${req.url()}`);
+  return route.abort("blockedbyclient");
+});
+
+page.on("response", (res) => {
+  const u = res.url();
+  if (!u.includes("/api/v1/")) return;
+  const line = `${res.status()} ${res.request().method()} ${u.replace(/^https?:\/\/[^/]+/, "")}`;
+  if (u.includes("/tiles/")) tiles.push(line);
+  else log.push(line);
+});
+page.on("pageerror", (e) => log.push(`PAGEERROR ${e.message}`));
+
+await page.goto(url, { waitUntil: "domcontentloaded" });
+await page.waitForTimeout(15000);
+
+const text = await page.locator("body").innerText();
+const has = (re) => re.test(text);
+await page.screenshot({ path: shot, fullPage: false });
+
+console.log("BLOCKED (aborted in browser):");
+blocked.forEach((b) => console.log("  " + b));
+console.log("API responses (non-tile):");
+log.forEach((l) => console.log("  " + l));
+console.log(`Tile responses: ${tiles.length}, non-200: ${tiles.filter((t) => !t.startsWith("200")).length}`);
+tiles.slice(0, 6).forEach((t) => console.log("  " + t));
+console.log("Text checks:");
+console.log("  population/income/census text:", has(/population|median|household|income/i));
+console.log("  property text:", has(/sale|sold|permit|assessed|property/i));
+console.log("  error text:", (text.match(/[^\n]*(error|failed|couldn't|unable)[^\n]*/gi) || []).slice(0, 5));
+await browser.close();

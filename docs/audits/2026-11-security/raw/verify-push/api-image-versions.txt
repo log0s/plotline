@@ -1,0 +1,14 @@
+# docker pull registry.fly.io/log0s-plotline-api@sha256:9297f6bc7d63dc0bfae6bbbfb251c04469de1ca3377eb86988f2ad810e4e0d27 (temporary docker config, deleted after); docker run --rm --network none --entrypoint …, 2026-11-02T19:19:06Z
+# Same digest both API machines run (fly image show -a log0s-plotline-api).
+$ python -V
+Python 3.12.16
+$ env/ssl/certifi/dpkg
+PYTHON_VERSION=3.12.16
+OpenSSL 3.5.7 9 Jun 2026
+libssl3t64 3.5.7-1~deb13u3
+openssl 3.5.7-1~deb13u3
+debian 13.7
+certifi 2026.05.20 | emSign ECC Root CA - G3 in bundle: True
+{'pillow': '12.3.0', 'anyio': '4.13.0', 'pydantic-settings': '2.14.1'}
+$ docker image inspect (Created, Labels)
+2026-11-02T19:06:58.787799456Z {"GH_ACTION_NAME":"__run_2","GH_EVENT_NAME":"push","GH_REPO":"log0s/plotline","GH_SHA":"8c8e297e61b4595ef9e808cd990ff2277896306f"}

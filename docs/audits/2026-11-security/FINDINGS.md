@@ -297,6 +297,10 @@ scope for this batch.
 `deploy-worker` copies run first on the next `backend/**` push.
 `VERIFY-SEC-17-19.md`.
 
+**Later (2026-11-02): all three copies exercised.** Run `41506456853`
+(push of `8c8e297`): `flyctl.tgz: OK` in `deploy-api` and `deploy-worker`
+too. `VERIFY-PUSH-8c8e297.md`.
+
 ---
 
 ## SEC-20 · LOW-MEDIUM · The API/worker image trusts the compromised emSign chain and has not been rebuilt since 2026-09-07
@@ -341,6 +345,16 @@ intermediates. Under that attacker:
 the CI test job against the locked certifi and fails if the bump is reverted. Add
 `sys.version_info >= (3, 12, 16)` once CI's setup-uv `python-version` is pinned
 to the patch.
+
+**Later (2026-11-02): partly mitigated by a rebuild, not by a fix.** The
+push of `8c8e297` rebuilt the API/worker image (`9297f6bc…`, API v88,
+worker v80) on `python:3.12-slim@sha256:b18b261e…`. It runs **Python
+3.12.16** and **OpenSSL `3.5.7-1~deb13u3`**, so the CPython denylist and
+the 13 Debian fixes are live. **Still open:** certifi 2026.05.20 (locked
+in `uv.lock`) still trusts emSign ECC Root CA - G3; pillow, anyio and
+pydantic-settings are unchanged; the base is still tag-pinned, and rolling
+back to API ≤ v87 / worker ≤ v79 brings 3.12.14 back. The fix sketch
+stands minus the Python step. `VERIFY-PUSH-8c8e297.md` step 3.
 
 ---
 

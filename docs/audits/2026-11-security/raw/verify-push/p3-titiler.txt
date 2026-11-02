@@ -1,0 +1,15 @@
+# P3 (VERIFY-SEC-17-19.md, Titiler) with --http1.1 and the token, 2026-11-02T19:18:04Z
+# curl -sS --http1.1 -D- -G -H 'Host: plotline-titiler.fly.dev/badhost-probe?x=' --data-urlencode "access_token=$TITILER_ACCESS_TOKEN" 'https://plotline-titiler.fly.dev/tileMatrixSets'
+# -G --data-urlencode: the env value contains whitespace and '&', and curl rejects it raw in a URL (curl: (3), no request sent).
+# Full response; the token value, raw and percent-encoded, replaced with <REDACTED> before writing.
+HTTP/1.1 401 Unauthorized
+date: Mon, 02 Nov 2026 19:18:06 GMT
+server: Fly/366e4bf88 (2026-10-27)
+content-length: 35
+content-type: application/json
+cache-control: public, max-age=3600
+via: 1.1 fly.io, 1.1 fly.io
+fly-request-id: 01M6EV53DNWFV1MJKM2B84YZF1-dfw
+
+{"detail":"Invalid `access_token`"}
+--- curl: http_code=401 http_version=1.1 size_download=35
