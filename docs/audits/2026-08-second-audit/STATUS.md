@@ -854,6 +854,33 @@ precondition and is unverified in production.**
 | SEC-22 Dev stack listens on all interfaces with default credentials | LOW | **Open** | `../2026-11-security/FINDINGS.md` §SEC-22 |
 | SEC-23 No install-script or release-age controls | LOW | **Open** | `../2026-11-security/FINDINGS.md` §SEC-23 |
 
+### Fix batch SEC-17/18/19 — predictions (2026-11-02, before the scored lab run)
+
+Lab only: Titiler 2.4.0 (`sha256:5b739117…`) with `fly.titiler.toml`'s new
+`[env]` vs. 1.2.1 with the old env, on an `--internal` Docker network, audit
+fixtures from `../2026-11-security/raw/lab/www/`. Already known from
+pre-lab feasibility runs, so **not** predictions: 2.4.0 ships starlette
+1.6.0, rio-tiler 9.4.4 (AST expression guard), GDAL 3.12.4 (still < 3.13.1),
+Python 3.14.7, uid 65532. `GDAL_SKIP=VRT` breaks every reprojected tile
+(rasterio 1.5.1 opens an in-memory `<VRTDataset>` string in
+`_calculate_default_transform`), so the allowlist keeps VRT.
+
+- **PREDICTION SEC-17:** with the token set, anonymous `/healthz` → 401; the
+  BadHost probe stops reflecting the injected host; one tile per source
+  (NAIP, S2, USGS topo via `/cog/tiles`, Landsat via `/stac/tiles`) plus
+  `/cog/bbox` and both `/info` warmups → 200. `b1*0+int(True)` → 200 on
+  1.2.1, rejected (`disallowed function`) on 2.4.0; `b1*2` → 200 on both.
+- **PREDICTION SEC-18:** after the fix, inside the container only `GTiff, JPEG,
+  MEM, PNG, VRT` are registered. `nc4.tif` (HDF5 bytes) → refused as not a
+  supported format; `nc_classic.tif` with userfaultfd available → refused
+  (netCDF skipped). `vrt_ssrf.tif` **still opens and the canary is hit** —
+  the VRT half stays open. Delete-the-fix (same image, `GDAL_SKIP` removed):
+  `nc4.tif` reaches `HDF5Image` again.
+- **PREDICTION SEC-19:** the install step, run locally, exits 0 with the pinned
+  sha256 and non-zero with one hex digit changed, before `flyctl` is
+  extracted; the regression tests fail with the checksum line or
+  `GDAL_SKIP` deleted.
+
 ## Accepted, with reasons
 
 - **The SAS wait budgets now bound elapsed time, not sleep time.**
