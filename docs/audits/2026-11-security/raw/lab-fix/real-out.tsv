@@ -1,0 +1,15 @@
+instance	case	status	content-type	bytes	detail
+before	naip /cog/tiles z16	200	image/jpeg	24832	magic=ffd8ffe0
+before	sentinel2 /cog/tiles z13	200	image/png	68069	magic=89504e47
+before	usgs_topo /cog/tiles z13	200	image/jpeg	23699	magic=ffd8ffe0
+before	landsat /stac/tiles .png z12	200	image/png	189854	magic=89504e47
+before	naip /cog/bbox .png (preview)	200	image/png	621686	magic=89504e47
+before	usgs_topo /cog/info (warmup)	200	application/json	1005	driver=GTiff | {"bounds": [-46765.43847969923, 4370971.848824629, 56214.62818696742, 4433134.115491295], "crs": "PROJCS[\"unnamed\",GEOGCS[\"NAD27\",DATUM[\"North_American_Datum_1927\",SPHEROID[\"Clarke 1866\",6378206.4,294.978698213898,AUTHORIT
+before	landsat /stac/info (warmup)	200	application/json	1099	{"red": {"bounds": [317985.0, 4345785.0, 551415.0, 4583115.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/32613", "band_metadata": [["b1", {}]], "band_descriptions": [["b1", ""]], "dtype": "uint16", "nodata_type": "Nodata", "co
+after	naip /cog/tiles z16	200	image/jpeg	24832	magic=ffd8ffe0
+after	sentinel2 /cog/tiles z13	200	image/png	68069	magic=89504e47
+after	usgs_topo /cog/tiles z13	200	image/jpeg	23699	magic=ffd8ffe0
+after	landsat /stac/tiles .png z12	200	image/png	189854	magic=89504e47
+after	naip /cog/bbox .png (preview)	200	image/png	621686	magic=89504e47
+after	usgs_topo /cog/info (warmup)	200	application/json	1011	driver=GTiff | {"bounds": [-46765.43847969923, 4370971.848824629, 56214.62818696742, 4433134.115491295], "crs": "PROJCS[\"unnamed\",GEOGCS[\"NAD27\",DATUM[\"North_American_Datum_1927\",SPHEROID[\"Clarke 1866\",6378206.4,294.978698213898,AUTHORIT
+after	landsat /stac/info (warmup)	200	application/json	1105	{"red": {"bounds": [317985.0, 4345785.0, 551415.0, 4583115.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/32613", "band_metadata": [["b1", {}]], "band_descriptions": [["b1", "b1"]], "dtype": "uint16", "nodata_type": "Nodata", "

@@ -1,0 +1,17 @@
+== fx-after
+  File "/opt/venv/lib/python3.14/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    raise RasterioIOError(str(err))
+rasterio.errors.RasterioIOError: '/vsicurl/http://fix-files:8080/nc4.tif' not recognized as being in a supported file format.
+Exception mapped to HTTP 500 response
+rasterio._err.CPLE_OpenFailedError: '/vsicurl/http://fix-files:8080/nc_classic.tif' not recognized as being in a supported file format.
+During handling of the above exception, another exception occurred:
+  File "/opt/venv/lib/python3.14/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    raise RasterioIOError(str(err))
+rasterio.errors.RasterioIOError: '/vsicurl/http://fix-files:8080/nc_classic.tif' not recognized as being in a supported file format.
+Exception mapped to HTTP 500 response
+rasterio._err.CPLE_AppDefinedError: '/proc/self/environ' is invalid because the relativeToVRT flag is not set and the GDAL_VRT_RAWRASTERBAND_ALLOWED_SOURCE configuration option is not set (and thus defaults to SIBLING_OR_CHILD_OF_VRT_PATH. Consult https://gdal.org/drivers/raster/vrt.html#vrtrawrasterband_restricted_access for more details)
+During handling of the above exception, another exception occurred:
+  File "/opt/venv/lib/python3.14/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    raise RasterioIOError(str(err))
+rasterio.errors.RasterioIOError: '/proc/self/environ' is invalid because the relativeToVRT flag is not set and the GDAL_VRT_RAWRASTERBAND_ALLOWED_SOURCE configuration option is not set (and thus defaults to SIBLING_OR_CHILD_OF_VRT_PATH. Consult https://gdal.org/drivers/raster/vrt.html#vrtrawrasterband_restricted_access for more details)
+== fx-real-after

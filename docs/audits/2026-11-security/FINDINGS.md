@@ -132,6 +132,15 @@ URL or evaluate an `expression=`.
 - The rio-tiler half needs its own assertion,
   `rio_tiler.__version__ >= 8.0.9`, because no scanner sees that advisory.
 
+
+**Resolved:** `36531b1`, 2026-11-02 — committed, **not deployed**. Titiler
+2.4.0 by index digest `sha256:5b739117…`: starlette 1.6.0, rio-tiler 9.4.4
+(AST guard), Python 3.14.7, uid 65532. **Not everything above is fixed:**
+GDAL is 3.12.4, still below 3.13.1 (the netCDF driver is now unregistered,
+`36531b1`/SEC-18). Python is below 3.14.10. certifi 2026.7.22 is still
+GDAL's CA bundle and still trusts emSign G3. No stock release ships
+anything newer. Lab and residuals: `FIX-SEC-17-19.md`.
+
 ---
 
 ## SEC-18 · MEDIUM · GDAL picks drivers by content; the extension filter is not a format filter, and a `.tif` VRT steps around the host allowlist
@@ -197,6 +206,14 @@ is recorded here and cross-referenced, not re-argued
 - Cheap companion: a unit test asserting `GDAL_SKIP` in `fly.titiler.toml`
   contains `VRT`.
 
+
+**Later (2026-11-02): partially resolved** in `36531b1`, committed, **not
+deployed**. `GDAL_SKIP` removes every driver except GTiff, MEM, PNG, JPEG
+and VRT, and the HDF5 and netCDF rows above now refuse. **The VRT rows
+still reproduce**, canary hit included. `GDAL_SKIP=VRT` breaks every
+reprojected tile, because rasterio 1.5.1 opens an in-memory VRT to warp.
+Closing it needs a custom reader (`FIX-SEC-17-19.md` §Residuals).
+
 ---
 
 ## SEC-19 · MEDIUM · Deploy jobs run an unpinned flyctl binary holding a token that spans all three apps
@@ -255,6 +272,14 @@ token scope (inferred from usage, not read).
 - the workflow must have a top-level `permissions` key.
 
 Each assertion fails when its fix is reverted.
+
+
+**Later (2026-11-02): binary half resolved** in `aef5fe6`, committed, **not
+deployed**. flyctl 0.4.123 is pinned and `sha256sum -c` runs before
+extraction in all three jobs. Branch protection is done (Ryan, before
+this batch). Token re-scoping is Ryan's. `permissions:` and the
+`Dockerfile.fly` base-image digests are still open: they were out of
+scope for this batch.
 
 ---
 

@@ -1,0 +1,67 @@
+instance	case	status	content-type	bytes	detail
+before	healthz anonymous	401	application/json	35	"Missing `access_token`"
+before	healthz with token	200	application/json	98	{"versions": {"titiler": "1.2.1", "rasterio": "1.5.0", "gdal": "3.12.1", "proj": "9.7.1", "geos": "3.14.1"}}
+before	real.tif info	200	application/json	307	driver=GTiff | {"bounds": [-105.0, 39.936, -104.936, 40.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/4326", "band_metadata": [["b1", {}]], "band_descriptions": [["b1", ""]], "dtype": "uint8", "nodata_type": "None", "colorinterp": ["gray"], 
+before	notallowed.png info	500	application/json	146	"'/vsicurl/http://fix-files:8080/notallowed.png' does not exist in the file system, and is not recognized as a supported dataset name."
+before	nc4.tif (HDF5 bytes) info	500	application/json	62	driver=None | "'NoneType' object has no attribute 'to_authority'"
+before	nc_classic.tif info	500	application/json	174	driver=None | "Opening a /vsi file with the netCDF driver requires Linux userfaultfd to be available. If running from Docker, --security-opt seccomp=unconfined might be needed."
+before	vrt_ssrf.tif info	200	application/json	310	driver=VRT canary_hits+=2 | {"bounds": [-105.0, 39.936, -104.936, 40.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/4326", "band_metadata": [["b1", {}]], "band_descriptions": [["b1", ""]], "dtype": "uint8", "nodata_type": "None", "colorinterp": ["undefine
+before	vrt_ssrf.tif statistics	200	application/json	322	canary_hits+=0 | {"b1": {"min": 7.0, "max": 7.0, "mean": 7.0, "count": 4096.0, "sum": 28672.0, "std": 0.0, "median": 7.0, "majority": 7.0, "minority": 7.0, "unique": 1.0, "histogram": [[0, 0, 0, 0, 0, 4096, 0, 0, 0, 0], [6.5, 6.6, 6.7, 6.8, 6.9, 7
+before	vrt_ssrf_noext.tif info	200	application/json	310	canary_hits+=0 | {"bounds": [-105.0, 39.936, -104.936, 40.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/4326", "band_metadata": [["b1", {}]], "band_descriptions": [["b1", ""]], "dtype": "uint8", "nodata_type": "None", "colorinterp": ["undefine
+before	vrt_raw_environ.tif statistics	500	application/json	318	"'/proc/self/environ' is invalid because the relativeToVRT flag is not set and the GDAL_VRT_RAWRASTERBAND_ALLOWED_SOURCE configuration option is not set (and thus defaults to SIBLING_OR_CHILD_OF_VRT_PATH. Consult https://gdal.org/
+before	expression b1*2	200	application/json	343	{"b1*2": {"min": 14.0, "max": 14.0, "mean": 14.0, "count": 4096.0, "sum": 57344.0, "std": 0.0, "median": 14.0, "majority": 14.0, "minority": 14.0, "unique": 1.0, "histogram": [[0, 0, 0, 0, 0, 4096, 0, 0, 0, 0], [13.5, 13.6, 13.7, 
+before	expression where(b1>0,1,0)	200	application/json	349	{"where(b1>0,1,0)": {"min": 1.0, "max": 1.0, "mean": 1.0, "count": 4096.0, "sum": 4096.0, "std": 0.0, "median": 1.0, "majority": 1.0, "minority": 1.0, "unique": 1.0, "histogram": [[0, 0, 0, 0, 0, 4096, 0, 0, 0, 0], [0.5, 0.6, 0.7,
+before	expression b1*0+int(True)	500	application/json	50	"'VariableNode' object is not callable"
+before	expression b1*0+len('ab')	500	application/json	50	"'VariableNode' object is not callable"
+before	expression b1.__class__	500	application/json	70	"Expression b1.__class__ has forbidden control characters."
+before	expression b1<<1	200	application/json	344	{"b1<<1": {"min": 14.0, "max": 14.0, "mean": 14.0, "count": 4096.0, "sum": 57344.0, "std": 0.0, "median": 14.0, "majority": 14.0, "minority": 14.0, "unique": 1.0, "histogram": [[0, 0, 0, 0, 0, 4096, 0, 0, 0, 0], [13.5, 13.6, 13.7,
+before	expression b1 is b1	200	application/json	330	{"b1 is b1": {"min": 1.0, "max": 1.0, "mean": 1.0, "count": 1.0, "sum": 1.0, "std": 0.0, "median": 1.0, "majority": 1.0, "minority": 1.0, "unique": 1.0, "histogram": [[0, 0, 0, 0, 0, 1, 0, 0, 0, 0], [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 
+before	BadHost Host='lab/badhost-probe?x=' /tileMatrixSets	200	text/x-summary	0	reflected=True | 
+before	/mosaicjson/info	404	application/json	22	"Not Found"
+before	/zarr/info	404	application/json	22	"Not Found"
+after	healthz anonymous	401	application/json	35	"Missing `access_token`"
+after	healthz with token	200	application/json	98	{"versions": {"titiler": "2.4.0", "rasterio": "1.5.1", "gdal": "3.12.4", "proj": "9.8.1", "geos": "3.14.1"}}
+after	real.tif info	200	application/json	309	driver=GTiff | {"bounds": [-105.0, 39.936, -104.936, 40.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/4326", "band_metadata": [["b1", {}]], "band_descriptions": [["b1", "b1"]], "dtype": "uint8", "nodata_type": "None", "colorinterp": ["gray"]
+after	notallowed.png info	500	application/json	146	"'/vsicurl/http://fix-files:8080/notallowed.png' does not exist in the file system, and is not recognized as a supported dataset name."
+after	nc4.tif (HDF5 bytes) info	500	application/json	105	driver=None | "'/vsicurl/http://fix-files:8080/nc4.tif' not recognized as being in a supported file format."
+after	nc_classic.tif info	500	application/json	112	driver=None | "'/vsicurl/http://fix-files:8080/nc_classic.tif' not recognized as being in a supported file format."
+after	vrt_ssrf.tif info	200	application/json	312	driver=VRT canary_hits+=2 | {"bounds": [-105.0, 39.936, -104.936, 40.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/4326", "band_metadata": [["b1", {}]], "band_descriptions": [["b1", "b1"]], "dtype": "uint8", "nodata_type": "None", "colorinterp": ["undefi
+after	vrt_ssrf.tif statistics	200	application/json	341	canary_hits+=0 | {"b1": {"min": 7.0, "max": 7.0, "mean": 7.0, "count": 4096.0, "sum": 28672.0, "std": 0.0, "median": 7.0, "majority": 7.0, "minority": 7.0, "unique": 1.0, "histogram": [[0, 0, 0, 0, 0, 4096, 0, 0, 0, 0], [6.5, 6.6, 6.7, 6.8, 6.9, 7
+after	vrt_ssrf_noext.tif info	200	application/json	312	canary_hits+=0 | {"bounds": [-105.0, 39.936, -104.936, 40.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/4326", "band_metadata": [["b1", {}]], "band_descriptions": [["b1", "b1"]], "dtype": "uint8", "nodata_type": "None", "colorinterp": ["undefi
+after	vrt_raw_environ.tif statistics	500	application/json	318	"'/proc/self/environ' is invalid because the relativeToVRT flag is not set and the GDAL_VRT_RAWRASTERBAND_ALLOWED_SOURCE configuration option is not set (and thus defaults to SIBLING_OR_CHILD_OF_VRT_PATH. Consult https://gdal.org/
+after	expression b1*2	200	application/json	362	{"b1": {"min": 14.0, "max": 14.0, "mean": 14.0, "count": 4096.0, "sum": 57344.0, "std": 0.0, "median": 14.0, "majority": 14.0, "minority": 14.0, "unique": 1.0, "histogram": [[0, 0, 0, 0, 0, 4096, 0, 0, 0, 0], [13.5, 13.6, 13.7, 13
+after	expression where(b1>0,1,0)	200	application/json	368	{"b1": {"min": 1.0, "max": 1.0, "mean": 1.0, "count": 4096.0, "sum": 4096.0, "std": 0.0, "median": 1.0, "majority": 1.0, "minority": 1.0, "unique": 1.0, "histogram": [[0, 0, 0, 0, 0, 4096, 0, 0, 0, 0], [0.5, 0.6, 0.7, 0.8, 0.9, 1.
+after	expression b1*0+int(True)	400	application/json	39	"disallowed function: 'int'"
+after	expression b1*0+len('ab')	400	application/json	39	"disallowed function: 'len'"
+after	expression b1.__class__	400	application/json	45	"disallowed expression: Attribute"
+after	expression b1<<1	400	application/json	42	"disallowed expression: LShift"
+after	expression b1 is b1	400	application/json	38	"disallowed expression: Is"
+after	BadHost Host='lab/badhost-probe?x=' /tileMatrixSets	200	text/x-summary	0	reflected=False | 
+after	/mosaicjson/info	404	application/json	22	"Not Found"
+after	/zarr/info	404	application/json	22	"Not Found"
+nofix	healthz anonymous	401	application/json	35	"Missing `access_token`"
+nofix	healthz with token	200	application/json	98	{"versions": {"titiler": "2.4.0", "rasterio": "1.5.1", "gdal": "3.12.4", "proj": "9.8.1", "geos": "3.14.1"}}
+nofix	real.tif info	200	application/json	309	driver=GTiff | {"bounds": [-105.0, 39.936, -104.936, 40.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/4326", "band_metadata": [["b1", {}]], "band_descriptions": [["b1", "b1"]], "dtype": "uint8", "nodata_type": "None", "colorinterp": ["gray"]
+nofix	notallowed.png info	500	application/json	146	"'/vsicurl/http://fix-files:8080/notallowed.png' does not exist in the file system, and is not recognized as a supported dataset name."
+nofix	nc4.tif (HDF5 bytes) info	500	application/json	62	driver=None | "'NoneType' object has no attribute 'to_authority'"
+nofix	nc_classic.tif info	500	application/json	174	driver=None | "Opening a /vsi file with the netCDF driver requires Linux userfaultfd to be available. If running from Docker, --security-opt seccomp=unconfined might be needed."
+nofix	vrt_ssrf.tif info	200	application/json	312	driver=VRT canary_hits+=2 | {"bounds": [-105.0, 39.936, -104.936, 40.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/4326", "band_metadata": [["b1", {}]], "band_descriptions": [["b1", "b1"]], "dtype": "uint8", "nodata_type": "None", "colorinterp": ["undefi
+nofix	vrt_ssrf.tif statistics	200	application/json	341	canary_hits+=0 | {"b1": {"min": 7.0, "max": 7.0, "mean": 7.0, "count": 4096.0, "sum": 28672.0, "std": 0.0, "median": 7.0, "majority": 7.0, "minority": 7.0, "unique": 1.0, "histogram": [[0, 0, 0, 0, 0, 4096, 0, 0, 0, 0], [6.5, 6.6, 6.7, 6.8, 6.9, 7
+nofix	vrt_ssrf_noext.tif info	200	application/json	312	canary_hits+=0 | {"bounds": [-105.0, 39.936, -104.936, 40.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/4326", "band_metadata": [["b1", {}]], "band_descriptions": [["b1", "b1"]], "dtype": "uint8", "nodata_type": "None", "colorinterp": ["undefi
+nofix	vrt_raw_environ.tif statistics	500	application/json	318	"'/proc/self/environ' is invalid because the relativeToVRT flag is not set and the GDAL_VRT_RAWRASTERBAND_ALLOWED_SOURCE configuration option is not set (and thus defaults to SIBLING_OR_CHILD_OF_VRT_PATH. Consult https://gdal.org/
+nofix	expression b1*2	200	application/json	362	{"b1": {"min": 14.0, "max": 14.0, "mean": 14.0, "count": 4096.0, "sum": 57344.0, "std": 0.0, "median": 14.0, "majority": 14.0, "minority": 14.0, "unique": 1.0, "histogram": [[0, 0, 0, 0, 0, 4096, 0, 0, 0, 0], [13.5, 13.6, 13.7, 13
+nofix	expression where(b1>0,1,0)	200	application/json	368	{"b1": {"min": 1.0, "max": 1.0, "mean": 1.0, "count": 4096.0, "sum": 4096.0, "std": 0.0, "median": 1.0, "majority": 1.0, "minority": 1.0, "unique": 1.0, "histogram": [[0, 0, 0, 0, 0, 4096, 0, 0, 0, 0], [0.5, 0.6, 0.7, 0.8, 0.9, 1.
+nofix	expression b1*0+int(True)	400	application/json	39	"disallowed function: 'int'"
+nofix	expression b1*0+len('ab')	400	application/json	39	"disallowed function: 'len'"
+nofix	expression b1.__class__	400	application/json	45	"disallowed expression: Attribute"
+nofix	expression b1<<1	400	application/json	42	"disallowed expression: LShift"
+nofix	expression b1 is b1	400	application/json	38	"disallowed expression: Is"
+nofix	BadHost Host='lab/badhost-probe?x=' /tileMatrixSets	200	text/x-summary	0	reflected=False | 
+nofix	/mosaicjson/info	404	application/json	22	"Not Found"
+nofix	/zarr/info	404	application/json	22	"Not Found"
+before-ufd	nc_classic.tif info (userfaultfd available)	200	application/json	434	driver=netCDF | {"bounds": [-105.0, 39.936, -104.936, 40.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/4326", "band_metadata": [["b1", {"NETCDF_VARNAME": "Band1", "long_name": "GDAL Band Number 1", "_Unsigned": "true", "valid_range": "{0,255}
+before-ufd	nc4.tif info (userfaultfd available)	500	application/json	62	driver=None | "'NoneType' object has no attribute 'to_authority'"
+after-ufd	nc_classic.tif info (userfaultfd available)	500	application/json	112	driver=None | "'/vsicurl/http://fix-files:8080/nc_classic.tif' not recognized as being in a supported file format."
+after-ufd	nc4.tif info (userfaultfd available)	500	application/json	105	driver=None | "'/vsicurl/http://fix-files:8080/nc4.tif' not recognized as being in a supported file format."
+nofix-ufd	nc_classic.tif info (userfaultfd available)	200	application/json	436	driver=netCDF | {"bounds": [-105.0, 39.936, -104.936, 40.0], "crs": "http://www.opengis.net/def/crs/EPSG/0/4326", "band_metadata": [["b1", {"NETCDF_VARNAME": "Band1", "long_name": "GDAL Band Number 1", "_Unsigned": "true", "valid_range": "{0,255}
+nofix-ufd	nc4.tif info (userfaultfd available)	500	application/json	62	driver=None | "'NoneType' object has no attribute 'to_authority'"

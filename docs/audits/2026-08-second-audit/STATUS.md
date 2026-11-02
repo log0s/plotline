@@ -842,13 +842,14 @@ the npm/PyPI worm campaigns. Nothing was changed outside
 of the uncommitted `../2026-11-dependency-advisories/REPORT.md`) so one ledger
 never holds two rows with the same ID. **SEC-17 and SEC-18 change severity on
 PROD-PROBES P1 (is Titiler's token set?), which is also the M9 accept's
-precondition and is unverified in production.**
+precondition and is unverified in production.** *(2026-11-02: answered — token
+set, per Ryan; see the P1 note under the fix batch below.)*
 
 | # | Severity | Status | Where |
 |---|---|---|---|
-| SEC-17 Titiler image: GDAL 3.12.1, starlette 0.52.1 (KEV BadHost), rio-tiler 8.0.5 unguarded expressions, tag-pinned | HIGH if P1 = 200 / MEDIUM if 401 | **Open** | `../2026-11-security/FINDINGS.md` §SEC-17 |
-| SEC-18 GDAL selects drivers by content; `.tif` VRT steps past the P5 allowlist; `GDAL_SKIP` unset | MEDIUM | **Open** | `../2026-11-security/FINDINGS.md` §SEC-18 |
-| SEC-19 Unpinned flyctl binary in deploy jobs with a multi-app token; no branch protection or `permissions:` | MEDIUM | **Open** | `../2026-11-security/FINDINGS.md` §SEC-19 |
+| SEC-17 Titiler image: GDAL 3.12.1, starlette 0.52.1 (KEV BadHost), rio-tiler 8.0.5 unguarded expressions, tag-pinned | MEDIUM (P1 = 401, per Ryan 2026-11-02) | **Fixed, pending deploy (`36531b1`, `1c3fe32`; committed 2026-11-02, not deployed).** 2.4.0 by digest: starlette 1.6.0, rio-tiler 9.4.4 with guard, uid 65532. **Residual:** GDAL 3.12.4 (< 3.13.1; netCDF driver unregistered), Python 3.14.7 (< 3.14.10), certifi 2026.7.22 still GDAL's CA bundle and still trusts emSign G3, pip-audit 22 advisories in 7 packages. No newer stock release exists. | `../2026-11-security/FINDINGS.md` §SEC-17 |
+| SEC-18 GDAL selects drivers by content; `.tif` VRT steps past the P5 allowlist; `GDAL_SKIP` unset | MEDIUM | **Partially fixed, pending deploy (`36531b1`, `1c3fe32`; not deployed).** 142 of 147 drivers skipped; HDF5/netCDF fixtures refuse. **VRT half open:** VRT can't be skipped (rasterio warps through it), so `vrt_ssrf.tif` still opens and hits the canary. The fix needs a custom reader passing `driver=["GTiff"]`, which means a custom image: Ryan's decision. Until then the risk rests on the token, which is now confirmed set. | `../2026-11-security/FINDINGS.md` §SEC-18 |
+| SEC-19 Unpinned flyctl binary in deploy jobs with a multi-app token; no branch protection or `permissions:` | MEDIUM | **Binary half fixed, pending deploy (`aef5fe6`, `1c3fe32`; not yet exercised by CI).** flyctl 0.4.123, `sha256sum -c` before extract in all three jobs. Branch protection: done (Ryan). Token re-scope: Ryan's, open. Top-level `permissions:` and `Dockerfile.fly` base digests: still open, out of scope for this batch. | `../2026-11-security/FINDINGS.md` §SEC-19 |
 | SEC-20 API/worker image trusts the compromised emSign chain (Python 3.12.14, certifi 2026.05.20); not rebuilt since 2026-09-07 | LOW-MEDIUM | **Open** | `../2026-11-security/FINDINGS.md` §SEC-20 |
 | SEC-21 Basemap attribution HTML to `innerHTML`, no CSP | LOW-MEDIUM | **Open** | `../2026-11-security/FINDINGS.md` §SEC-21 |
 | SEC-22 Dev stack listens on all interfaces with default credentials | LOW | **Open** | `../2026-11-security/FINDINGS.md` §SEC-22 |
@@ -880,6 +881,52 @@ Python 3.14.7, uid 65532. `GDAL_SKIP=VRT` breaks every reprojected tile
   sha256 and non-zero with one hex digit changed, before `flyctl` is
   extracted; the regression tests fail with the checksum line or
   `GDAL_SKIP` deleted.
+
+**Observed (2026-11-02, scored lab; `../2026-11-security/raw/lab-fix/`, report
+`../2026-11-security/FIX-SEC-17-19.md`):**
+
+- **SEC-17: deviation.**
+  - Confirmed: anonymous `/healthz` → 401 on both images. BadHost reflected
+    on 1.2.1, not on 2.4.0. All 7 production endpoint shapes → 200 on both,
+    with byte-identical tile sizes. `b1*2` → 200 on both.
+  - **Falsified:** `b1*0+int(True)` was already rejected on 1.2.1 (500,
+    numexpr: `'VariableNode' object is not callable`), not accepted.
+  - Post-hoc, not predicted: `b1<<1` and `b1 is b1` → 200 on 1.2.1, 400 on
+    2.4.0 (`disallowed expression: LShift` / `Is`).
+- **SEC-18: confirmed.** 5 drivers registered. `nc4.tif` and
+  `nc_classic.tif` (userfaultfd available) are refused as unsupported. With
+  `GDAL_SKIP` removed from the same image they open as `HDF5Image` /
+  `netCDF`. `vrt_ssrf.tif` opens with driver VRT and the canary gets +2
+  hits on before, after and no-fix alike.
+  - Harness note: the first scored pass had a canary DNS miss (the fixture
+    names `audit-canary`), so every VRT row read "Read failed / 0 hits",
+    which would have looked like a fix. Kept as
+    `run1-fixtures-out-canary-dns-miss.tsv`; the alias was added and the
+    pass re-run.
+- **SEC-19: confirmed.** The step exits 0 with the pinned hash and 1 with
+  one digit changed, and the tampered run extracts nothing and writes
+  nothing to PATH. Nine delete-the-fix mutations each turn the suite red.
+
+**P1 (per Ryan, stated in the 2026-11-02 batch prompt, not observed by this
+session):** the Titiler token is set in production. SEC-17 is therefore
+MEDIUM, and the M9 accept's precondition holds.
+
+**Discovered in this batch:**
+
+- **Titiler's `GDAL_SKIP=VRT` advice is a rejected approach here.** With
+  rasterio 1.5.x it fails every reprojected tile (`CPLE_OpenFailedError`
+  on an in-memory `<VRTDataset>`). Recorded at the site in
+  `fly.titiler.toml`.
+- **`MAX_WORKERS` / `WORKERS_PER_CORE` in `fly.titiler.toml` are inert in
+  both images.** The CMD is `gunicorn --workers ${WEB_CONCURRENCY}`, with
+  `WEB_CONCURRENCY=1`. Production has always run one gunicorn worker per
+  machine, not two. Unchanged by this batch (behaviour preserved); it's a
+  capacity question for Ryan.
+- **A push of `1c3fe32` redeploys API and worker.** `backend/tests/**`
+  matches the `backend/**` filter, and `Dockerfile.fly` copies `backend/`.
+  The app code is identical, but the rebuild re-resolves `python:3.12-slim`
+  and `uv:0.11` (SEC-19's tag-pinned inputs). Pushing through `aef5fe6`
+  first deploys Titiler alone.
 
 ## Accepted, with reasons
 
@@ -964,6 +1011,9 @@ Python 3.14.7, uid 65532. `GDAL_SKIP=VRT` breaks every reprojected tile
   IPv4 private addressing, which would not hit the c6213d5 problem) needs
   its own investigation with a hypothesis for why `.internal` failed, and
   is scheduled as the M9 re-open, not done here.
+  *Later (2026-11-02): the token precondition is confirmed set (P1, per
+  Ryan). It is now also what SEC-18's open VRT half rests on, so losing the
+  token re-opens both.*
 - **M10, worker-ahead-of-schema.** Migrations to date are additive, the window
   is seconds, and closing it means serializing two deploy jobs to prevent a
   failure that has not occurred.

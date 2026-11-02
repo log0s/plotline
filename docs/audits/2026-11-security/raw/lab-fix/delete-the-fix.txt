@@ -1,0 +1,34 @@
+== M1 GDAL_SKIP deleted from fly.titiler.toml
+3 failed, 4 passed, 1 warning in 0.04s
+FAILED tests/test_titiler_config.py::test_compose_mirrors_production
+FAILED tests/test_titiler_config.py::test_gdal_skip_is_the_complement_of_the_allowlist
+FAILED tests/test_titiler_config.py::test_the_audit_reproduced_drivers_are_skipped
+== M2 HDF5Image dropped from GDAL_SKIP (allowlist widened)
+3 failed, 4 passed, 1 warning in 0.04s
+FAILED tests/test_titiler_config.py::test_compose_mirrors_production
+FAILED tests/test_titiler_config.py::test_gdal_skip_is_the_complement_of_the_allowlist
+FAILED tests/test_titiler_config.py::test_the_audit_reproduced_drivers_are_skipped
+== M3 image back to tag 1.2.1
+2 failed, 5 passed, 1 warning in 0.03s
+FAILED tests/test_titiler_config.py::test_compose_mirrors_production
+FAILED tests/test_titiler_config.py::test_image_is_the_pinned_digest
+== M4 TITILER_API_DISABLE_ZARR deleted
+1 failed, 6 passed, 1 warning in 0.03s
+FAILED tests/test_titiler_config.py::test_titiler_2_surface_and_port
+== M5 GDAL_SKIP deleted from docker-compose.yml
+1 failed, 6 passed, 1 warning in 0.03s
+FAILED tests/test_titiler_config.py::test_compose_mirrors_production
+== M6 sha256sum -c line deleted from deploy-titiler only
+1 failed, 6 passed, 1 warning in 0.03s
+FAILED tests/test_workflow_pins.py::test_flyctl_is_pinned_and_checksum_verified_before_it_runs
+== M7 deploy.yml reverted to HEAD (setup-flyctl, no version)
+1 failed, 6 passed, 1 warning in 0.03s
+FAILED tests/test_workflow_pins.py::test_flyctl_is_pinned_and_checksum_verified_before_it_runs
+== M8 checksum moved after tar extraction
+1 failed, 6 passed, 1 warning in 0.03s
+FAILED tests/test_workflow_pins.py::test_flyctl_is_pinned_and_checksum_verified_before_it_runs
+== M9 FLYCTL_VERSION set to latest
+1 failed, 6 passed, 1 warning in 0.03s
+FAILED tests/test_workflow_pins.py::test_flyctl_is_pinned_and_checksum_verified_before_it_runs
+== M0 unmodified
+7 passed, 1 warning in 0.02s

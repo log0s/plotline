@@ -1,0 +1,10 @@
+== pinned FLYCTL_SHA256=08d8b45e04ed…
+<scratch>/runner-pinned/flyctl.tgz: OK
+exit=0
+flyctl extracted: yes; GITHUB_PATH written: yes
+flyctl v0.4.123 linux/amd64 Commit: c6de331cc0f40847c29604ee4b3bbe226d9ec594 BuildDate: 2026-10-26T16:08:04Z
+== tampered FLYCTL_SHA256=18d8b45e04ed…
+<scratch>/runner-tampered/flyctl.tgz: FAILED
+sha256sum: WARNING: 1 computed checksum did NOT match
+exit=1
+flyctl extracted: no; GITHUB_PATH written: no

@@ -1,0 +1,23 @@
+== images
+-- fx-before: ghcr.io/developmentseed/titiler:1.2.1 image-id sha256:8c1b34285f8a
+uid=0
+python 3.14.3
+starlette 0.52.1
+fastapi 0.135.1
+rio-tiler 8.0.5
+rasterio 1.5.0 GDAL 3.12.1
+numexpr 2.14.1
+certifi 2026.02.25
+GDAL_SKIP entries 0
+drivers registered 147 (all)
+-- fx-after: ghcr.io/developmentseed/titiler@sha256:5b739117ff60d3cef9b0e0b8d9f4d628032c00a4965117e3f745cadc79fa7287 image-id sha256:5b739117ff60
+uid=65532
+python 3.14.7
+starlette 1.6.0
+fastapi 0.141.1
+rio-tiler 9.4.4
+rasterio 1.5.1 GDAL 3.12.4
+numexpr 2.14.2
+certifi 2026.07.22
+GDAL_SKIP entries 142
+drivers registered 5 ['GTiff', 'JPEG', 'MEM', 'PNG', 'VRT']

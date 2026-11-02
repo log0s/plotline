@@ -1,0 +1,10 @@
+== fly-titiler-2.4.0.env
+real.tif driver=GTiff
+nc4.tif refused: '/www/nc4.tif' not recognized as being in a supported file format.
+nc_classic.tif refused: '/www/nc_classic.tif' not recognized as being in a supported file format.
+vrt_ssrf.tif driver=VRT
+== fly-titiler-2.4.0-noskip.env
+real.tif driver=GTiff
+nc4.tif driver=HDF5Image
+nc_classic.tif driver=netCDF
+vrt_ssrf.tif driver=VRT
