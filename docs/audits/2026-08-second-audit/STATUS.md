@@ -847,7 +847,8 @@ set, per Ryan; see the P1 note under the fix batch below.)*
 
 | # | Severity | Status | Where |
 |---|---|---|---|
-| SEC-17 Titiler image: GDAL 3.12.1, starlette 0.52.1 (KEV BadHost), rio-tiler 8.0.5 unguarded expressions, tag-pinned | MEDIUM (P1 = 401, per Ryan 2026-11-02; observed 401 on 2.4.0 post-deploy) | **Fixed, deployed 2026-11-02** (`36531b1`, Titiler release v10 via the `aef5fe6` push; verified in `../2026-11-security/VERIFY-SEC-17-19.md`; tests `1c3fe32` pushed with `8c8e297`, green in run `41506456853`). 2.4.0 by digest: starlette 1.6.0, rio-tiler 9.4.4 with guard, uid 65532. **Residual:** GDAL 3.12.4 (< 3.13.1; netCDF driver unregistered), Python 3.14.7 (< 3.14.10), certifi 2026.7.22 still GDAL's CA bundle and still trusts emSign G3, pip-audit 22 advisories in 7 packages. No newer stock release exists. **Production BadHost (P3) on Titiler still unobserved:** the 2026-11-02 token attempt got `401 Invalid access_token` (`../2026-11-security/VERIFY-PUSH-8c8e297.md`); the lab says not reflected. Not closable until P3 is observed and the residuals have an upstream or custom-image answer. | `../2026-11-security/FINDINGS.md` §SEC-17 |
+| SEC-17 Titiler image: GDAL 3.12.1, starlette 0.52.1 (KEV BadHost), rio-tiler 8.0.5 unguarded expressions, tag-pinned | MEDIUM (P1 = 401, per Ryan 2026-11-02; observed 401 on 2.4.0 post-deploy) | **Closed 2026-11-02.** Fixed and deployed 2026-11-02 (`36531b1`, Titiler release v10 via the `aef5fe6` push; verified in `../2026-11-security/VERIFY-SEC-17-19.md`; tests `1c3fe32` pushed with `8c8e297`, green in run `41506456853`). 2.4.0 by digest: starlette 1.6.0, rio-tiler 9.4.4 with guard, uid 65532. **P3 observed in prod 2026-11-02: Host not reflected; links fall back to the machine's internal address.** Run by Ryan with the real token (command from `../2026-11-security/VERIFY-PUSH-8c8e297.md`): `200`, the malformed Host in neither headers nor body, every `href` `http://172.19.23.170:8000/…` (starlette 1.6.0 discarded the Host and used `scope["server"]`). Not reflected: confirmed. Link host: deviation from the lab's expected `http://plotline-titiler.fly.dev/…`; see the L10 hygiene line under "Accepted". The image residuals moved to the SEC-17 residuals row below, so closing this row hides none of them. | `../2026-11-security/FINDINGS.md` §SEC-17 |
+| SEC-17 residuals: Titiler 2.4.0 stock image, old GDAL / Python / certifi, pip-audit advisories | MEDIUM | **Open, fix soon** (moved out of SEC-17 on its close, 2026-11-02). GDAL 3.12.4 (< 3.13.1; netCDF driver unregistered), Python 3.14.7 (< 3.14.10), certifi 2026.7.22 still GDAL's CA bundle and still trusts emSign G3 (same CA as SEC-20, Titiler's copy), pip-audit 22 advisories in 7 packages (aiohttp, certifi, multidict, oauthlib, opentelemetry-api, pyasn1, urllib3). No stock Titiler release newer than 2.4.0 exists. Needs a newer upstream image or a custom one (Ryan's decision, shared with SEC-18's VRT half). | `../2026-11-security/FIX-SEC-17-19.md` §Versions |
 | SEC-18 GDAL selects drivers by content; `.tif` VRT steps past the P5 allowlist; `GDAL_SKIP` unset | MEDIUM | **Partially fixed, deployed 2026-11-02** (`36531b1`, Titiler v10; deployed `[env]` equals `fly.titiler.toml`, per `VERIFY-SEC-17-19.md` 4b; the in-machine driver count is not observed in production, since that needs `fly ssh`). 142 of 147 drivers skipped; HDF5/netCDF fixtures refuse. **VRT half open:** VRT can't be skipped (rasterio warps through it), so `vrt_ssrf.tif` still opens and hits the canary. The fix needs a custom reader passing `driver=["GTiff"]`, which means a custom image: Ryan's decision. Until then the risk rests on the token, which is now confirmed set. | `../2026-11-security/FINDINGS.md` §SEC-18 |
 | SEC-19 Unpinned flyctl binary in deploy jobs with a multi-app token; no branch protection or `permissions:` | MEDIUM | **Binary half fixed, live in CI since 2026-11-02** (`aef5fe6`). First real run: `deploy-titiler`, run `41503221445`, `flyctl.tgz: OK`. The `deploy-api`/`deploy-worker` copies first ran in run `41506456853` (push of `8c8e297`, 2026-11-02): `flyctl.tgz: OK` in both. flyctl 0.4.123, `sha256sum -c` before extract in all three jobs. Branch protection: done (Ryan). Token re-scope: Ryan's, open. Top-level `permissions:` and `Dockerfile.fly` base digests: still open, out of scope for this batch. | `../2026-11-security/FINDINGS.md` §SEC-19 |
 | SEC-20 API/worker image trusts the compromised emSign chain (Python 3.12.14, certifi 2026.05.20); not rebuilt since 2026-09-07 | LOW-MEDIUM | **Partly mitigated by a rebuild, 2026-11-02 — not a fix.** API v88 / worker v80 (`8c8e297`) were rebuilt on `python:3.12-slim@sha256:b18b261e…` and run Python 3.12.16 (CVE-2026-115557 fixed) and OpenSSL `3.5.7-1~deb13u3`. **Open:** certifi 2026.05.20 still trusts emSign ECC Root CA - G3 (it's locked in `uv.lock`); pillow, anyio and pydantic-settings are unchanged; the base is still tag-pinned, and a rollback to API ≤ v87 / worker ≤ v79 restores 3.12.14. `../2026-11-security/VERIFY-PUSH-8c8e297.md` step 3. | `../2026-11-security/FINDINGS.md` §SEC-20 |
@@ -950,7 +951,8 @@ Report: `../2026-11-security/VERIFY-SEC-17-19.md`, evidence in
   discovered below.
 - **P3:** the API doesn't reflect the bad Host. **Titiler is open:**
   reflection can't be seen without the token, so it's Ryan's to run. The
-  command is in the report; it must use `--http1.1`.
+  command is in the report; it must use `--http1.1`. *Later (2026-11-02):
+  Ryan ran it; not reflected (SEC-17 row).*
 - **Not run:** the timeline `POST` from the verification prompt. It can
   queue worker runs (`imagery.py:83-106`), which is a production write.
   `GET …/imagery` and the tile renders stood in for it.
@@ -962,7 +964,8 @@ Report: `../2026-11-security/VERIFY-SEC-17-19.md`, evidence in
   mitigated at Fly's proxy**: the app's own Host handling is what counts.
   - API: no reflection observed.
   - Titiler 2.4.0: starlette 1.6.0, no reflection in the lab, unobserved
-    in production.
+    in production. *Later (2026-11-02): observed, not reflected (Ryan's
+    P3 run; SEC-17 row).*
   - PROD-PROBES P2/P3 as written use curl's default h2, so they can't
     score this. They need `--http1.1`.
 - **Titiler has no `GH_SHA` label, and `fly image show` reports the
@@ -989,6 +992,9 @@ Report: `../2026-11-security/VERIFY-PUSH-8c8e297.md`, evidence in
   Invalid access_token`. The value has whitespace and `&`, which curl
   won't put raw in a URL; it was sent percent-encoded. Still Ryan's to run
   with the token checked.
+  *Later (2026-11-02): run by Ryan with the real token: `200`, Host not
+  reflected, links on `http://172.19.23.170:8000/…`. SEC-17 closed; see
+  its row.*
 - **GDAL driver count:** not run (needs `fly ssh`). Still Ryan's.
 - **Discovered:** no Fly health checks are defined on the API, worker or
   Titiler (`fly status` `CHECKS` empty), so a deploy's "good state" is
@@ -1085,6 +1091,13 @@ Report: `../2026-11-security/VERIFY-PUSH-8c8e297.md`, evidence in
   *Later (2026-11-02): the token precondition is confirmed set (P1, per
   Ryan). It is now also what SEC-18's open VRT half rests on, so losing the
   token re-opens both.*
+- **Topology fact (M2, M9, SEC-17), 2026-11-02: Fly's proxy does not
+  protect against BadHost.** Fly's proxy forwards malformed Host headers
+  unchanged over HTTP/1.1 (`../2026-11-security/VERIFY-SEC-17-19.md`
+  P2/P3; HTTP/2 is reset with `PROTOCOL_ERROR`). Fly is not a
+  BadHost-compliant reverse proxy; app-level Starlette >= 1.0.1 is the
+  only defence. Any future stock image must be checked for Starlette
+  version before deploy.
 - **M10, worker-ahead-of-schema.** Migrations to date are additive, the window
   is seconds, and closing it means serializing two deploy jobs to prevent a
   failure that has not occurred.
@@ -1096,6 +1109,10 @@ Report: `../2026-11-security/VERIFY-PUSH-8c8e297.md`, evidence in
   premise if it ever fires — see T3.
 - **L10.** Traced and confirmed no credential leak; exposing upstream URLs is
   hygiene, and curated messages cost more than the disclosure is worth.
+  *Hygiene, 2026-11-02:* on a malformed Host, Titiler 2.4.0's link `href`s
+  expose the machine's private address (`http://172.19.23.170:8000/…`,
+  P3 under SEC-17). Not routable from outside; same class as L10;
+  accepted.
 - **L12, JSON vs JSONB.** Cosmetic; costs a migration and a column rewrite.
   `CensusSnapshot.raw_data` is never queried by content.
 - **L12, DC permit layers.** An annual manual chore. The honest mitigation is

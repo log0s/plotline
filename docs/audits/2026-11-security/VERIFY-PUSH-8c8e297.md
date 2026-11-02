@@ -249,3 +249,19 @@ This commit makes these updates:
   copies exercised) and SEC-20.
 - **VERIFY-SEC-17-19.md:** a dated `Later:` note under "Check after that
   push".
+
+## Later (2026-11-02): P3 run by Ryan
+
+Run by Ryan, not a session, with the real token and the Phase 2 command
+above.
+
+- **Result:** `HTTP 200`. The malformed Host value appears nowhere in
+  the headers or the body.
+- **Links:** every `href` is `http://172.19.23.170:8000/…`. Starlette
+  1.6.0 discarded the malformed Host and fell back to `scope["server"]`.
+- **Verdict:** not reflected, so P3 is conclusive and SEC-17 is closed.
+  The link host differs from the lab expectation in VERIFY-SEC-17-19.md
+  (`http://plotline-titiler.fly.dev/…`). The private address it exposes
+  is accepted as L10-class hygiene in STATUS.md.
+- **Supersedes:** "SEC-17 can close fully: no", reason 1. Reason 2's
+  residuals still stand; STATUS.md now tracks them in their own row.
