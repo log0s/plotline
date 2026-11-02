@@ -13,6 +13,14 @@ on:
         type: boolean
         default: true
 
+# flyctl runs holding FLY_API_TOKEN, so the binary is pinned and checked
+# before it executes. superfly/flyctl-actions/setup-flyctl resolved `latest`
+# and verified no checksum (security audit SEC-19). Bump both together: the
+# sha256 is the Linux_x86_64 tarball's line in the release's checksums.txt.
+env:
+  FLYCTL_VERSION: "0.4.123"
+  FLYCTL_SHA256: "08d8b45e04ed99223cd938622407664dbed70abeda8f1d15ccc7f4b3e91094bc"
+
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -220,7 +228,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6 (master on 2026-08-22)
+      - name: Install flyctl (pinned, sha256-verified)
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/flyctl.tgz" \
+            "https://github.com/superfly/flyctl/releases/download/v${FLYCTL_VERSION}/flyctl_${FLYCTL_VERSION}_Linux_x86_64.tar.gz"
+          echo "${FLYCTL_SHA256}  $RUNNER_TEMP/flyctl.tgz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/flyctl-bin"
+          tar -xzf "$RUNNER_TEMP/flyctl.tgz" -C "$RUNNER_TEMP/flyctl-bin" flyctl
+          echo "$RUNNER_TEMP/flyctl-bin" >> "$GITHUB_PATH"
       # --build-arg stamps the image with the commit it was built from, so
       # GET /api/v1/health reports what is actually deployed.
       - run: |
@@ -237,7 +252,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6 (master on 2026-08-22)
+      - name: Install flyctl (pinned, sha256-verified)
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/flyctl.tgz" \
+            "https://github.com/superfly/flyctl/releases/download/v${FLYCTL_VERSION}/flyctl_${FLYCTL_VERSION}_Linux_x86_64.tar.gz"
+          echo "${FLYCTL_SHA256}  $RUNNER_TEMP/flyctl.tgz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/flyctl-bin"
+          tar -xzf "$RUNNER_TEMP/flyctl.tgz" -C "$RUNNER_TEMP/flyctl-bin" flyctl
+          echo "$RUNNER_TEMP/flyctl-bin" >> "$GITHUB_PATH"
       - run: |
           flyctl deploy --remote-only --config fly.worker.toml \
             --build-arg GIT_SHA=${{ github.sha }} \
@@ -252,7 +274,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6 (master on 2026-08-22)
+      - name: Install flyctl (pinned, sha256-verified)
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/flyctl.tgz" \
+            "https://github.com/superfly/flyctl/releases/download/v${FLYCTL_VERSION}/flyctl_${FLYCTL_VERSION}_Linux_x86_64.tar.gz"
+          echo "${FLYCTL_SHA256}  $RUNNER_TEMP/flyctl.tgz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/flyctl-bin"
+          tar -xzf "$RUNNER_TEMP/flyctl.tgz" -C "$RUNNER_TEMP/flyctl-bin" flyctl
+          echo "$RUNNER_TEMP/flyctl-bin" >> "$GITHUB_PATH"
       - run: flyctl deploy --remote-only --config fly.titiler.toml
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
